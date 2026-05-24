@@ -296,10 +296,16 @@ def wallet_page(request):
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
+    pending_spending = profile.ledger_requests.filter(
+        kind=LedgerRequest.Kind.SPEND,
+        status=LedgerRequest.Status.PENDING,
+    )
     context = {
         "profile": profile,
         "wallet": profile.wallet,
         "ledger": profile.ledger_requests.all()[:20],
+        "pending_spending": pending_spending,
+        "pending_spending_total_cents": sum(-entry.spending_delta_cents for entry in pending_spending),
         "family_transfer_form": FamilyTransferForm(sender=profile),
     }
     return render(request, "rewards/wallet_page.html", context)
@@ -529,10 +535,26 @@ def send_family_transfer(request):
         messages.error(request, "Choose a family member and enter an amount to send.")
         return redirect("wallet_page")
     recipient = form.cleaned_data["recipient_id"]
+    cents = _cents(form.cleaned_data["cash_amount"])
+    if recipient == FamilyTransferForm.SPEND_CHOICE:
+        with transaction.atomic():
+            wallet = Wallet.objects.select_for_update().get(child=profile)
+            if cents > wallet.spending_cents:
+                messages.error(request, "You do not have enough in Spending to cover that purchase.")
+                return redirect("wallet_page")
+            Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
+            LedgerRequest.objects.create(
+                child=profile,
+                requested_by=profile,
+                kind=LedgerRequest.Kind.SPEND,
+                description=f"Store spend pending: ${cents / 100:.2f}",
+                spending_delta_cents=-cents,
+            )
+        messages.success(request, "Your store spending request was sent to Dad and moved into pending transactions.")
+        return redirect("wallet_page")
     if recipient.grounded:
         messages.error(request, "That family member is in Grounded Mode and cannot receive money right now.")
         return redirect("wallet_page")
-    cents = _cents(form.cleaned_data["cash_amount"])
     with transaction.atomic():
         wallets = {
             wallet.child_id: wallet

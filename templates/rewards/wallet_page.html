@@ -21,7 +21,7 @@
       <div class="pay-amount" aria-live="polite"><span>$</span><output data-money-display>0.00</output></div>
       <label class="recipient-picker">Pay a family member
         {{ family_transfer_form.recipient_id }}
-        <small>Family payments come from your Spending balance right away.</small>
+        <small>Choose a child to pay them now, or choose Spend at the store to send a pending purchase to Dad.</small>
       </label>
       <div class="number-pad" aria-label="Amount keypad">
         <button type="button" data-money-key="1">1</button>
@@ -39,13 +39,20 @@
       </div>
       <div class="cash-actions">
         <button class="send-action" type="submit" formaction="{% url 'send_family_transfer' %}">Pay Family</button>
+        <button class="send-action" type="submit" formaction="{% url 'send_family_transfer' %}">Spend</button>
         <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_spending_transfer' %}">Move to Spending</button>
         <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_conversion' %}">Savings to Tokens</button>
         <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_tokens_to_savings' %}">Tokens to Savings</button>
         <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_cashout' %}">Cash Request</button>
       </div>
-      <p class="money-boundary"><strong>Exchange rate: $1.00 = 10 Tokens.</strong> Moving Savings, either conversion direction, and cash requests wait for Dad's approval. Enter dollar amounts in 10-cent increments when converting.</p>
+      <p class="money-boundary"><strong>Exchange rate: $1.00 = 10 Tokens.</strong> Moving Savings, either conversion direction, cash requests, and store spending wait for Dad's approval. Spend requests reserve money right away and stay pending until Dad reviews them. Enter dollar amounts in 10-cent increments when converting.</p>
     </form>
+  </section>
+  <section class="card money-history">
+    <div class="card-head"><h2>Pending Transactions</h2><span class="badge">{{ pending_spending_total_cents|dollars }} reserved</span></div>
+    {% for entry in pending_spending %}
+      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; Waiting for Dad</small></div><b>Spend {{ entry.spending_delta_cents|dollars }}</b></div>
+    {% empty %}<p class="empty">No pending spending transactions.</p>{% endfor %}
   </section>
   <section class="card money-history">
     <div class="card-head"><h2>Wallet Activity</h2><span class="badge">Family ledger</span></div>

@@ -9,6 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from .forms import FamilyTransferForm
 from .models import BehaviorStar, ChildRule, Chore, DailyScheduleEvent, FamilySettings, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
 from .services import ensure_today_chores
 
@@ -316,6 +317,52 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(received.spending_delta_cents, 225)
         self.assertEqual(received.counterparty, self.child)
         self.assertEqual(sent.status, LedgerRequest.Status.APPROVED)
+
+    def test_child_can_reserve_spending_for_store_purchase_pending_dad_approval(self):
+        self.wallet.spending_cents = 500
+        self.wallet.save(update_fields=["spending_cents"])
+        self.client.force_login(self.child.user)
+
+        response = self.client.post(
+            reverse("send_family_transfer"),
+            {"recipient_id": FamilyTransferForm.SPEND_CHOICE, "cash_amount": "2.25"},
+        )
+
+        self.assertRedirects(response, reverse("wallet_page"))
+        self.wallet.refresh_from_db()
+        entry = LedgerRequest.objects.get(child=self.child, kind=LedgerRequest.Kind.SPEND)
+        self.assertEqual(self.wallet.spending_cents, 275)
+        self.assertEqual(entry.spending_delta_cents, -225)
+        self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
+
+        self.client.force_login(self.guardian.user)
+        self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
+
+        self.wallet.refresh_from_db()
+        entry.refresh_from_db()
+        self.assertEqual(self.wallet.spending_cents, 275)
+        self.assertEqual(entry.status, LedgerRequest.Status.APPROVED)
+
+    def test_declined_store_spending_refunds_child_balance(self):
+        self.wallet.spending_cents = 500
+        self.wallet.save(update_fields=["spending_cents"])
+        entry = LedgerRequest.objects.create(
+            child=self.child,
+            requested_by=self.child,
+            kind=LedgerRequest.Kind.SPEND,
+            description="Store spend pending: $2.25",
+            spending_delta_cents=-225,
+        )
+        self.wallet.spending_cents = 275
+        self.wallet.save(update_fields=["spending_cents"])
+        self.client.force_login(self.guardian.user)
+
+        self.client.post(reverse("review_request", args=[entry.pk, "decline"]))
+
+        self.wallet.refresh_from_db()
+        entry.refresh_from_db()
+        self.assertEqual(self.wallet.spending_cents, 500)
+        self.assertEqual(entry.status, LedgerRequest.Status.DECLINED)
 
     def test_child_cannot_send_more_than_available_spending(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")

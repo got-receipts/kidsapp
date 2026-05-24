@@ -186,7 +186,7 @@
         <div class="card-head"><h2>Other approvals</h2><span class="badge waiting">{{ pending|length }}</span></div>
         {% for entry in pending %}
           <div class="task">
-            <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}Savings {{ entry.cash_delta_cents|dollars }} {% endif %}{% if entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% endif %}</small></div>
+            <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}Savings {{ entry.cash_delta_cents|dollars }} {% endif %}{% if entry.kind == 'spend' %}Reserved spending {{ entry.spending_delta_cents|dollars }}{% elif entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% endif %}</small></div>
             {% if entry.child.grounded %}
               <span class="badge coral">Locked until lifted</span>
             {% elif entry.requires_dad_approval and not dad_controls %}

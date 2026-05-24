@@ -110,7 +110,9 @@ class SpendingTransferForm(forms.Form):
 
 
 class FamilyTransferForm(forms.Form):
-    recipient_id = forms.ModelChoiceField(queryset=Profile.objects.none(), label="Send to")
+    SPEND_CHOICE = "__spend__"
+
+    recipient_id = forms.ChoiceField(label="Send to")
     cash_amount = forms.DecimalField(label="Amount to send ($)", min_value=0.01, decimal_places=2)
 
     def __init__(self, *args, sender=None, **kwargs):
@@ -118,7 +120,20 @@ class FamilyTransferForm(forms.Form):
         queryset = Profile.objects.filter(role=Profile.Role.CHILD)
         if sender is not None:
             queryset = queryset.exclude(pk=sender.pk)
-        self.fields["recipient_id"].queryset = queryset.order_by("display_name")
+        self._recipients = {str(profile.pk): profile for profile in queryset.order_by("display_name")}
+        self.fields["recipient_id"].choices = [
+            (self.SPEND_CHOICE, "Spend at the store"),
+            *[(pk, profile.display_name) for pk, profile in self._recipients.items()],
+        ]
+
+    def clean_recipient_id(self):
+        recipient_id = self.cleaned_data["recipient_id"]
+        if recipient_id == self.SPEND_CHOICE:
+            return recipient_id
+        recipient = self._recipients.get(str(recipient_id))
+        if recipient is None:
+            raise forms.ValidationError("Choose a family member or Spend at the store.")
+        return recipient
 
 
 class SavingsGoalForm(forms.ModelForm):

@@ -221,6 +221,7 @@ class LedgerRequest(models.Model):
         CHORE = "chore", "Chore reward"
         GOAL = "goal", "Growth goal reward"
         STORE = "store", "Store purchase"
+        SPEND = "spend", "Spend money"
         CONVERT = "convert", "Cash to tokens"
         CASH_OUT = "cash_out", "Cash out"
         AWARD = "award", "Guardian award"
@@ -258,7 +259,11 @@ class LedgerRequest(models.Model):
 
     @property
     def requires_dad_approval(self):
-        return self.kind in [self.Kind.TRANSFER, self.Kind.CASH_OUT, self.Kind.CONVERT]
+        return self.kind in [self.Kind.TRANSFER, self.Kind.CASH_OUT, self.Kind.CONVERT, self.Kind.SPEND]
+
+    @property
+    def reserves_spending_immediately(self):
+        return self.kind == self.Kind.SPEND and self.spending_delta_cents < 0
 
     def approve(self, guardian):
         from django.utils import timezone
@@ -274,18 +279,21 @@ class LedgerRequest(models.Model):
             changes_balance = bool(request.token_delta or request.cash_delta_cents or request.spending_delta_cents)
             if request.child.grounded and changes_balance and request.kind != self.Kind.BALANCE:
                 raise ValidationError("This account is in Grounded Mode. Unlock it before posting rewards or spending.")
-            wallet = Wallet.objects.select_for_update().get(child=request.child)
-            if request.kind not in [self.Kind.PENALTY, self.Kind.BEHAVIOR] and wallet.tokens + request.token_delta < 0:
-                raise ValidationError("Not enough tokens for this request.")
-            if wallet.cash_cents + request.cash_delta_cents < 0:
-                raise ValidationError("Not enough cash balance for this request.")
-            if wallet.spending_cents + request.spending_delta_cents < 0:
-                raise ValidationError("Not enough spending balance for this request.")
-            Wallet.objects.filter(pk=wallet.pk).update(
-                tokens=F("tokens") + request.token_delta,
-                cash_cents=F("cash_cents") + request.cash_delta_cents,
-                spending_cents=F("spending_cents") + request.spending_delta_cents,
-            )
+            if request.reserves_spending_immediately:
+                Wallet.objects.select_for_update().get(child=request.child)
+            else:
+                wallet = Wallet.objects.select_for_update().get(child=request.child)
+                if request.kind not in [self.Kind.PENALTY, self.Kind.BEHAVIOR] and wallet.tokens + request.token_delta < 0:
+                    raise ValidationError("Not enough tokens for this request.")
+                if wallet.cash_cents + request.cash_delta_cents < 0:
+                    raise ValidationError("Not enough cash balance for this request.")
+                if wallet.spending_cents + request.spending_delta_cents < 0:
+                    raise ValidationError("Not enough spending balance for this request.")
+                Wallet.objects.filter(pk=wallet.pk).update(
+                    tokens=F("tokens") + request.token_delta,
+                    cash_cents=F("cash_cents") + request.cash_delta_cents,
+                    spending_cents=F("spending_cents") + request.spending_delta_cents,
+                )
             request.status = self.Status.APPROVED
             request.reviewed_by = guardian
             request.reviewed_at = timezone.now()
@@ -306,6 +314,9 @@ class LedgerRequest(models.Model):
             request = LedgerRequest.objects.select_for_update().get(pk=self.pk)
             if request.status != self.Status.PENDING:
                 return
+            if request.reserves_spending_immediately:
+                wallet = Wallet.objects.select_for_update().get(child=request.child)
+                Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - request.spending_delta_cents)
             request.status = self.Status.DECLINED
             request.reviewed_by = guardian
             request.reviewed_at = timezone.now()
