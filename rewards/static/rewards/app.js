@@ -98,8 +98,17 @@ document.querySelectorAll("[data-quest-deadline]").forEach((countdown) => {
   function updateCountdown() {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      countdown.textContent = "Time is up for today's credit";
+      countdown.textContent = countdown.dataset.expiredMessage || "Time is up for today's credit";
       countdown.classList.add("expired");
+      if (countdown.dataset.disableQuestButtons === "true") {
+        const board = countdown.closest(".bonus-quest-board");
+        if (board) {
+          board.querySelectorAll(".quest-button").forEach((button) => {
+            button.disabled = true;
+            button.textContent = "Expired";
+          });
+        }
+      }
       return;
     }
     const totalSeconds = Math.floor(remaining / 1000);
@@ -110,4 +119,50 @@ document.querySelectorAll("[data-quest-deadline]").forEach((countdown) => {
   }
   updateCountdown();
   window.setInterval(updateCountdown, 1000);
+});
+
+document.querySelectorAll("[data-open-review]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const dialog = document.getElementById(button.dataset.openReview);
+    if (dialog) dialog.showModal();
+  });
+});
+
+document.querySelectorAll("[data-money-pad]").forEach((pad) => {
+  const field = pad.querySelector("[data-money-input]");
+  const display = pad.querySelector("[data-money-display]");
+  let typedAmount = "";
+
+  function updateAmount() {
+    const amount = Number.parseFloat(typedAmount || "0");
+    field.value = amount.toFixed(2);
+    display.textContent = typedAmount || "0";
+  }
+
+  pad.querySelectorAll("[data-money-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.moneyKey;
+      if (key === "." && typedAmount.includes(".")) return;
+      if (key === "." && typedAmount === "") typedAmount = "0";
+      const decimalPlaces = typedAmount.includes(".") ? typedAmount.split(".")[1].length : 0;
+      if (key !== "." && decimalPlaces >= 2) return;
+      if (key !== "." && !typedAmount.includes(".") && typedAmount === "0") typedAmount = "";
+      typedAmount += key;
+      updateAmount();
+    });
+  });
+
+  pad.querySelector("[data-money-delete]").addEventListener("click", () => {
+    typedAmount = typedAmount.slice(0, -1);
+    updateAmount();
+  });
+
+  pad.addEventListener("submit", (event) => {
+    if (Number.parseFloat(field.value) <= 0) {
+      event.preventDefault();
+      toast("Enter an amount first.");
+    }
+  });
+
+  updateAmount();
 });

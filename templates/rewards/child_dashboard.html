@@ -23,6 +23,9 @@
       {% for event in today_schedule %}
         <div class="brief-event"><b>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Today{% endif %}</b><span><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</span></div>
       {% empty %}<p>No special events planned today. Check your quests below!</p>{% endfor %}
+      {% for event in google_calendar_events %}
+        <div class="brief-event calendar-event"><b>{{ event.time }}</b><span><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</span></div>
+      {% endfor %}
       <h3>Rules to Remember</h3>
       <div class="brief-rules">
         {% for rule in specific_rules %}<p><strong>{{ rule.title }}</strong>{% if rule.details %} - {{ rule.details }}{% endif %}</p>{% endfor %}
@@ -69,6 +72,12 @@
         {% for event in today_schedule %}
           <div class="timeline-event"><time>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Today{% endif %}</time><div><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</div></div>
         {% empty %}<p class="empty">No special events listed today.</p>{% endfor %}
+        {% if google_calendar_events %}
+          <h3 class="calendar-heading">Family Google Calendar</h3>
+          {% for event in google_calendar_events %}
+            <div class="timeline-event calendar-event"><time>{{ event.time }}</time><div><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</div></div>
+          {% endfor %}
+        {% endif %}
       </div>
       <div class="rule-board">
         <h3>My rules</h3>
@@ -111,6 +120,23 @@
         {% else %}<span class="badge coral">After 7 PM</span>{% endif %}
       </div>
     {% empty %}<p class="empty">No chores due right now.</p>{% endfor %}
+    <section class="bonus-quest-board">
+      <div class="card-head"><h3>Bonus Morning Quest</h3><span class="badge gold">Optional +4 tokens</span></div>
+      <p class="deadline morning-deadline"><span>Make your bed before <strong>10:00 AM</strong> for bonus tokens.</span><strong class="quest-countdown" data-quest-deadline="{{ morning_deadline|date:'c' }}" data-expired-message="Morning bonus expired" data-disable-quest-buttons="true">Counting down...</strong></p>
+      {% for chore in optional_chores %}
+        <div class="task quest {% if chore.status == 'completed' %}done{% elif chore.status == 'submitted' %}pending{% elif chore.status == 'in_progress' %}started{% elif chore.status == 'late' or chore.status == 'not_verified' %}late{% endif %}">
+          <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" or chore.status == "not_verified" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; +{{ chore.token_reward }} tokens</small></div></div>
+          {% if chore.status == "open" %}
+            <form action="{% url 'start_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button">Start</button></form>
+          {% elif chore.status == "in_progress" %}
+            <form action="{% url 'submit_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button finish">Finished!</button></form>
+          {% elif chore.status == "submitted" %}<span class="badge waiting">Verify me</span>
+          {% elif chore.status == "completed" %}<span class="badge">Verified!</span>
+          {% elif chore.status == "not_verified" %}<span class="badge coral">Points lost</span>
+          {% else %}<span class="badge coral">Expired</span>{% endif %}
+        </div>
+      {% endfor %}
+    </section>
   </section>
   <section id="stars" class="card star-card kid-feature">
     <div class="card-head"><h2>Good behavior stars</h2><span class="badge gold">+2 tokens</span></div>

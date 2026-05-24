@@ -1,9 +1,11 @@
-from datetime import date, datetime, timedelta, timezone as datetime_timezone
+from datetime import date, datetime, time, timedelta, timezone as datetime_timezone
+from io import BytesIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -119,6 +121,44 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(response.context["recap_token_loss"], 25)
         self.assertContains(response, "removed because a checked quest was not verified")
 
+    def test_guardian_sees_review_popup_for_submitted_chore(self):
+        chore = Chore.objects.create(child=self.child, title="Make your bed", token_reward=4, status=Chore.Status.SUBMITTED)
+        LedgerRequest.objects.create(
+            child=self.child,
+            requested_by=self.child,
+            kind=LedgerRequest.Kind.CHORE,
+            description="Completed chore: Make your bed",
+            token_delta=4,
+            chore=chore,
+        )
+        self.client.force_login(self.guardian.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertContains(response, "Quest verification")
+        self.assertContains(response, "Review +4 t")
+        self.assertContains(response, "Approve Completed")
+        self.assertContains(response, "Deny Chore")
+
+    def test_optional_make_bed_quest_cannot_earn_credit_after_ten_am(self):
+        chore = Chore.objects.create(
+            child=self.child,
+            title="Make your bed",
+            token_reward=4,
+            optional=True,
+            due_date=date(2026, 5, 24),
+            credit_deadline=time(10, 0),
+        )
+        self.client.force_login(self.child.user)
+        after_cutoff = datetime(2026, 5, 24, 10, 1, tzinfo=datetime_timezone.utc)
+
+        with patch("rewards.views.timezone.localtime", return_value=after_cutoff):
+            self.client.post(reverse("submit_chore", args=[chore.pk]))
+
+        chore.refresh_from_db()
+        self.assertEqual(chore.status, Chore.Status.LATE)
+        self.assertFalse(LedgerRequest.objects.filter(chore=chore).exists())
+
     def test_guardian_star_awards_two_tokens_only_once_per_day(self):
         self.client.force_login(self.guardian.user)
         star_data = {"child_id": self.child.pk, "day": "2026-05-24"}
@@ -188,11 +228,16 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
 
     def test_child_wallet_page_has_money_forms_and_guardian_is_redirected(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
         self.client.force_login(self.child.user)
         response = self.client.get(reverse("wallet_page"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Tokens &amp; Money")
-        self.assertContains(response, "Custom Savings amount")
+        self.assertContains(response, "data-money-pad")
+        self.assertContains(response, "Pay Family")
+        self.assertContains(response, "Astoria")
 
         self.client.force_login(self.guardian.user)
         response = self.client.get(reverse("wallet_page"))
@@ -211,6 +256,46 @@ class LedgerApprovalTests(TestCase):
         self.wallet.refresh_from_db()
         self.assertEqual(self.wallet.tokens, 20)
         self.assertEqual(self.wallet.cash_cents, 500)
+
+    def test_child_can_send_spending_to_another_child_with_history_for_both(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        sibling_wallet = Wallet.objects.create(child=sibling)
+        self.wallet.spending_cents = 500
+        self.wallet.save(update_fields=["spending_cents"])
+        self.client.force_login(self.child.user)
+
+        response = self.client.post(
+            reverse("send_family_transfer"),
+            {"recipient_id": sibling.pk, "cash_amount": "2.25"},
+        )
+
+        self.assertRedirects(response, reverse("wallet_page"))
+        self.wallet.refresh_from_db()
+        sibling_wallet.refresh_from_db()
+        self.assertEqual(self.wallet.spending_cents, 275)
+        self.assertEqual(sibling_wallet.spending_cents, 225)
+        sent = LedgerRequest.objects.get(child=self.child, kind=LedgerRequest.Kind.GIFT)
+        received = LedgerRequest.objects.get(child=sibling, kind=LedgerRequest.Kind.GIFT)
+        self.assertEqual(sent.spending_delta_cents, -225)
+        self.assertEqual(sent.counterparty, sibling)
+        self.assertEqual(received.spending_delta_cents, 225)
+        self.assertEqual(received.counterparty, self.child)
+        self.assertEqual(sent.status, LedgerRequest.Status.APPROVED)
+
+    def test_child_cannot_send_more_than_available_spending(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        sibling_wallet = Wallet.objects.create(child=sibling)
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("send_family_transfer"), {"recipient_id": sibling.pk, "cash_amount": "1.00"})
+
+        self.wallet.refresh_from_db()
+        sibling_wallet.refresh_from_db()
+        self.assertEqual(self.wallet.spending_cents, 0)
+        self.assertEqual(sibling_wallet.spending_cents, 0)
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.GIFT).exists())
 
     def test_daily_recap_shows_new_star_and_is_dismissed_for_today(self):
         self.child.last_recap_at = timezone.now() - timedelta(days=1)
@@ -276,6 +361,23 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Pack homework")
         self.assertContains(response, "Kind voices")
 
+    @override_settings(GOOGLE_CALENDAR_ID="family@group.calendar.google.com", GOOGLE_CALENDAR_API_KEY="test-key")
+    def test_public_google_calendar_events_appear_on_child_daily_plan(self):
+        cache.clear()
+        payload = (
+            b'{"items":[{"summary":"Dance practice","location":"Community center",'
+            b'"start":{"date":"2026-05-24"}}]}'
+        )
+        self.client.force_login(self.child.user)
+
+        with patch("rewards.services.urlopen", return_value=BytesIO(payload)):
+            with patch("rewards.services.timezone.localdate", return_value=date(2026, 5, 24)):
+                response = self.client.get(reverse("dashboard"))
+
+        self.assertContains(response, "Family Google Calendar")
+        self.assertContains(response, "Dance practice")
+        self.assertContains(response, "Community center")
+
     def test_guardian_can_hide_a_personal_rule(self):
         rule = ChildRule.objects.create(child=self.child, title="Temporary reminder")
         self.client.force_login(self.guardian.user)
@@ -314,6 +416,9 @@ class DailyChoreRotationTests(TestCase):
     def test_twelve_daily_chores_are_divided_evenly(self, mocked_date):
         ensure_today_chores()
 
-        self.assertEqual(Chore.objects.filter(due_date=date(2026, 5, 24)).count(), 12)
+        self.assertEqual(Chore.objects.filter(due_date=date(2026, 5, 24)).count(), 15)
         for child in Profile.objects.filter(role=Profile.Role.CHILD):
-            self.assertEqual(child.chores.filter(due_date=date(2026, 5, 24)).count(), 4)
+            self.assertEqual(child.chores.filter(due_date=date(2026, 5, 24), optional=False).count(), 4)
+            bonus = child.chores.get(due_date=date(2026, 5, 24), optional=True)
+            self.assertEqual(bonus.title, "Make your bed")
+            self.assertEqual(bonus.credit_deadline, time(10, 0))

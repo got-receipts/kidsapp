@@ -2,7 +2,7 @@ from django import forms
 
 from django.utils import timezone
 
-from .models import ChildRule, Chore, DailyScheduleEvent, Grade, GrowthGoal, HouseRule, SavingsGoal, StoreItem
+from .models import ChildRule, Chore, DailyScheduleEvent, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
 
 
 class GradeForm(forms.ModelForm):
@@ -77,6 +77,18 @@ class CashOutForm(forms.Form):
 
 class SpendingTransferForm(forms.Form):
     cash_amount = forms.DecimalField(label="Move to spending ($)", min_value=0.01, decimal_places=2)
+
+
+class FamilyTransferForm(forms.Form):
+    recipient_id = forms.ModelChoiceField(queryset=Profile.objects.none(), label="Send to")
+    cash_amount = forms.DecimalField(label="Amount to send ($)", min_value=0.01, decimal_places=2)
+
+    def __init__(self, *args, sender=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        queryset = Profile.objects.filter(role=Profile.Role.CHILD)
+        if sender is not None:
+            queryset = queryset.exclude(pk=sender.pk)
+        self.fields["recipient_id"].queryset = queryset.order_by("display_name")
 
 
 class SavingsGoalForm(forms.ModelForm):

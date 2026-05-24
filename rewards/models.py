@@ -137,6 +137,7 @@ class Chore(models.Model):
     instructions = models.CharField(max_length=240, blank=True)
     token_reward = models.PositiveIntegerField(default=0)
     cash_reward_cents = models.PositiveIntegerField(default=0)
+    optional = models.BooleanField(default=False)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.OPEN)
     due_date = models.DateField(null=True, blank=True)
     credit_deadline = models.TimeField(default=time(19, 0))
@@ -205,6 +206,7 @@ class LedgerRequest(models.Model):
         TRANSFER = "transfer", "Move to spending"
         BALANCE = "balance", "Balance correction"
         PENALTY = "penalty", "Quest not verified"
+        GIFT = "gift", "Family transfer"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Waiting"
@@ -224,6 +226,7 @@ class LedgerRequest(models.Model):
     goal = models.OneToOneField(GrowthGoal, null=True, blank=True, on_delete=models.SET_NULL)
     behavior_star = models.OneToOneField(BehaviorStar, null=True, blank=True, on_delete=models.SET_NULL)
     store_item = models.ForeignKey(StoreItem, null=True, blank=True, on_delete=models.SET_NULL)
+    counterparty = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="transfers_with")
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
 

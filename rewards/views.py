@@ -9,7 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, IntegerField, Sum, When
+from django.db.models import Case, F, IntegerField, Sum, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -23,6 +23,7 @@ from .forms import (
     ChoreForm,
     ConvertForm,
     DailyScheduleEventForm,
+    FamilyTransferForm,
     GoalForm,
     GradeForm,
     HouseRuleForm,
@@ -42,8 +43,9 @@ from .models import (
     PushSubscription,
     SavingsGoal,
     StoreItem,
+    Wallet,
 )
-from .services import ensure_today_chores
+from .services import ensure_today_chores, public_google_calendar_events
 
 
 class FamilyLoginView(LoginView):
@@ -155,13 +157,16 @@ def dashboard(request):
         star_weeks, star_month, previous_month, next_month = _star_calendar(selected, request.GET.get("month")) if selected else ([], "", "", "")
         today = timezone.localdate()
         unstarred = children.exclude(behavior_stars__day=today)
+        pending = LedgerRequest.objects.filter(status=LedgerRequest.Status.PENDING).select_related("child", "chore")
         context = {
             "profile": profile,
             "children": children,
             "selected": selected,
             "store_items": store_items,
-            "pending": LedgerRequest.objects.filter(status=LedgerRequest.Status.PENDING).select_related("child"),
-            "selected_chores": selected.chores.filter(due_date=today).order_by("title") if selected else [],
+            "pending": pending.exclude(kind=LedgerRequest.Kind.CHORE),
+            "pending_chore_reviews": pending.filter(child=selected, kind=LedgerRequest.Kind.CHORE) if selected else [],
+            "selected_chores": selected.chores.filter(due_date=today, optional=False).order_by("title") if selected else [],
+            "selected_optional_chores": selected.chores.filter(due_date=today, optional=True).order_by("title") if selected else [],
             "selected_schedule": selected.schedule_events.filter(day__gte=today)[:20] if selected else [],
             "selected_rules": selected.specific_rules.filter(active=True) if selected else [],
             "house_rules": HouseRule.objects.filter(active=True),
@@ -183,9 +188,11 @@ def dashboard(request):
             "award_form": AwardForm(),
             "balance_form": BalanceAdjustmentForm(),
             "dad_controls": profile.user.username.lower() == "dad",
+            "google_calendar_enabled": bool(settings.GOOGLE_CALENDAR_ID and settings.GOOGLE_CALENDAR_API_KEY),
         }
         return render(request, "rewards/guardian_dashboard.html", context)
-    today_chores = profile.chores.filter(due_date=timezone.localdate()).order_by("title")
+    today_chores = profile.chores.filter(due_date=timezone.localdate(), optional=False).order_by("title")
+    optional_chores = profile.chores.filter(due_date=timezone.localdate(), optional=True).order_by("title")
     checked = today_chores.filter(status__in=[Chore.Status.SUBMITTED, Chore.Status.COMPLETED]).count()
     verified = today_chores.filter(status=Chore.Status.COMPLETED).count()
     not_verified = today_chores.filter(status=Chore.Status.NOT_VERIFIED).count()
@@ -209,6 +216,7 @@ def dashboard(request):
         "wallet": profile.wallet,
         "grades": profile.grades.all().order_by("-created_at")[:8],
         "chores": today_chores,
+        "optional_chores": optional_chores,
         "chore_total": today_chores.count(),
         "chore_completed": checked,
         "chore_percent": round(checked / today_chores.count() * 100) if today_chores.count() else 0,
@@ -223,7 +231,9 @@ def dashboard(request):
         "savings_goal_form": SavingsGoalForm(instance=savings_goal),
         "today": today,
         "quest_deadline": timezone.make_aware(datetime.combine(today, time(19, 0))),
+        "morning_deadline": timezone.make_aware(datetime.combine(today, time(10, 0))),
         "today_schedule": profile.schedule_events.filter(day=today),
+        "google_calendar_events": public_google_calendar_events(today),
         "specific_rules": profile.specific_rules.filter(active=True),
         "house_rules": HouseRule.objects.filter(active=True),
         "show_recap": profile.last_recap_day != timezone.localdate(),
@@ -248,9 +258,7 @@ def wallet_page(request):
         "profile": profile,
         "wallet": profile.wallet,
         "ledger": profile.ledger_requests.all()[:20],
-        "convert_form": ConvertForm(),
-        "cashout_form": CashOutForm(),
-        "spending_form": SpendingTransferForm(),
+        "family_transfer_form": FamilyTransferForm(sender=profile),
     }
     return render(request, "rewards/wallet_page.html", context)
 
@@ -411,6 +419,57 @@ def request_spending_transfer(request):
         spending_delta_cents=cents,
     )
     messages.success(request, "Your request to move money to spending was sent to Dad.")
+    return redirect("wallet_page")
+
+
+@login_required
+@require_POST
+def send_family_transfer(request):
+    profile = _profile(request)
+    if profile.is_guardian:
+        return redirect("dashboard")
+    form = FamilyTransferForm(request.POST, sender=profile)
+    if not form.is_valid():
+        messages.error(request, "Choose a family member and enter an amount to send.")
+        return redirect("wallet_page")
+    recipient = form.cleaned_data["recipient_id"]
+    cents = _cents(form.cleaned_data["cash_amount"])
+    with transaction.atomic():
+        wallets = {
+            wallet.child_id: wallet
+            for wallet in Wallet.objects.select_for_update()
+            .filter(child_id__in=[profile.pk, recipient.pk])
+            .order_by("pk")
+        }
+        sender_wallet = wallets[profile.pk]
+        recipient_wallet = wallets[recipient.pk]
+        if cents > sender_wallet.spending_cents:
+            messages.error(request, "You do not have enough in Spending to send that amount.")
+            return redirect("wallet_page")
+        Wallet.objects.filter(pk=sender_wallet.pk).update(spending_cents=F("spending_cents") - cents)
+        Wallet.objects.filter(pk=recipient_wallet.pk).update(spending_cents=F("spending_cents") + cents)
+        timestamp = timezone.now()
+        LedgerRequest.objects.create(
+            child=profile,
+            requested_by=profile,
+            counterparty=recipient,
+            kind=LedgerRequest.Kind.GIFT,
+            description=f"Sent ${cents / 100:.2f} to {recipient.display_name}",
+            spending_delta_cents=-cents,
+            status=LedgerRequest.Status.APPROVED,
+            reviewed_at=timestamp,
+        )
+        LedgerRequest.objects.create(
+            child=recipient,
+            requested_by=profile,
+            counterparty=profile,
+            kind=LedgerRequest.Kind.GIFT,
+            description=f"Received ${cents / 100:.2f} from {profile.display_name}",
+            spending_delta_cents=cents,
+            status=LedgerRequest.Status.APPROVED,
+            reviewed_at=timestamp,
+        )
+    messages.success(request, f"You sent ${cents / 100:.2f} to {recipient.display_name}.")
     return redirect("wallet_page")
 
 

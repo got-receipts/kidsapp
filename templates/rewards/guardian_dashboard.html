@@ -28,8 +28,30 @@
       <div><strong>{{ selected.wallet.spending_cents|dollars }}</strong><small>spending</small></div>
     </section>
     <section class="grid">
+      <article class="card chore-reviews">
+        <div class="card-head"><h2>Quest verification</h2><span class="badge waiting">{{ pending_chore_reviews|length }} waiting</span></div>
+        <p class="control-note">Tap Review to approve completed work or deny it and apply the listed token penalty.</p>
+        {% for entry in pending_chore_reviews %}
+          <button class="review-chore-button" type="button" data-open-review="review-{{ entry.pk }}">
+            <span><strong>{{ entry.chore.title }}</strong><small>{{ entry.child.display_name }} marked this finished</small></span>
+            <b>Review +{{ entry.chore.token_reward }} t</b>
+          </button>
+          <dialog class="review-dialog" id="review-{{ entry.pk }}">
+            <form method="dialog" class="dialog-close"><button aria-label="Close review">&times;</button></form>
+            <p class="eyebrow">Verify completed quest</p>
+            <h2>{{ entry.chore.title }}</h2>
+            <p><strong>{{ entry.child.display_name }}</strong> checked this quest as finished.</p>
+            {% if entry.chore.instructions %}<p class="review-instructions">{{ entry.chore.instructions }}</p>{% endif %}
+            <div class="review-impact"><strong>Approve</strong><span>Earn +{{ entry.chore.token_reward }} tokens</span><strong>Deny</strong><span>Lose {{ entry.chore.token_reward }} tokens</span></div>
+            <div class="review-actions">
+              <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action" type="submit">Approve Completed</button></form>
+              <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger" type="submit">Deny Chore</button></form>
+            </div>
+          </dialog>
+        {% empty %}<p class="empty">No chores need verification right now.</p>{% endfor %}
+      </article>
       <article class="card approvals">
-        <div class="card-head"><h2>Waiting for approval</h2><span class="badge waiting">{{ pending|length }}</span></div>
+        <div class="card-head"><h2>Other approvals</h2><span class="badge waiting">{{ pending|length }}</span></div>
         {% for entry in pending %}
           <div class="task">
             <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}Savings {{ entry.cash_delta_cents|dollars }} {% endif %}{% if entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% endif %}</small></div>
@@ -42,7 +64,7 @@
               </div>
             {% endif %}
           </div>
-        {% empty %}<p class="empty">Nothing waiting right now.</p>{% endfor %}
+        {% empty %}<p class="empty">No store or money requests waiting right now.</p>{% endfor %}
       </article>
       <article class="card star-calendar">
         <div class="card-head"><h2>Behavior star calendar</h2><span class="badge gold">1 star = 2 tokens</span></div>
@@ -70,9 +92,14 @@
         {% for chore in selected_chores %}
           <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>{% if chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">Today's chore rotation has not been created.</p>{% endfor %}
+        <h3 class="optional-heading">Bonus morning quest</h3>
+        {% for chore in selected_optional_chores %}
+          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }} &middot; before 10 AM</small></div><b>{% if chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
+        {% empty %}<p class="empty">No optional morning quest created.</p>{% endfor %}
       </article>
       <article class="card daily-planner">
         <div class="card-head"><h2>Schedule ahead</h2><span class="badge">Morning message</span></div>
+        <p class="control-note">{% if google_calendar_enabled %}Shared public Google Calendar events are connected and shown read-only to children.{% else %}Optional Google Calendar display is off until its Railway variables are configured.{% endif %}</p>
         {% for event in selected_schedule %}
           <div class="planner-row">
             <div><strong>{{ event.day|date:"M j" }}{% if event.start_time %} at {{ event.start_time|time:"g:i A" }}{% endif %} - {{ event.title }}</strong><small>{{ event.details }}</small></div>

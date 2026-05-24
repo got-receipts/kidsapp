@@ -18,6 +18,7 @@ urlpatterns = [
     path("wallet/convert/", views.request_conversion, name="request_conversion"),
     path("wallet/cashout/", views.request_cashout, name="request_cashout"),
     path("wallet/spending/", views.request_spending_transfer, name="request_spending_transfer"),
+    path("wallet/send/", views.send_family_transfer, name="send_family_transfer"),
     path("wallet/goal/", views.save_savings_goal, name="save_savings_goal"),
     path("recap/dismiss/", views.dismiss_recap, name="dismiss_recap"),
     path("guardian/add/<str:model>/", views.guardian_create, name="guardian_create"),
