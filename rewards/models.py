@@ -1,3 +1,5 @@
+from datetime import time
+
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
@@ -47,8 +49,10 @@ class Grade(models.Model):
 class Chore(models.Model):
     class Status(models.TextChoices):
         OPEN = "open", "To do"
+        IN_PROGRESS = "in_progress", "Working on it"
         SUBMITTED = "submitted", "Waiting approval"
         COMPLETED = "completed", "Completed"
+        LATE = "late", "Completed after deadline"
 
     child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="chores")
     title = models.CharField(max_length=100)
@@ -56,7 +60,15 @@ class Chore(models.Model):
     token_reward = models.PositiveIntegerField(default=0)
     cash_reward_cents = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.OPEN)
+    due_date = models.DateField(null=True, blank=True)
+    credit_deadline = models.TimeField(default=time(19, 0))
+    assigned_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="chores_assigned")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["child", "title", "due_date"], name="one_daily_chore_assignment")
+        ]
 
 
 class GrowthGoal(models.Model):
@@ -83,6 +95,20 @@ class StoreItem(models.Model):
         return self.name
 
 
+class BehaviorStar(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="behavior_stars")
+    awarded_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="stars_awarded")
+    day = models.DateField()
+    note = models.CharField(max_length=180, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["child", "day"], name="one_behavior_star_per_child_day")
+        ]
+        ordering = ["-day"]
+
+
 class LedgerRequest(models.Model):
     class Kind(models.TextChoices):
         CHORE = "chore", "Chore reward"
@@ -91,6 +117,7 @@ class LedgerRequest(models.Model):
         CONVERT = "convert", "Cash to tokens"
         CASH_OUT = "cash_out", "Cash out"
         AWARD = "award", "Guardian award"
+        STAR = "star", "Good behavior star"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Waiting"
@@ -107,6 +134,7 @@ class LedgerRequest(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     chore = models.OneToOneField(Chore, null=True, blank=True, on_delete=models.SET_NULL)
     goal = models.OneToOneField(GrowthGoal, null=True, blank=True, on_delete=models.SET_NULL)
+    behavior_star = models.OneToOneField(BehaviorStar, null=True, blank=True, on_delete=models.SET_NULL)
     store_item = models.ForeignKey(StoreItem, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -162,3 +190,18 @@ class LedgerRequest(models.Model):
             if request.goal:
                 request.goal.status = GrowthGoal.Status.ACTIVE
                 request.goal.save(update_fields=["status"])
+
+
+class PushSubscription(models.Model):
+    guardian = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="push_subscriptions")
+    endpoint = models.TextField(unique=True)
+    p256dh = models.TextField()
+    auth = models.TextField()
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReminderDispatch(models.Model):
+    day = models.DateField(unique=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
+    recipient_count = models.PositiveIntegerField(default=0)

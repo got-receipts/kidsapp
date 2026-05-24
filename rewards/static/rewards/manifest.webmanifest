@@ -1,11 +1,11 @@
 {
   "name": "Family Circle - Learn, Earn, Grow",
   "short_name": "Family Circle",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f6f2ea",
   "theme_color": "#14263d",
-  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/static/rewards/icon.svg",

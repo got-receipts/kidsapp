@@ -4,6 +4,7 @@
 <main class="login-page">
   <section class="welcome">
     <div class="brand"><span class="mark">FC</span><div><small>Family Circle</small><strong>Learn. Earn. Grow.</strong></div></div>
+    <button class="theme-toggle login-theme" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button>
     <h1>Your family rewards hub.</h1>
     <p class="muted">School progress, chores, growing goals, tokens, savings, and a family store in one safe place.</p>
     <form method="post" class="card form login-card">
@@ -14,7 +15,7 @@
       <label>Password {{ form.password }}</label>
       <button class="primary" type="submit">Enter Family Circle</button>
     </form>
-    <p class="install-note"><strong>Install on iPhone:</strong> Open in Safari, tap Share, then Add to Home Screen.</p>
+    <p class="install-note"><strong>Install on iPhone or iPad:</strong> Open in Safari, tap Share, then Add to Home Screen.</p>
   </section>
 </main>
 {% endblock %}

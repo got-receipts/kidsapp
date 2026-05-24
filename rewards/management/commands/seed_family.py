@@ -3,7 +3,8 @@ import os
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
-from rewards.models import Chore, GrowthGoal, Profile, StoreItem, Wallet
+from rewards.models import GrowthGoal, Profile, StoreItem, Wallet
+from rewards.services import ensure_today_chores
 
 
 class Command(BaseCommand):
@@ -46,6 +47,7 @@ class Command(BaseCommand):
                 "Set INITIAL_CHILD_PASSWORD and INITIAL_GUARDIAN_PASSWORD (or account-specific password variables) before the first deploy."
             )
         self._starter_content(children)
+        ensure_today_chores()
         self.stdout.write(self.style.SUCCESS("Family Circle accounts are ready: KJ, Astoria, Saphira, Dad, Mom and GG."))
 
     def _starter_content(self, children):
@@ -58,12 +60,6 @@ class Command(BaseCommand):
         for name, description, cost in store:
             StoreItem.objects.get_or_create(name=name, defaults={"description": description, "token_cost": cost})
         for child in children:
-            Chore.objects.get_or_create(
-                child=child,
-                title="Make your bed",
-                status=Chore.Status.OPEN,
-                defaults={"instructions": "Start the day with a tidy room.", "token_reward": 5},
-            )
             GrowthGoal.objects.get_or_create(
                 child=child,
                 title="Practice a kind response",

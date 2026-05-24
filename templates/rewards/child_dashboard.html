@@ -2,21 +2,26 @@
 {% load rewards_tags %}
 {% block title %}{{ profile.display_name }} | Family Circle{% endblock %}
 {% block content %}
-<main class="shell">
+<main class="shell kid-shell">
   <header class="topbar">
     <div class="identity"><span class="avatar">{{ profile.display_name|slice:":1" }}</span><div><small>Hello,</small><h1>{{ profile.display_name }}</h1></div></div>
-    <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form>
+    <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
-  <section class="wallet-card">
-    <p class="eyebrow">My wallet</p>
-    <h2>Keep earning, {{ profile.display_name }}!</h2>
+  <section class="wallet-card kid-hero">
+    <p class="eyebrow">My adventure board</p>
+    <h2>Let's shine today, {{ profile.display_name }}!</h2>
+    <p class="hero-copy">Finish quests, earn treasure, and fill your sky with stars.</p>
     <div class="balances">
-      <div><strong>{{ wallet.tokens }}</strong><span>tokens</span></div>
-      <div><strong>{{ wallet.cash_cents|dollars }}</strong><span>cash balance</span></div>
+      <div class="treasure"><strong>{{ wallet.tokens }}</strong><span>Tokens</span></div>
+      <div class="piggy"><strong>{{ wallet.cash_cents|dollars }}</strong><span>Savings</span></div>
+      <div class="star-balance"><strong>{{ star_count }}</strong><span>Stars</span></div>
     </div>
   </section>
-  <nav class="tabs" aria-label="Dashboard sections">
-    <a href="#school">School</a><a href="#chores">Chores</a><a href="#goals">Improve</a><a href="#store">Store</a><a href="#wallet">Cash</a>
+  <nav class="kid-map" aria-label="Adventure board sections">
+    <a class="map-chores" href="#chores"><b>&#10003;</b><strong>Quests</strong><small>{{ chore_completed }}/{{ chore_total }} done</small></a>
+    <a class="map-stars" href="#stars"><b>&#9733;</b><strong>Stars</strong><small>{{ star_count }} earned</small></a>
+    <a class="map-school" href="#school"><b>A+</b><strong>School</strong><small>My grades</small></a>
+    <a class="map-store" href="#store"><b>&#127873;</b><strong>Store</strong><small>Rewards</small></a>
   </nav>
   <section id="school" class="card">
     <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
@@ -24,22 +29,35 @@
       <div class="row"><div><strong>{{ grade.subject }}</strong><small>{{ grade.assignment }}</small></div><b>{{ grade.percent }}%</b></div>
     {% empty %}<p class="empty">Your grades will show here after a guardian adds them.</p>{% endfor %}
   </section>
-  <section id="chores" class="card">
-    <div class="card-head"><h2>Chores</h2><span class="badge gold">Earn</span></div>
+  <section id="chores" class="card quest-board">
+    <div class="card-head"><h2>Today's Quests</h2><span class="badge gold">Finish by 7 PM</span></div>
+    <p class="deadline">Complete your chores before <strong>7:00 PM</strong> to earn tokens.</p>
+    <div class="quest-progress">
+      <div class="progress-label"><strong>{{ chore_completed }} of {{ chore_total }} finished</strong><span>{{ chore_percent }}%</span></div>
+      <div class="progress-track"><span style="width: {{ chore_percent }}%"></span></div>
+    </div>
     {% for chore in chores %}
-      <div class="task">
-        <div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} · +{{ chore.token_reward }} tokens{% if chore.cash_reward_cents %} · +{{ chore.cash_reward_cents|dollars }}{% endif %}</small></div>
+      <div class="task quest {% if chore.status == 'completed' or chore.status == 'submitted' %}done{% elif chore.status == 'in_progress' %}started{% elif chore.status == 'late' %}late{% endif %}">
+        <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; +{{ chore.token_reward }} tokens</small></div></div>
         {% if chore.status == "open" %}
-          <form action="{% url 'submit_chore' chore.pk %}" method="post">{% csrf_token %}<button class="action">I did it</button></form>
-        {% else %}<span class="badge waiting">Waiting</span>{% endif %}
+          <form action="{% url 'start_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button">Start</button></form>
+        {% elif chore.status == "in_progress" %}
+          <form action="{% url 'submit_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button finish">Finished!</button></form>
+        {% elif chore.status == "submitted" %}<span class="badge waiting">Waiting</span>
+        {% elif chore.status == "completed" %}<span class="badge">Earned!</span>
+        {% else %}<span class="badge coral">After 7 PM</span>{% endif %}
       </div>
     {% empty %}<p class="empty">No chores due right now.</p>{% endfor %}
   </section>
-  <section id="goals" class="card">
+  <section id="stars" class="card star-card kid-feature">
+    <div class="card-head"><h2>Good behavior stars</h2><span class="badge gold">+2 tokens</span></div>
+    <div class="star-hero"><span class="{% if star_today %}lit{% endif %}">&#9733;</span><div><strong>{% if star_today %}Today's star is shining!{% else %}Shine bright today!{% endif %}</strong><small>Kind listening and great choices can earn today's star.</small></div></div>
+  </section>
+  <section id="goals" class="card growth-card">
     <div class="card-head"><h2>Things to improve</h2><span class="badge">Growing</span></div>
     {% for goal in goals %}
       <div class="task">
-        <div><strong>{{ goal.title }}</strong><small>{{ goal.encouragement }} · +{{ goal.token_reward }} tokens</small></div>
+        <div><strong>{{ goal.title }}</strong><small>{{ goal.encouragement }} &middot; +{{ goal.token_reward }} tokens</small></div>
         {% if goal.status == "active" %}
           <form action="{% url 'submit_goal' goal.pk %}" method="post">{% csrf_token %}<button class="action">Goal reached</button></form>
         {% else %}<span class="badge waiting">Waiting</span>{% endif %}
@@ -71,5 +89,11 @@
       <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.get_status_display }}</small></div><b>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% else %}{{ entry.cash_delta_cents|dollars }}{% endif %}</b></div>
     {% empty %}<p class="empty">Activity will appear here.</p>{% endfor %}
   </section>
+  <nav class="kid-dock" aria-label="Quick navigation">
+    <a href="#chores"><span>&#10003;</span>Quests</a>
+    <a href="#stars"><span>&#9733;</span>Stars</a>
+    <a href="#store"><span>&#127873;</span>Store</a>
+    <a href="#wallet"><span>$</span>Wallet</a>
+  </nav>
 </main>
 {% endblock %}

@@ -5,13 +5,18 @@
 <main class="shell guardian">
   <header class="topbar">
     <div class="identity"><span class="avatar guardian-avatar">{{ profile.display_name|slice:":1" }}</span><div><small>Guardian</small><h1>{{ profile.display_name }}</h1></div></div>
-    <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form>
+    <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
   <section class="wallet-card guardian-card">
     <p class="eyebrow">Family control center</p>
     <h2>Rewards and progress</h2>
     <p>Dad, Mom, and GG share the same approvals and family ledger.</p>
+    <button id="enable-notifications" class="notify-button" type="button" data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on 7:30 PM star reminders</button>
+    {% if not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable push notifications.</small>{% endif %}
   </section>
+  {% if star_reminder_due %}
+    <section class="reminder-callout"><strong>Star check-in time!</strong> It is after 7:30 PM. Still waiting on stars for: {% for child in unstarred %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
+  {% endif %}
   <nav class="child-picker" aria-label="Select child">
     {% for child in children %}<a href="?child={{ child.pk }}" class="{% if child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}</a>{% endfor %}
   </nav>
@@ -33,6 +38,32 @@
             </div>
           </div>
         {% empty %}<p class="empty">Nothing waiting right now.</p>{% endfor %}
+      </article>
+      <article class="card star-calendar">
+        <div class="card-head"><h2>Behavior star calendar</h2><span class="badge gold">1 star = 2 tokens</span></div>
+        <div class="month-nav"><a href="?child={{ selected.pk }}&month={{ previous_month }}">&lsaquo;</a><strong>{{ star_month }}</strong><a href="?child={{ selected.pk }}&month={{ next_month }}">&rsaquo;</a></div>
+        <div class="weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+        <div class="calendar-grid">
+          {% for week in star_weeks %}{% for cell in week %}
+            {% if cell.in_month %}
+              {% if cell.awardable and not cell.has_star %}
+                <form method="post" action="{% url 'award_star' %}">
+                  {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="day" value="{{ cell.day|date:'Y-m-d' }}">
+                  <button class="calendar-day" aria-label="Award star for {{ cell.day|date:'F j' }}">{{ cell.day.day }}</button>
+                </form>
+              {% else %}
+                <div class="calendar-day {% if cell.has_star %}has-star{% endif %}">{{ cell.day.day }}{% if cell.has_star %}<span>&#9733;</span>{% endif %}</div>
+              {% endif %}
+            {% else %}<div></div>{% endif %}
+          {% endfor %}{% endfor %}
+        </div>
+        <p class="calendar-help">Tap a day to award {{ selected.display_name }} a good behavior star.</p>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Today's chores</h2><span class="badge gold">Before 7 PM</span></div>
+        {% for chore in selected_chores %}
+          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>+{{ chore.token_reward }} t</b></div>
+        {% empty %}<p class="empty">Today's chore rotation has not been created.</p>{% endfor %}
       </article>
       <article class="card">
         <h2>Quick award</h2>
@@ -68,6 +99,15 @@
           {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ item_form.as_p }}
           <button class="primary">Add store item</button>
         </form>
+      </article>
+      <article class="card activity-history">
+        <div class="card-head"><h2>Account history</h2><span class="badge">Ledger</span></div>
+        {% for entry in history %}
+          <div class="row">
+            <div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; {{ entry.get_status_display }}{% if entry.reviewed_by %} by {{ entry.reviewed_by.display_name }}{% endif %}</small></div>
+            <b class="{% if entry.token_delta < 0 or entry.cash_delta_cents < 0 %}spent{% else %}earned{% endif %}">{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% else %}{{ entry.cash_delta_cents|dollars }}{% endif %}</b>
+          </div>
+        {% empty %}<p class="empty">Rewards and purchases will appear here.</p>{% endfor %}
       </article>
     </section>
   {% endif %}

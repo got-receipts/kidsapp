@@ -6,8 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#14263d">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Family Circle">
     <title>{% block title %}Family Circle{% endblock %}</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("family-circle-theme") || "light";
+      } catch (error) {
+        document.documentElement.dataset.theme = "light";
+      }
+      if (document.documentElement.dataset.theme === "dark") {
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", "#091321");
+      }
+    </script>
     <link rel="manifest" href="{% static 'rewards/manifest.webmanifest' %}">
     <link rel="apple-touch-icon" href="{% static 'rewards/icon.svg' %}">
     <link rel="stylesheet" href="{% static 'rewards/styles.css' %}">
@@ -20,5 +31,10 @@
       </div>
     {% endif %}
     {% block content %}{% endblock %}
+    <footer class="app-footer">
+      <strong>Family Circle</strong>
+      <span>Private family software. Not for redistribution.</span>
+      <span>Version {{ app_version }}</span>
+    </footer>
   </body>
 </html>

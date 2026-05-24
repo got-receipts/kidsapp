@@ -1,8 +1,13 @@
+from datetime import date, datetime, timezone as datetime_timezone
+from unittest.mock import patch
+
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
-from .models import Chore, LedgerRequest, Profile, Wallet
+from .models import BehaviorStar, Chore, LedgerRequest, Profile, Wallet
+from .services import ensure_today_chores
 
 
 class LedgerApprovalTests(TestCase):
@@ -63,3 +68,47 @@ class LedgerApprovalTests(TestCase):
         request.refresh_from_db()
         self.assertEqual(self.wallet.tokens, 30)
         self.assertEqual(request.status, LedgerRequest.Status.APPROVED)
+
+    def test_late_chore_completion_does_not_create_token_request(self):
+        chore = Chore.objects.create(
+            child=self.child,
+            title="Clean your room",
+            token_reward=4,
+            due_date=date(2026, 5, 24),
+        )
+        self.client.force_login(self.child.user)
+        late = datetime(2026, 5, 24, 19, 1, tzinfo=datetime_timezone.utc)
+
+        with patch("rewards.views.timezone.localtime", return_value=late):
+            self.client.post(reverse("submit_chore", args=[chore.pk]))
+
+        chore.refresh_from_db()
+        self.assertEqual(chore.status, Chore.Status.LATE)
+        self.assertFalse(LedgerRequest.objects.filter(chore=chore).exists())
+
+    def test_guardian_star_awards_two_tokens_only_once_per_day(self):
+        self.client.force_login(self.guardian.user)
+        star_data = {"child_id": self.child.pk, "day": "2026-05-24"}
+
+        self.client.post(reverse("award_star"), star_data)
+        self.client.post(reverse("award_star"), star_data)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 22)
+        self.assertEqual(BehaviorStar.objects.filter(child=self.child).count(), 1)
+
+
+class DailyChoreRotationTests(TestCase):
+    def setUp(self):
+        for name in ("KJ", "Astoria", "Saphira"):
+            user = User.objects.create_user(username=name.lower(), password="test")
+            profile = Profile.objects.create(user=user, display_name=name, role=Profile.Role.CHILD)
+            Wallet.objects.create(child=profile)
+
+    @patch("rewards.services.timezone.localdate", return_value=date(2026, 5, 24))
+    def test_twelve_daily_chores_are_divided_evenly(self, mocked_date):
+        ensure_today_chores()
+
+        self.assertEqual(Chore.objects.filter(due_date=date(2026, 5, 24)).count(), 12)
+        for child in Profile.objects.filter(role=Profile.Role.CHILD):
+            self.assertEqual(child.chores.filter(due_date=date(2026, 5, 24)).count(), 4)
