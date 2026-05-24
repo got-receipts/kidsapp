@@ -2,7 +2,7 @@ from django import forms
 
 from django.utils import timezone
 
-from .models import ChildRule, Chore, DailyScheduleEvent, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
+from .models import ChildRule, Chore, DailyScheduleEvent, FamilySettings, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
 
 
 class GradeForm(forms.ModelForm):
@@ -61,8 +61,38 @@ class HouseRuleForm(forms.ModelForm):
         labels = {"title": "House rule", "details": "Why or reminder (optional)"}
 
 
+class GroundingForm(forms.Form):
+    reason = forms.CharField(max_length=180, required=False, label="Message for the child (optional)")
+
+
+class GoogleCalendarSettingsForm(forms.ModelForm):
+    class Meta:
+        model = FamilySettings
+        fields = ["google_calendar_enabled", "google_calendar_id"]
+        labels = {
+            "google_calendar_enabled": "Show public Google Calendar events",
+            "google_calendar_id": "Public Google Calendar ID",
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("google_calendar_enabled") and not cleaned.get("google_calendar_id", "").strip():
+            self.add_error("google_calendar_id", "Enter a calendar ID before turning this on.")
+        return cleaned
+
+
 class ConvertForm(forms.Form):
     cash_amount = forms.DecimalField(label="Amount to convert ($)", min_value=0.10, decimal_places=2)
+
+    def clean_cash_amount(self):
+        amount = self.cleaned_data["cash_amount"]
+        if (amount * 100) % 10:
+            raise forms.ValidationError("Enter an amount in 10 cent increments.")
+        return amount
+
+
+class TokensToSavingsForm(forms.Form):
+    cash_amount = forms.DecimalField(label="Savings amount to receive ($)", min_value=0.10, decimal_places=2)
 
     def clean_cash_amount(self):
         amount = self.cleaned_data["cash_amount"]
@@ -109,6 +139,11 @@ class AwardForm(forms.Form):
     reason = forms.CharField(max_length=100)
     tokens = forms.IntegerField(min_value=0, initial=0)
     cash_amount = forms.DecimalField(label="Cash ($)", min_value=0, decimal_places=2, initial=0)
+
+
+class BehaviorDeductionForm(forms.Form):
+    reason = forms.CharField(max_length=100, label="What happened?")
+    tokens = forms.IntegerField(min_value=1, label="Tokens to remove")
 
 
 class BalanceAdjustmentForm(forms.Form):

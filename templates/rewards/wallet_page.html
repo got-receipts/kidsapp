@@ -39,11 +39,12 @@
       </div>
       <div class="cash-actions">
         <button class="send-action" type="submit" formaction="{% url 'send_family_transfer' %}">Pay Family</button>
-        <button class="request-action" type="submit" formaction="{% url 'request_spending_transfer' %}">Move to Spending</button>
-        <button class="request-action" type="submit" formaction="{% url 'request_conversion' %}">Get Tokens</button>
-        <button class="request-action" type="submit" formaction="{% url 'request_cashout' %}">Cash Request</button>
+        <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_spending_transfer' %}">Move to Spending</button>
+        <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_conversion' %}">Savings to Tokens</button>
+        <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_tokens_to_savings' %}">Tokens to Savings</button>
+        <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_cashout' %}">Cash Request</button>
       </div>
-      <p class="money-boundary">Moving Savings, converting to Tokens, and cash requests wait for Dad's approval. Token conversion uses 10-cent increments.</p>
+      <p class="money-boundary"><strong>Exchange rate: $1.00 = 10 Tokens.</strong> Moving Savings, either conversion direction, and cash requests wait for Dad's approval. Enter dollar amounts in 10-cent increments when converting.</p>
     </form>
   </section>
   <section class="card money-history">

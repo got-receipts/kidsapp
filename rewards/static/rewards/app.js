@@ -128,6 +128,19 @@ document.querySelectorAll("[data-open-review]").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-open-dialog]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const dialog = document.getElementById(button.dataset.openDialog);
+    if (dialog) dialog.showModal();
+  });
+});
+
+document.querySelectorAll("[data-confirm-deduction]").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    if (!window.confirm("Remove these tokens for the recorded behavior reason?")) event.preventDefault();
+  });
+});
+
 document.querySelectorAll("[data-money-pad]").forEach((pad) => {
   const field = pad.querySelector("[data-money-input]");
   const display = pad.querySelector("[data-money-display]");

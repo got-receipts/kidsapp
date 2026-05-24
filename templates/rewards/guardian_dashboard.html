@@ -4,37 +4,169 @@
 {% block content %}
 <main class="shell guardian">
   <header class="topbar">
-    <div class="identity"><span class="avatar guardian-avatar">{{ profile.display_name|slice:":1" }}</span><div><small>Guardian</small><h1>{{ profile.display_name }}</h1></div></div>
+    <div class="identity"><span class="avatar guardian-avatar">{{ profile.display_name|slice:":1" }}</span><div><small>{% if can_manage %}Guardian{% else %}Family Viewer{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
     <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
   <section class="wallet-card guardian-card">
-    <p class="eyebrow">Family control center</p>
-    <h2>Rewards and progress</h2>
-    <p>Dad, Mom, and GG share the same approvals and family ledger.</p>
+    <p class="eyebrow">{% if can_manage %}Family control center{% else %}Family progress view{% endif %}</p>
+    <h2>{% if can_manage %}Rewards and progress{% else %}See their growth and good moments{% endif %}</h2>
+    <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
+    {% if can_manage %}
     <button id="enable-notifications" class="notify-button" type="button" data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on 7:30 PM star reminders</button>
     {% if not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable push notifications.</small>{% endif %}
+    {% endif %}
   </section>
   {% if star_reminder_due %}
     <section class="reminder-callout"><strong>Star check-in time!</strong> It is after 7:30 PM. Still waiting on stars for: {% for child in unstarred %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
   {% endif %}
   <nav class="child-picker" aria-label="Select child">
-    {% for child in children %}<a href="?child={{ child.pk }}" class="{% if child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}</a>{% endfor %}
+    {% for child in children %}<a href="?child={{ child.pk }}" class="{% if child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}{% if child.grounded %} <small>Locked</small>{% endif %}</a>{% endfor %}
   </nav>
   {% if selected %}
     <section class="summary">
-      <h2>{{ selected.display_name }}</h2>
+      <h2>{{ selected.display_name }} {% if selected.grounded %}<span class="badge coral">Grounded Mode</span>{% endif %}</h2>
+      {% if can_manage %}
       <div><strong>{{ selected.wallet.tokens }}</strong><small>tokens</small></div>
       <div><strong>{{ selected.wallet.cash_cents|dollars }}</strong><small>savings</small></div>
       <div><strong>{{ selected.wallet.spending_cents|dollars }}</strong><small>spending</small></div>
+      {% else %}
+      <div><strong>{{ selected.behavior_stars.count }}</strong><small>stars earned</small></div>
+      <div><strong>{{ selected_chores|length }}</strong><small>chores today</small></div>
+      <div><strong>{{ selected_grades|length }}</strong><small>recent grades</small></div>
+      {% endif %}
     </section>
     <section class="grid">
+      {% if can_manage %}
+      <article class="card action-launcher">
+        <div class="card-head"><h2>Guardian Actions</h2><span class="badge gold">Dad &amp; GG</span></div>
+        <p class="control-note">Choose an action for {{ selected.display_name }}. Every balance change is recorded in history.</p>
+        <div class="action-grid">
+          <button class="action-tile coral" type="button" data-open-dialog="action-deduct">Take Points</button>
+          <button class="action-tile" type="button" data-open-dialog="action-award">Give Reward</button>
+          <button class="action-tile coral" type="button" data-open-dialog="action-grounded">{% if selected.grounded %}Lift Grounding{% else %}Grounded Mode{% endif %}</button>
+          <button class="action-tile" type="button" data-open-dialog="action-grade">Add Grade</button>
+          <button class="action-tile" type="button" data-open-dialog="action-chore">Assign Chore</button>
+          <button class="action-tile" type="button" data-open-dialog="action-goal">Add Goal</button>
+          <button class="action-tile" type="button" data-open-dialog="action-schedule">Schedule</button>
+          <button class="action-tile" type="button" data-open-dialog="action-rule">Rules</button>
+          <button class="action-tile" type="button" data-open-dialog="action-store">Store Item</button>
+          {% if dad_controls %}<button class="action-tile gold" type="button" data-open-dialog="action-balance">Balance</button><button class="action-tile gold" type="button" data-open-dialog="action-settings">Settings</button>{% endif %}
+        </div>
+      </article>
+      <dialog class="review-dialog action-dialog" id="action-deduct">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Behavior consequence</p>
+        <h2>Take points from {{ selected.display_name }}</h2>
+        {% if selected.grounded %}
+        <p>Grounded Mode is active, so this child's balance is already frozen. Lift Grounded Mode before changing points.</p>
+        {% else %}
+        <p>This deduction is recorded in account history and Tokens may go below zero.</p>
+        <form class="form" method="post" action="{% url 'guardian_behavior_deduction' %}" data-confirm-deduction>
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ behavior_deduction_form.as_p }}
+          <button class="danger" type="submit">Remove Tokens</button>
+        </form>
+        {% endif %}
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-award">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Celebrate progress</p><h2>Give reward</h2>
+        <form class="form" method="post" action="{% url 'guardian_award' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ award_form.as_p }}
+          <button class="primary">Add award</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-grounded">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Account restriction</p><h2>Grounded Mode</h2>
+        {% if selected.grounded %}
+          <p><strong>{{ selected.display_name }} is currently grounded.</strong> Balances and rewards are locked.</p>
+          {% if selected.grounded_reason %}<p class="lockdown-reason">{{ selected.grounded_reason }}</p>{% endif %}
+          <form method="post" action="{% url 'guardian_lockdown' %}">
+            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="action" value="unlock">
+            <button class="primary" type="submit">Lift Grounded Mode</button>
+          </form>
+        {% else %}
+          <p>Lock wallet visibility, spending, and rewards while chores remain available for verification.</p>
+          <form class="form" method="post" action="{% url 'guardian_lockdown' %}">
+            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="action" value="lock">{{ grounding_form.as_p }}
+            <button class="danger" type="submit">Activate Grounded Mode</button>
+          </form>
+        {% endif %}
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-grade">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">School progress</p><h2>Add grade</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'grade' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ grade_form.as_p }}<button class="primary">Save grade</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-chore">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Daily work</p><h2>Assign chore</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'chore' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ chore_form.as_p }}<button class="primary">Assign chore</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-goal">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Growing skills</p><h2>Add improvement goal</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'goal' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ goal_form.as_p }}<button class="primary">Add goal</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-schedule">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Morning message</p><h2>Add schedule event</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'schedule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}<button class="primary">Add to schedule</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-rule">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Family expectations</p><h2>Add a rule</h2>
+        <h3>For {{ selected.display_name }}</h3>
+        <form class="form" method="post" action="{% url 'guardian_create' 'child_rule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ child_rule_form.as_p }}<button class="primary">Add personal rule</button>
+        </form>
+        <h3 class="dialog-section">For everyone</h3>
+        <form class="form" method="post" action="{% url 'guardian_create' 'house_rule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ house_rule_form.as_p }}<button class="primary">Add house rule</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-store">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Reward store</p><h2>Stock an item</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'item' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ item_form.as_p }}<button class="primary">Add store item</button>
+        </form>
+      </dialog>
+      {% if dad_controls %}
+      <dialog class="review-dialog action-dialog" id="action-balance">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Dad only</p><h2>Balance controls</h2>
+        <p>Add or remove internal savings and spending amounts for corrections or real-world money provided.</p>
+        <form class="form" method="post" action="{% url 'dad_balance_adjustment' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ balance_form.as_p }}<button class="primary">Record balance change</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-settings">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Dad only</p><h2>Google Calendar Settings</h2>
+        <p>Add a public family calendar to the children's daily plans. Events display read-only.</p>
+        <p class="calendar-key-status">Railway API key: <strong>{% if google_api_key_configured %}Configured{% else %}Not configured{% endif %}</strong></p>
+        <form class="form" method="post" action="{% url 'dad_google_calendar_settings' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ google_calendar_form.as_p }}<button class="primary">Save Google Calendar</button>
+        </form>
+        <div class="oauth-note"><strong>Private calendar sign-in</strong><p>Google sign-in requires an OAuth client, consent screen, and callback URL.</p></div>
+      </dialog>
+      {% endif %}
       <article class="card chore-reviews">
         <div class="card-head"><h2>Quest verification</h2><span class="badge waiting">{{ pending_chore_reviews|length }} waiting</span></div>
         <p class="control-note">Tap Review to approve completed work or deny it and apply the listed token penalty.</p>
         {% for entry in pending_chore_reviews %}
           <button class="review-chore-button" type="button" data-open-review="review-{{ entry.pk }}">
             <span><strong>{{ entry.chore.title }}</strong><small>{{ entry.child.display_name }} marked this finished</small></span>
-            <b>Review +{{ entry.chore.token_reward }} t</b>
+            <b>{% if selected.grounded and entry.token_delta %}Frozen{% elif entry.token_delta %}Review +{{ entry.chore.token_reward }} t{% else %}Verify only{% endif %}</b>
           </button>
           <dialog class="review-dialog" id="review-{{ entry.pk }}">
             <form method="dialog" class="dialog-close"><button aria-label="Close review">&times;</button></form>
@@ -42,7 +174,7 @@
             <h2>{{ entry.chore.title }}</h2>
             <p><strong>{{ entry.child.display_name }}</strong> checked this quest as finished.</p>
             {% if entry.chore.instructions %}<p class="review-instructions">{{ entry.chore.instructions }}</p>{% endif %}
-            <div class="review-impact"><strong>Approve</strong><span>Earn +{{ entry.chore.token_reward }} tokens</span><strong>Deny</strong><span>Lose {{ entry.chore.token_reward }} tokens</span></div>
+            <div class="review-impact"><strong>Approve</strong><span>{% if entry.token_delta and entry.child.grounded %}Unlock account to post original reward{% elif entry.token_delta %}Earn +{{ entry.chore.token_reward }} tokens{% else %}Verified; no tokens in Grounded Mode{% endif %}</span><strong>Deny</strong><span>{% if entry.token_delta and not entry.child.grounded %}Lose {{ entry.chore.token_reward }} tokens{% else %}Not verified; no balance change{% endif %}</span></div>
             <div class="review-actions">
               <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action" type="submit">Approve Completed</button></form>
               <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger" type="submit">Deny Chore</button></form>
@@ -55,7 +187,9 @@
         {% for entry in pending %}
           <div class="task">
             <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}Savings {{ entry.cash_delta_cents|dollars }} {% endif %}{% if entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% endif %}</small></div>
-            {% if entry.requires_dad_approval and not dad_controls %}
+            {% if entry.child.grounded %}
+              <span class="badge coral">Locked until lifted</span>
+            {% elif entry.requires_dad_approval and not dad_controls %}
               <span class="badge waiting">Dad review only</span>
             {% else %}
               <div class="buttons">
@@ -66,6 +200,7 @@
           </div>
         {% empty %}<p class="empty">No store or money requests waiting right now.</p>{% endfor %}
       </article>
+      {% endif %}
       <article class="card star-calendar">
         <div class="card-head"><h2>Behavior star calendar</h2><span class="badge gold">1 star = 2 tokens</span></div>
         <div class="month-nav"><a href="?child={{ selected.pk }}&month={{ previous_month }}">&lsaquo;</a><strong>{{ star_month }}</strong><a href="?child={{ selected.pk }}&month={{ next_month }}">&rsaquo;</a></div>
@@ -73,7 +208,7 @@
         <div class="calendar-grid">
           {% for week in star_weeks %}{% for cell in week %}
             {% if cell.in_month %}
-              {% if cell.awardable and not cell.has_star %}
+              {% if cell.awardable and not cell.has_star and not selected.grounded and can_manage %}
                 <form method="post" action="{% url 'award_star' %}">
                   {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="day" value="{{ cell.day|date:'Y-m-d' }}">
                   <button class="calendar-day" aria-label="Award star for {{ cell.day|date:'F j' }}">{{ cell.day.day }}</button>
@@ -84,112 +219,67 @@
             {% else %}<div></div>{% endif %}
           {% endfor %}{% endfor %}
         </div>
-        <p class="calendar-help">Tap a day to award {{ selected.display_name }} a good behavior star.</p>
+        <p class="calendar-help">{% if not can_manage %}Stars earned for good behavior appear here as they are recorded.{% elif selected.grounded %}Stars and token rewards are unavailable during Grounded Mode.{% else %}Tap a day to award {{ selected.display_name }} a good behavior star.{% endif %}</p>
       </article>
       <article class="card">
-        <div class="card-head"><h2>Today's chores</h2><span class="badge gold">Verify work</span></div>
-        <p class="control-note">When a child marks a chore finished, approve verified work. Declining it removes that chore's listed tokens and can create token debt.</p>
+        <div class="card-head"><h2>Today's chores</h2><span class="badge gold">{% if can_manage %}Verify work{% else %}Daily progress{% endif %}</span></div>
+        <p class="control-note">{% if not can_manage %}See which daily chores are in progress and which have been verified complete.{% elif selected.grounded %}Grounded chores are still verified, but no tokens are earned or removed.{% else %}When a child marks a chore finished, approve verified work. Declining it removes that chore's listed tokens and can create token debt.{% endif %}</p>
         {% for chore in selected_chores %}
-          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>{% if chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
+          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">Today's chore rotation has not been created.</p>{% endfor %}
         <h3 class="optional-heading">Bonus morning quest</h3>
         {% for chore in selected_optional_chores %}
-          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }} &middot; before 10 AM</small></div><b>{% if chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
+          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }} &middot; before 10 AM</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">No optional morning quest created.</p>{% endfor %}
       </article>
       <article class="card daily-planner">
-        <div class="card-head"><h2>Schedule ahead</h2><span class="badge">Morning message</span></div>
-        <p class="control-note">{% if google_calendar_enabled %}Shared public Google Calendar events are connected and shown read-only to children.{% else %}Optional Google Calendar display is off until its Railway variables are configured.{% endif %}</p>
+        <div class="card-head"><h2>{% if can_manage %}Schedule ahead{% else %}Upcoming schedule{% endif %}</h2><span class="badge">Morning message</span></div>
+        <p class="control-note">{% if google_calendar_enabled %}Shared public Google Calendar events are connected and shown read-only to children.{% elif can_manage %}Calendar display is off. Dad can add a public calendar in Settings after the Railway API key is configured.{% else %}No shared public calendar is connected right now.{% endif %}</p>
         {% for event in selected_schedule %}
           <div class="planner-row">
             <div><strong>{{ event.day|date:"M j" }}{% if event.start_time %} at {{ event.start_time|time:"g:i A" }}{% endif %} - {{ event.title }}</strong><small>{{ event.details }}</small></div>
-            <form method="post" action="{% url 'guardian_remove' 'schedule' event.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove event">Remove</button></form>
+            {% if can_manage %}<form method="post" action="{% url 'guardian_remove' 'schedule' event.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove event">Remove</button></form>{% endif %}
           </div>
         {% empty %}<p class="empty">No upcoming events in a morning message yet.</p>{% endfor %}
-        <form class="form planner-form" method="post" action="{% url 'guardian_create' 'schedule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}
-          <button class="primary">Add to schedule</button>
-        </form>
       </article>
       <article class="card rules-control">
         <div class="card-head"><h2>{{ selected.display_name }}'s rules</h2><span class="badge">Personal</span></div>
         {% for rule in selected_rules %}
           <div class="planner-row">
             <div><strong>{{ rule.title }}</strong><small>{{ rule.details }}</small></div>
-            <form method="post" action="{% url 'guardian_remove' 'child_rule' rule.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove rule">Remove</button></form>
+            {% if can_manage %}<form method="post" action="{% url 'guardian_remove' 'child_rule' rule.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove rule">Remove</button></form>{% endif %}
           </div>
         {% empty %}<p class="empty">No child-specific rules added.</p>{% endfor %}
-        <form class="form planner-form" method="post" action="{% url 'guardian_create' 'child_rule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ child_rule_form.as_p }}
-          <button class="primary">Add personal rule</button>
-        </form>
       </article>
       <article class="card rules-control house-control">
         <div class="card-head"><h2>House rules</h2><span class="badge gold">Everyone</span></div>
         {% for rule in house_rules %}
           <div class="planner-row">
             <div><strong>{{ rule.title }}</strong><small>{{ rule.details }}</small></div>
-            <form method="post" action="{% url 'guardian_remove' 'house_rule' rule.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" aria-label="Remove house rule">Remove</button></form>
+            {% if can_manage %}<form method="post" action="{% url 'guardian_remove' 'house_rule' rule.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" aria-label="Remove house rule">Remove</button></form>{% endif %}
           </div>
         {% empty %}<p class="empty">Add house rules to every child's morning message.</p>{% endfor %}
-        <form class="form planner-form" method="post" action="{% url 'guardian_create' 'house_rule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ house_rule_form.as_p }}
-          <button class="primary">Add house rule</button>
-        </form>
       </article>
       <article class="card">
-        <h2>Quick award</h2>
-        <form class="form" method="post" action="{% url 'guardian_award' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ award_form.as_p }}
-          <button class="primary">Add award</button>
-        </form>
-      </article>
-      {% if dad_controls %}
-      <article class="card banking-controls">
-        <div class="card-head"><h2>Dad's balance controls</h2><span class="badge coral">Recorded</span></div>
-        <p class="control-note">Add or remove internal savings and spending amounts to correct issues or record money provided outside this app.</p>
-        <form class="form" method="post" action="{% url 'dad_balance_adjustment' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ balance_form.as_p }}
-          <button class="primary">Record balance change</button>
-        </form>
-      </article>
-      {% endif %}
-      <article class="card">
-        <h2>Add grade</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'grade' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ grade_form.as_p }}
-          <button class="primary">Save grade</button>
-        </form>
+        <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
+        {% for grade in selected_grades %}
+          <div class="row"><div><strong>{{ grade.subject }}</strong><small>{{ grade.assignment }}</small></div><b>{{ grade.percent }}%</b></div>
+        {% empty %}<p class="empty">No grades have been added yet.</p>{% endfor %}
       </article>
       <article class="card">
-        <h2>Assign chore</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'chore' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ chore_form.as_p }}
-          <button class="primary">Assign chore</button>
-        </form>
-      </article>
-      <article class="card">
-        <h2>Add improvement goal</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'goal' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ goal_form.as_p }}
-          <button class="primary">Add goal</button>
-        </form>
-      </article>
-      <article class="card">
-        <h2>Stock the store</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'item' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ item_form.as_p }}
-          <button class="primary">Add store item</button>
-        </form>
+        <div class="card-head"><h2>Growth goals</h2><span class="badge">Encouragement</span></div>
+        {% for goal in selected_goals %}
+          <div class="row"><div><strong>{{ goal.title }}</strong><small>{{ goal.encouragement }}</small></div><b>{{ goal.get_status_display }}</b></div>
+        {% empty %}<p class="empty">No growth goals have been added yet.</p>{% endfor %}
       </article>
       <article class="card activity-history">
-        <div class="card-head"><h2>Account history</h2><span class="badge">Ledger</span></div>
+        <div class="card-head"><h2>{% if can_manage %}Account history{% else %}Growth highlights{% endif %}</h2><span class="badge">{% if can_manage %}Ledger{% else %}View only{% endif %}</span></div>
         {% for entry in history %}
           <div class="row">
             <div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; {{ entry.get_status_display }}{% if entry.reviewed_by %} by {{ entry.reviewed_by.display_name }}{% endif %}</small></div>
             <b class="{% if entry.token_delta < 0 or entry.cash_delta_cents < 0 or entry.spending_delta_cents < 0 %}spent{% else %}earned{% endif %}">{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% elif entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% else %}Savings {{ entry.cash_delta_cents|dollars }}{% endif %}</b>
           </div>
-        {% empty %}<p class="empty">Rewards and purchases will appear here.</p>{% endfor %}
+        {% empty %}<p class="empty">{% if can_manage %}Rewards and purchases will appear here.{% else %}Completed milestones will appear here as they are recorded.{% endif %}</p>{% endfor %}
       </article>
     </section>
   {% endif %}

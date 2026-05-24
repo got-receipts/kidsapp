@@ -8,14 +8,19 @@
     <div class="recap-stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
     <p class="eyebrow">Welcome back, {{ profile.display_name }}!</p>
     <h2 id="recap-title">{% if recap_first_visit %}Your adventure begins today!{% else %}Here's what happened while you were away{% endif %}</h2>
-    <div class="recap-wins">
-      <div><strong>{{ recap_star_count }}</strong><span>new stars</span></div>
-      <div><strong>+{{ recap_token_total }}</strong><span>tokens earned</span></div>
-      <div><strong>{{ recap_tasks_left }}</strong><span>quests left</span></div>
-    </div>
-    {% if recap_purchases %}<p class="recap-note">You unlocked {{ recap_purchases }} store reward{{ recap_purchases|pluralize }} since your last check-in!</p>{% endif %}
-    {% if recap_token_loss %}<p class="recap-penalty">{{ recap_token_loss }} token{{ recap_token_loss|pluralize }} removed because a checked quest was not verified.</p>{% endif %}
-    {% if next_prize %}
+    {% if profile.grounded %}
+      <p class="recap-penalty">Grounded Mode is active. Your balances and rewards are locked while you focus on today's chores.</p>
+      <div class="recap-wins"><div><strong>{{ recap_tasks_left }}</strong><span>quests left</span></div></div>
+    {% else %}
+      <div class="recap-wins">
+        <div><strong>{{ recap_star_count }}</strong><span>new stars</span></div>
+        <div><strong>+{{ recap_token_total }}</strong><span>tokens earned</span></div>
+        <div><strong>{{ recap_tasks_left }}</strong><span>quests left</span></div>
+      </div>
+      {% if recap_purchases %}<p class="recap-note">You unlocked {{ recap_purchases }} store reward{{ recap_purchases|pluralize }} since your last check-in!</p>{% endif %}
+      {% if recap_token_loss %}<p class="recap-penalty">{{ recap_token_loss }} token{{ recap_token_loss|pluralize }} removed since your last check-in. A guardian can talk with you about why.</p>{% endif %}
+    {% endif %}
+    {% if next_prize and not profile.grounded %}
       <div class="next-prize"><span>Next adventure goal</span><strong>{{ next_prize.name }}</strong><small>Earn {{ tokens_to_next_prize }} more tokens to request it.</small></div>
     {% endif %}
     <div class="morning-briefing">
@@ -44,24 +49,38 @@
     <div class="identity"><span class="avatar">{{ profile.display_name|slice:":1" }}</span><div><small>Hello,</small><h1>{{ profile.display_name }}</h1></div></div>
     <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
+  {% if profile.grounded %}
+    <section class="lockdown-child" role="status">
+      <strong>Grounded Mode</strong>
+      <p>Your wallet and rewards are locked for now. Complete your chores and a guardian will verify your work without adding tokens.</p>
+      {% if profile.grounded_reason %}<small>{{ profile.grounded_reason }}</small>{% endif %}
+    </section>
+  {% endif %}
   <section class="wallet-card kid-hero">
     <p class="eyebrow">My adventure board</p>
     <h2>Let's shine today, {{ profile.display_name }}!</h2>
-    <p class="hero-copy">Finish quests, earn treasure, and fill your sky with stars.</p>
-    <div class="balances">
+    {% if profile.grounded %}
+      <p class="hero-copy">Today is about completing your chores and following your family plan.</p>
+      <div class="vault-locked"><strong>Balances locked</strong><span>Available again when Grounded Mode is lifted</span></div>
+    {% else %}
+      <p class="hero-copy">Finish quests, earn treasure, and fill your sky with stars.</p>
+      <div class="balances">
       <div class="treasure"><strong>{{ wallet.tokens }}</strong><span>Tokens</span></div>
       <div class="piggy"><strong>{{ wallet.cash_cents|dollars }}</strong><span>Savings</span></div>
       <div class="spending"><strong>{{ wallet.spending_cents|dollars }}</strong><span>Spending</span></div>
       <div class="star-balance"><strong>{{ star_count }}</strong><span>Stars</span></div>
-    </div>
+      </div>
+    {% endif %}
   </section>
   <nav class="kid-map" aria-label="Adventure board sections">
     <a class="map-chores" href="#chores"><b>&#10003;</b><strong>Quests</strong><small>{{ chore_verified }}/{{ chore_total }} verified</small></a>
+    {% if not profile.grounded %}
     <a class="map-stars" href="#stars"><b>&#9733;</b><strong>Stars</strong><small>{{ star_count }} earned</small></a>
     <a class="map-school" href="#school"><b>A+</b><strong>School</strong><small>My grades</small></a>
     <a class="map-store" href="#store"><b>&#127873;</b><strong>Store</strong><small>Rewards</small></a>
     <a class="map-savings" href="#savings-goal"><b>$</b><strong>My Goal</strong><small>{% if savings_goal %}{{ savings_goal.percent }}% saved{% else %}Set a goal{% endif %}</small></a>
     <a class="map-wallet" href="{% url 'wallet_page' %}"><b>&#8644;</b><strong>Wallet</strong><small>Tokens & money</small></a>
+    {% endif %}
     <a class="map-plan" href="#today-plan"><b>&#9788;</b><strong>Today</strong><small>Plan & rules</small></a>
   </nav>
   <section id="today-plan" class="card day-plan-card">
@@ -91,53 +110,54 @@
       </div>
     </div>
   </section>
-  <section id="school" class="card">
+  {% if not profile.grounded %}<section id="school" class="card">
     <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
     {% for grade in grades %}
       <div class="row"><div><strong>{{ grade.subject }}</strong><small>{{ grade.assignment }}</small></div><b>{{ grade.percent }}%</b></div>
     {% empty %}<p class="empty">Your grades will show here after a guardian adds them.</p>{% endfor %}
-  </section>
+  </section>{% endif %}
   <section id="chores" class="card quest-board">
     <div class="card-head"><h2>Today's Quests</h2><span class="badge gold">Finish by 7 PM</span></div>
-    <p class="deadline"><span>Complete your chores before <strong>7:00 PM</strong> to earn tokens.</span><strong class="quest-countdown" data-quest-deadline="{{ quest_deadline|date:'c' }}">Counting down...</strong></p>
+    <p class="deadline"><span>Complete your chores before <strong>7:00 PM</strong>{% if profile.grounded %} for guardian verification.{% else %} to earn tokens.{% endif %}</span><strong class="quest-countdown" data-quest-deadline="{{ quest_deadline|date:'c' }}">Counting down...</strong></p>
     <div class="quest-progress">
       <div class="progress-label"><strong>{{ chore_completed }} of {{ chore_total }} checked finished</strong><span>{{ chore_percent }}%</span></div>
       <div class="progress-track"><span style="width: {{ chore_percent }}%"></span></div>
       <div class="progress-label verified-label"><strong>{{ chore_verified }} of {{ chore_total }} guardian verified</strong><span>{{ chore_verified_percent }}%</span></div>
       <div class="progress-track verified-track"><span style="width: {{ chore_verified_percent }}%"></span></div>
     </div>
-    <p class="verification-warning">Finished quests wait for guardian verification. If a checked quest is not verified, its listed token amount is removed and your Tokens may go below zero.</p>
+    <p class="verification-warning">{% if profile.grounded %}Finished quests wait for guardian verification, but Grounded Mode adds or removes no tokens.{% else %}Finished quests wait for guardian verification. If a checked quest is not verified, its listed token amount is removed and your Tokens may go below zero.{% endif %}</p>
     {% for chore in chores %}
       <div class="task quest {% if chore.status == 'completed' %}done{% elif chore.status == 'submitted' %}pending{% elif chore.status == 'in_progress' %}started{% elif chore.status == 'late' or chore.status == 'not_verified' %}late{% endif %}">
-        <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" or chore.status == "not_verified" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; +{{ chore.token_reward }} tokens</small></div></div>
+        <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" or chore.status == "not_verified" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; {% if profile.grounded %}Verification only{% else %}+{{ chore.token_reward }} tokens{% endif %}</small></div></div>
         {% if chore.status == "open" %}
           <form action="{% url 'start_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button">Start</button></form>
         {% elif chore.status == "in_progress" %}
           <form action="{% url 'submit_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button finish">Finished!</button></form>
         {% elif chore.status == "submitted" %}<span class="badge waiting">Verify me</span>
         {% elif chore.status == "completed" %}<span class="badge">Verified!</span>
-        {% elif chore.status == "not_verified" %}<span class="badge coral">Points lost</span>
+        {% elif chore.status == "not_verified" %}<span class="badge coral">{% if profile.grounded %}Not verified{% else %}Points lost{% endif %}</span>
         {% else %}<span class="badge coral">After 7 PM</span>{% endif %}
       </div>
     {% empty %}<p class="empty">No chores due right now.</p>{% endfor %}
     <section class="bonus-quest-board">
-      <div class="card-head"><h3>Bonus Morning Quest</h3><span class="badge gold">Optional +4 tokens</span></div>
-      <p class="deadline morning-deadline"><span>Make your bed before <strong>10:00 AM</strong> for bonus tokens.</span><strong class="quest-countdown" data-quest-deadline="{{ morning_deadline|date:'c' }}" data-expired-message="Morning bonus expired" data-disable-quest-buttons="true">Counting down...</strong></p>
+      <div class="card-head"><h3>Bonus Morning Quest</h3><span class="badge gold">{% if profile.grounded %}Optional chore{% else %}Optional +4 tokens{% endif %}</span></div>
+      <p class="deadline morning-deadline"><span>Make your bed before <strong>10:00 AM</strong>{% if profile.grounded %} for verification.{% else %} for bonus tokens.{% endif %}</span><strong class="quest-countdown" data-quest-deadline="{{ morning_deadline|date:'c' }}" data-expired-message="Morning bonus expired" data-disable-quest-buttons="true">Counting down...</strong></p>
       {% for chore in optional_chores %}
         <div class="task quest {% if chore.status == 'completed' %}done{% elif chore.status == 'submitted' %}pending{% elif chore.status == 'in_progress' %}started{% elif chore.status == 'late' or chore.status == 'not_verified' %}late{% endif %}">
-          <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" or chore.status == "not_verified" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; +{{ chore.token_reward }} tokens</small></div></div>
+          <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" or chore.status == "not_verified" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; {% if profile.grounded %}Verification only{% else %}+{{ chore.token_reward }} tokens{% endif %}</small></div></div>
           {% if chore.status == "open" %}
             <form action="{% url 'start_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button">Start</button></form>
           {% elif chore.status == "in_progress" %}
             <form action="{% url 'submit_chore' chore.pk %}" method="post">{% csrf_token %}<button class="quest-button finish">Finished!</button></form>
           {% elif chore.status == "submitted" %}<span class="badge waiting">Verify me</span>
           {% elif chore.status == "completed" %}<span class="badge">Verified!</span>
-          {% elif chore.status == "not_verified" %}<span class="badge coral">Points lost</span>
+          {% elif chore.status == "not_verified" %}<span class="badge coral">{% if profile.grounded %}Not verified{% else %}Points lost{% endif %}</span>
           {% else %}<span class="badge coral">Expired</span>{% endif %}
         </div>
       {% endfor %}
     </section>
   </section>
+  {% if not profile.grounded %}
   <section id="stars" class="card star-card kid-feature">
     <div class="card-head"><h2>Good behavior stars</h2><span class="badge gold">+2 tokens</span></div>
     <div class="star-hero"><span class="{% if star_today %}lit{% endif %}">&#9733;</span><div><strong>{% if star_today %}Today's star is shining!{% else %}Shine bright today!{% endif %}</strong><small>Kind listening and great choices can earn today's star.</small></div></div>
@@ -196,11 +216,16 @@
       {% empty %}<p class="empty">The family store is being stocked.</p>{% endfor %}
     </div>
   </section>
+  {% endif %}
   <nav class="kid-dock" aria-label="Quick navigation">
     <a href="#today-plan"><span>&#9788;</span>Today</a>
+    {% if not profile.grounded %}
     <a href="#stars"><span>&#9733;</span>Stars</a>
     <a href="#store"><span>&#127873;</span>Store</a>
     <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
+    {% else %}
+    <a href="#chores"><span>&#10003;</span>Quests</a>
+    {% endif %}
   </nav>
 </main>
 {% endblock %}

@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from .models import Chore, Profile
+from .models import Chore, FamilySettings, Profile
 
 
 CHORE_LIBRARY = [
@@ -58,7 +58,11 @@ def ensure_today_chores():
 
 
 def public_google_calendar_events(day):
-    calendar_id = settings.GOOGLE_CALENDAR_ID
+    family_settings = FamilySettings.objects.first()
+    if family_settings is None:
+        calendar_id = settings.GOOGLE_CALENDAR_ID
+    else:
+        calendar_id = family_settings.google_calendar_id if family_settings.google_calendar_enabled else ""
     api_key = settings.GOOGLE_CALENDAR_API_KEY
     if not calendar_id or not api_key:
         return []

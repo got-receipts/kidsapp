@@ -10,12 +10,17 @@ class Profile(models.Model):
     class Role(models.TextChoices):
         CHILD = "child", "Child"
         GUARDIAN = "guardian", "Guardian"
+        VIEWER = "viewer", "Family viewer"
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     display_name = models.CharField(max_length=40)
     role = models.CharField(max_length=10, choices=Role.choices)
     last_recap_at = models.DateTimeField(null=True, blank=True)
     last_recap_day = models.DateField(null=True, blank=True)
+    grounded = models.BooleanField(default=False)
+    grounded_reason = models.CharField(max_length=180, blank=True)
+    grounded_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="grounded_children")
+    grounded_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.display_name
@@ -23,6 +28,10 @@ class Profile(models.Model):
     @property
     def is_guardian(self):
         return self.role == self.Role.GUARDIAN
+
+    @property
+    def can_view_family(self):
+        return self.role in [self.Role.GUARDIAN, self.Role.VIEWER]
 
 
 class Wallet(models.Model):
@@ -107,6 +116,19 @@ class HouseRule(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class FamilySettings(models.Model):
+    google_calendar_id = models.CharField(max_length=255, blank=True)
+    google_calendar_enabled = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="family_settings_updates")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "family settings"
+
+    def __str__(self):
+        return "Family settings"
 
 
 class Grade(models.Model):
@@ -206,6 +228,7 @@ class LedgerRequest(models.Model):
         TRANSFER = "transfer", "Move to spending"
         BALANCE = "balance", "Balance correction"
         PENALTY = "penalty", "Quest not verified"
+        BEHAVIOR = "behavior", "Behavior deduction"
         GIFT = "gift", "Family transfer"
 
     class Status(models.TextChoices):
@@ -248,8 +271,11 @@ class LedgerRequest(models.Model):
             request = LedgerRequest.objects.select_for_update().get(pk=self.pk)
             if request.status != self.Status.PENDING:
                 return
+            changes_balance = bool(request.token_delta or request.cash_delta_cents or request.spending_delta_cents)
+            if request.child.grounded and changes_balance and request.kind != self.Kind.BALANCE:
+                raise ValidationError("This account is in Grounded Mode. Unlock it before posting rewards or spending.")
             wallet = Wallet.objects.select_for_update().get(child=request.child)
-            if request.kind != self.Kind.PENALTY and wallet.tokens + request.token_delta < 0:
+            if request.kind not in [self.Kind.PENALTY, self.Kind.BEHAVIOR] and wallet.tokens + request.token_delta < 0:
                 raise ValidationError("Not enough tokens for this request.")
             if wallet.cash_cents + request.cash_delta_cents < 0:
                 raise ValidationError("Not enough cash balance for this request.")
@@ -287,7 +313,7 @@ class LedgerRequest(models.Model):
             if request.chore:
                 request.chore.status = Chore.Status.NOT_VERIFIED
                 request.chore.save(update_fields=["status"])
-                if request.chore.token_reward:
+                if request.chore.token_reward and request.token_delta > 0 and not request.child.grounded:
                     Wallet.objects.filter(child=request.child).update(tokens=F("tokens") - request.chore.token_reward)
                     LedgerRequest.objects.create(
                         child=request.child,

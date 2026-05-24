@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import BehaviorStar, ChildRule, Chore, DailyScheduleEvent, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
+from .models import BehaviorStar, ChildRule, Chore, DailyScheduleEvent, FamilySettings, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
 from .services import ensure_today_chores
 
 
@@ -119,7 +119,7 @@ class LedgerApprovalTests(TestCase):
         self.client.force_login(self.child.user)
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(response.context["recap_token_loss"], 25)
-        self.assertContains(response, "removed because a checked quest was not verified")
+        self.assertContains(response, "removed since your last check-in")
 
     def test_guardian_sees_review_popup_for_submitted_chore(self):
         chore = Chore.objects.create(child=self.child, title="Make your bed", token_reward=4, status=Chore.Status.SUBMITTED)
@@ -139,6 +139,17 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Review +4 t")
         self.assertContains(response, "Approve Completed")
         self.assertContains(response, "Deny Chore")
+
+    def test_guardian_actions_use_popup_interfaces(self):
+        self.client.force_login(self.guardian.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertContains(response, "Guardian Actions")
+        self.assertContains(response, 'data-open-dialog="action-deduct"')
+        self.assertContains(response, "Take Points")
+        self.assertContains(response, "data-confirm-deduction")
+        self.assertContains(response, 'data-open-dialog="action-chore"')
 
     def test_optional_make_bed_quest_cannot_earn_credit_after_ten_am(self):
         chore = Chore.objects.create(
@@ -175,9 +186,9 @@ class LedgerApprovalTests(TestCase):
         self.client.post(reverse("request_spending_transfer"), {"cash_amount": "2.00"})
         entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.TRANSFER)
 
-        mom_user = User.objects.create_user(username="mom", password="test")
-        Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.GUARDIAN)
-        self.client.force_login(mom_user)
+        gg_user = User.objects.create_user(username="gg", password="test")
+        Profile.objects.create(user=gg_user, display_name="GG", role=Profile.Role.GUARDIAN)
+        self.client.force_login(gg_user)
         self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
         entry.refresh_from_db()
         self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
@@ -215,9 +226,9 @@ class LedgerApprovalTests(TestCase):
             token_delta=20,
             cash_delta_cents=-200,
         )
-        mom_user = User.objects.create_user(username="mom", password="test")
-        Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.GUARDIAN)
-        self.client.force_login(mom_user)
+        gg_user = User.objects.create_user(username="gg", password="test")
+        Profile.objects.create(user=gg_user, display_name="GG", role=Profile.Role.GUARDIAN)
+        self.client.force_login(gg_user)
 
         self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
 
@@ -237,6 +248,8 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Tokens &amp; Money")
         self.assertContains(response, "data-money-pad")
         self.assertContains(response, "Pay Family")
+        self.assertContains(response, "Savings to Tokens")
+        self.assertContains(response, "Tokens to Savings")
         self.assertContains(response, "Astoria")
 
         self.client.force_login(self.guardian.user)
@@ -256,6 +269,27 @@ class LedgerApprovalTests(TestCase):
         self.wallet.refresh_from_db()
         self.assertEqual(self.wallet.tokens, 20)
         self.assertEqual(self.wallet.cash_cents, 500)
+
+    def test_child_can_request_tokens_to_savings_conversion(self):
+        self.client.force_login(self.child.user)
+
+        response = self.client.post(reverse("request_tokens_to_savings"), {"cash_amount": "1.00"})
+
+        entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.CONVERT)
+        self.assertRedirects(response, reverse("wallet_page"))
+        self.assertEqual(entry.token_delta, -10)
+        self.assertEqual(entry.cash_delta_cents, 100)
+        self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertEqual(self.wallet.cash_cents, 500)
+
+    def test_child_cannot_request_tokens_to_savings_above_token_balance(self):
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("request_tokens_to_savings"), {"cash_amount": "3.00"})
+
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.CONVERT).exists())
 
     def test_child_can_send_spending_to_another_child_with_history_for_both(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
@@ -386,6 +420,150 @@ class LedgerApprovalTests(TestCase):
 
         rule.refresh_from_db()
         self.assertFalse(rule.active)
+
+    def test_grounded_mode_hides_child_wallet_and_verifies_chores_without_rewards(self):
+        chore = Chore.objects.create(child=self.child, title="Put away backpack", token_reward=4)
+        self.client.force_login(self.guardian.user)
+        self.client.post(
+            reverse("guardian_lockdown"),
+            {"child_id": self.child.pk, "action": "lock", "reason": "Focus on chores today."},
+        )
+        self.child.refresh_from_db()
+        self.assertTrue(self.child.grounded)
+
+        self.client.force_login(self.child.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Balances locked")
+        self.assertNotContains(dashboard, reverse("wallet_page"))
+        self.assertRedirects(self.client.get(reverse("wallet_page")), reverse("dashboard"))
+        self.client.post(reverse("submit_chore", args=[chore.pk]))
+        entry = LedgerRequest.objects.get(chore=chore)
+        self.assertEqual(entry.token_delta, 0)
+
+        self.client.force_login(self.guardian.user)
+        self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
+        self.wallet.refresh_from_db()
+        chore.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertEqual(chore.status, Chore.Status.COMPLETED)
+
+    def test_grounded_mode_blocks_rewards_and_money_changes_until_unlocked(self):
+        self.child.grounded = True
+        self.child.save(update_fields=["grounded"])
+        entry = LedgerRequest.objects.create(
+            child=self.child,
+            requested_by=self.child,
+            kind=LedgerRequest.Kind.CONVERT,
+            description="Frozen conversion",
+            token_delta=10,
+            cash_delta_cents=-100,
+        )
+        self.client.force_login(self.guardian.user)
+
+        self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
+        self.client.post(reverse("award_star"), {"child_id": self.child.pk, "day": timezone.localdate().isoformat()})
+
+        entry.refresh_from_db()
+        self.wallet.refresh_from_db()
+        self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertFalse(BehaviorStar.objects.filter(child=self.child).exists())
+
+    def test_gg_can_remove_behavior_tokens_and_token_balance_may_go_negative(self):
+        gg_user = User.objects.create_user(username="gg", password="test")
+        gg = Profile.objects.create(user=gg_user, display_name="GG", role=Profile.Role.GUARDIAN)
+        self.client.force_login(gg.user)
+
+        response = self.client.post(
+            reverse("guardian_behavior_deduction"),
+            {"child_id": self.child.pk, "reason": "Unkind words", "tokens": "25"},
+        )
+
+        self.assertRedirects(response, f"/?child={self.child.pk}")
+        self.wallet.refresh_from_db()
+        entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.BEHAVIOR)
+        self.assertEqual(self.wallet.tokens, -5)
+        self.assertEqual(entry.token_delta, -25)
+        self.assertEqual(entry.status, LedgerRequest.Status.APPROVED)
+        self.assertEqual(entry.reviewed_by, gg)
+
+    def test_behavior_deduction_is_blocked_during_grounded_mode(self):
+        self.child.grounded = True
+        self.child.save(update_fields=["grounded"])
+        self.client.force_login(self.guardian.user)
+
+        self.client.post(
+            reverse("guardian_behavior_deduction"),
+            {"child_id": self.child.pk, "reason": "Test deduction", "tokens": "3"},
+        )
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.BEHAVIOR).exists())
+
+    def test_only_dad_can_save_google_calendar_settings(self):
+        self.client.force_login(self.guardian.user)
+        self.client.post(
+            reverse("dad_google_calendar_settings"),
+            {"child_id": self.child.pk, "google_calendar_enabled": "on", "google_calendar_id": "family@group.calendar.google.com"},
+        )
+        settings_record = FamilySettings.objects.get()
+        self.assertTrue(settings_record.google_calendar_enabled)
+        self.assertEqual(settings_record.google_calendar_id, "family@group.calendar.google.com")
+
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        self.client.force_login(mom.user)
+        self.client.post(
+            reverse("dad_google_calendar_settings"),
+            {"child_id": self.child.pk, "google_calendar_enabled": "on", "google_calendar_id": "changed@calendar.google.com"},
+        )
+        settings_record.refresh_from_db()
+        self.assertEqual(settings_record.google_calendar_id, "family@group.calendar.google.com")
+
+    def test_mom_viewer_sees_progress_without_controls_or_balances(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        Chore.objects.create(child=self.child, title="Clean your room", status=Chore.Status.COMPLETED, due_date=timezone.localdate())
+        self.client.force_login(mom.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertContains(response, "Family Viewer")
+        self.assertContains(response, "School grades")
+        self.assertContains(response, "Today's chores")
+        self.assertContains(response, "Behavior star calendar")
+        self.assertContains(response, "Growth goals")
+        self.assertNotContains(response, "Take Points")
+        self.assertNotContains(response, "savings")
+        self.assertNotContains(response, "Activate Grounded Mode")
+        self.assertNotContains(response, "Approve Completed")
+        self.assertNotContains(response, "Add grade")
+        self.assertNotContains(response, "Add award")
+
+    def test_mom_viewer_cannot_post_guardian_changes(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        chore = Chore.objects.create(child=self.child, title="Read together", due_date=timezone.localdate())
+        self.client.force_login(mom.user)
+
+        self.client.post(reverse("guardian_lockdown"), {"child_id": self.child.pk, "action": "lock"})
+        self.client.post(
+            reverse("guardian_create", args=["grade"]),
+            {"child_id": self.child.pk, "subject": "Math", "assignment": "Quiz", "score": "95", "maximum_score": "100"},
+        )
+        self.client.post(reverse("award_star"), {"child_id": self.child.pk, "day": timezone.localdate().isoformat()})
+        self.client.post(reverse("guardian_behavior_deduction"), {"child_id": self.child.pk, "reason": "No", "tokens": "4"})
+        self.client.post(reverse("start_chore", args=[chore.pk]))
+
+        self.child.refresh_from_db()
+        chore.refresh_from_db()
+        self.assertFalse(self.child.grounded)
+        self.assertFalse(self.child.grades.exists())
+        self.assertFalse(BehaviorStar.objects.filter(child=self.child).exists())
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.BEHAVIOR).exists())
+        self.assertEqual(chore.status, Chore.Status.OPEN)
+        self.assertRedirects(self.client.get(reverse("wallet_page")), reverse("dashboard"))
 
     def test_child_can_create_savings_goal_and_progress_uses_savings_balance(self):
         self.client.force_login(self.child.user)

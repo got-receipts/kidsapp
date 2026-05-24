@@ -8,7 +8,7 @@ from rewards.services import ensure_today_chores
 
 
 class Command(BaseCommand):
-    help = "Create the initial Family Circle child and guardian accounts."
+    help = "Create the initial Family Circle child, guardian, and family-viewer accounts."
 
     def add_arguments(self, parser):
         parser.add_argument("--dev", action="store_true", help="Use development-only starter passwords.")
@@ -19,7 +19,7 @@ class Command(BaseCommand):
             ("astoria", "Astoria", Profile.Role.CHILD, "ASTORIA_PASSWORD", "INITIAL_CHILD_PASSWORD"),
             ("saphira", "Saphira", Profile.Role.CHILD, "SAPHIRA_PASSWORD", "INITIAL_CHILD_PASSWORD"),
             ("dad", "Dad", Profile.Role.GUARDIAN, "DAD_PASSWORD", "INITIAL_GUARDIAN_PASSWORD"),
-            ("mom", "Mom", Profile.Role.GUARDIAN, "MOM_PASSWORD", "INITIAL_GUARDIAN_PASSWORD"),
+            ("mom", "Mom", Profile.Role.VIEWER, "MOM_PASSWORD", "INITIAL_GUARDIAN_PASSWORD"),
             ("gg", "GG", Profile.Role.GUARDIAN, "GG_PASSWORD", "INITIAL_GUARDIAN_PASSWORD"),
         ]
         missing_new_password = False
@@ -53,7 +53,7 @@ class Command(BaseCommand):
     def _starter_content(self, children):
         house_rules = [
             ("Finish chores on time", "Complete daily chores before 7:00 PM to earn credit."),
-            ("Listen to directions", "Follow directions from Dad, Mom, or GG for the day."),
+            ("Listen to directions", "Follow directions from Dad or GG for the day."),
             ("Use kindness", "Speak kindly and make safe, caring choices."),
         ]
         for title, details in house_rules:

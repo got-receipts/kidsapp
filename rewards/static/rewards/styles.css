@@ -601,6 +601,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 16px;
 }
 .cash-actions .request-action { background: #222; color: #fff; }
+.cash-actions .convert-action { background: #14351c; }
 .money-boundary {
   max-width: 410px;
   margin: 16px auto 0;
@@ -608,6 +609,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 11px;
   line-height: 1.45;
 }
+.money-boundary strong { display: block; margin-bottom: 4px; color: #fff; }
 [data-theme="dark"] .pay-screen { background: #2db83f; }
 .day-plan-card {
   overflow: hidden;
@@ -871,6 +873,25 @@ a { color: inherit; text-decoration: none; }
 .summary small { font-size: 11px; }
 .buttons { display: flex; gap: 5px; }
 .approvals, .chore-reviews { grid-column: 1 / -1; }
+.action-launcher { grid-column: 1 / -1; border: 2px solid rgb(124 150 236 / 23%); }
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+.action-tile {
+  min-height: 49px;
+  padding: 9px 7px;
+  border-radius: 13px;
+  background: var(--mint-pale);
+  color: #256a56;
+  font-size: 12px;
+  font-weight: bold;
+}
+.action-tile.coral { background: var(--red-pale); color: #9a493b; }
+.action-tile.gold { background: #fff0cf; color: #8c5d21; }
+[data-theme="dark"] .action-tile.coral { color: #ffb3aa; }
 .review-chore-button {
   display: flex;
   align-items: center;
@@ -910,6 +931,14 @@ a { color: inherit; text-decoration: none; }
 }
 .review-dialog h2 { margin: 7px 0 10px; font-size: 24px; }
 .review-dialog > p:not(.eyebrow) { margin-bottom: 12px; color: var(--muted); line-height: 1.4; }
+.action-dialog { max-height: min(84vh, 690px); overflow-y: auto; }
+.action-dialog .form { margin-top: 14px; }
+.action-dialog .form button { width: 100%; }
+.action-dialog h3 { margin: 17px 0 8px; font-size: 15px; }
+.action-dialog .dialog-section {
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
 .dialog-close {
   position: absolute;
   top: 11px;
@@ -1040,7 +1069,55 @@ button.calendar-day:active { transform: scale(.93); }
   font-weight: bold;
 }
 [data-theme="dark"] .remove-button { color: #ffb3aa; }
-.banking-controls { border: 2px solid rgb(246 198 103 / 28%); }
+.child-picker small { color: var(--red); font-size: 10px; }
+.lockdown-control { border: 2px solid rgb(205 102 87 / 22%); }
+.lockdown-control.active { border-color: rgb(205 102 87 / 55%); }
+.lockdown-reason {
+  margin: 12px 0;
+  padding: 11px;
+  border-radius: 12px;
+  background: var(--red-pale);
+  font-weight: bold;
+}
+.integration-settings { border: 2px solid rgb(124 150 236 / 24%); }
+.integration-settings h3 { margin: 12px 0 7px; }
+.calendar-key-status {
+  margin: 12px 0;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: var(--surface-soft);
+  font-size: 13px;
+}
+.oauth-note {
+  margin-top: 13px;
+  padding: 12px;
+  border-radius: 13px;
+  background: var(--school);
+  font-size: 13px;
+}
+.oauth-note p { margin: 5px 0 0; color: var(--muted); }
+.lockdown-child {
+  margin-bottom: 14px;
+  padding: 16px;
+  border: 2px solid rgb(205 102 87 / 42%);
+  border-radius: 19px;
+  background: var(--red-pale);
+}
+.lockdown-child strong { display: block; color: var(--red); font-size: 20px; }
+.lockdown-child p { margin: 6px 0; line-height: 1.4; }
+.lockdown-child small { color: var(--muted); font-weight: bold; }
+.vault-locked {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+  padding: 22px 13px;
+  border: 1px dashed rgb(255 255 255 / 33%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 7%);
+  text-align: center;
+}
+.vault-locked strong { color: #fff; font-size: 23px; }
+.vault-locked span { color: #d0d8e0; font-size: 12px; }
 .earned { color: #267157; }
 .spent { color: var(--red); }
 .kid-dock {
@@ -1260,6 +1337,7 @@ button.calendar-day:active { transform: scale(.93); }
 @media (min-width: 640px) {
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
   .grid .card { margin: 0; }
+  .action-grid { grid-template-columns: repeat(5, 1fr); }
   .split { grid-template-columns: 1fr 1fr; }
   .kid-map { grid-template-columns: repeat(4, 1fr); }
   .kid-map a { grid-template-columns: 1fr; grid-template-rows: 52px auto auto; justify-items: center; text-align: center; }
