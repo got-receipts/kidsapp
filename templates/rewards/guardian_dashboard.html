@@ -1,0 +1,75 @@
+{% extends "rewards/base.html" %}
+{% load rewards_tags %}
+{% block title %}{{ profile.display_name }} | Family Circle{% endblock %}
+{% block content %}
+<main class="shell guardian">
+  <header class="topbar">
+    <div class="identity"><span class="avatar guardian-avatar">{{ profile.display_name|slice:":1" }}</span><div><small>Guardian</small><h1>{{ profile.display_name }}</h1></div></div>
+    <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form>
+  </header>
+  <section class="wallet-card guardian-card">
+    <p class="eyebrow">Family control center</p>
+    <h2>Rewards and progress</h2>
+    <p>Dad, Mom, and GG share the same approvals and family ledger.</p>
+  </section>
+  <nav class="child-picker" aria-label="Select child">
+    {% for child in children %}<a href="?child={{ child.pk }}" class="{% if child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}</a>{% endfor %}
+  </nav>
+  {% if selected %}
+    <section class="summary">
+      <h2>{{ selected.display_name }}</h2>
+      <div><strong>{{ selected.wallet.tokens }}</strong><small>tokens</small></div>
+      <div><strong>{{ selected.wallet.cash_cents|dollars }}</strong><small>cash</small></div>
+    </section>
+    <section class="grid">
+      <article class="card approvals">
+        <div class="card-head"><h2>Waiting for approval</h2><span class="badge waiting">{{ pending|length }}</span></div>
+        {% for entry in pending %}
+          <div class="task">
+            <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}{{ entry.cash_delta_cents|dollars }}{% endif %}</small></div>
+            <div class="buttons">
+              <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action">Approve</button></form>
+              <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger">Decline</button></form>
+            </div>
+          </div>
+        {% empty %}<p class="empty">Nothing waiting right now.</p>{% endfor %}
+      </article>
+      <article class="card">
+        <h2>Quick award</h2>
+        <form class="form" method="post" action="{% url 'guardian_award' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ award_form.as_p }}
+          <button class="primary">Add award</button>
+        </form>
+      </article>
+      <article class="card">
+        <h2>Add grade</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'grade' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ grade_form.as_p }}
+          <button class="primary">Save grade</button>
+        </form>
+      </article>
+      <article class="card">
+        <h2>Assign chore</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'chore' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ chore_form.as_p }}
+          <button class="primary">Assign chore</button>
+        </form>
+      </article>
+      <article class="card">
+        <h2>Add improvement goal</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'goal' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ goal_form.as_p }}
+          <button class="primary">Add goal</button>
+        </form>
+      </article>
+      <article class="card">
+        <h2>Stock the store</h2>
+        <form class="form" method="post" action="{% url 'guardian_create' 'item' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ item_form.as_p }}
+          <button class="primary">Add store item</button>
+        </form>
+      </article>
+    </section>
+  {% endif %}
+</main>
+{% endblock %}

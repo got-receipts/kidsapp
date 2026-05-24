@@ -1,0 +1,75 @@
+{% extends "rewards/base.html" %}
+{% load rewards_tags %}
+{% block title %}{{ profile.display_name }} | Family Circle{% endblock %}
+{% block content %}
+<main class="shell">
+  <header class="topbar">
+    <div class="identity"><span class="avatar">{{ profile.display_name|slice:":1" }}</span><div><small>Hello,</small><h1>{{ profile.display_name }}</h1></div></div>
+    <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form>
+  </header>
+  <section class="wallet-card">
+    <p class="eyebrow">My wallet</p>
+    <h2>Keep earning, {{ profile.display_name }}!</h2>
+    <div class="balances">
+      <div><strong>{{ wallet.tokens }}</strong><span>tokens</span></div>
+      <div><strong>{{ wallet.cash_cents|dollars }}</strong><span>cash balance</span></div>
+    </div>
+  </section>
+  <nav class="tabs" aria-label="Dashboard sections">
+    <a href="#school">School</a><a href="#chores">Chores</a><a href="#goals">Improve</a><a href="#store">Store</a><a href="#wallet">Cash</a>
+  </nav>
+  <section id="school" class="card">
+    <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
+    {% for grade in grades %}
+      <div class="row"><div><strong>{{ grade.subject }}</strong><small>{{ grade.assignment }}</small></div><b>{{ grade.percent }}%</b></div>
+    {% empty %}<p class="empty">Your grades will show here after a guardian adds them.</p>{% endfor %}
+  </section>
+  <section id="chores" class="card">
+    <div class="card-head"><h2>Chores</h2><span class="badge gold">Earn</span></div>
+    {% for chore in chores %}
+      <div class="task">
+        <div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} · +{{ chore.token_reward }} tokens{% if chore.cash_reward_cents %} · +{{ chore.cash_reward_cents|dollars }}{% endif %}</small></div>
+        {% if chore.status == "open" %}
+          <form action="{% url 'submit_chore' chore.pk %}" method="post">{% csrf_token %}<button class="action">I did it</button></form>
+        {% else %}<span class="badge waiting">Waiting</span>{% endif %}
+      </div>
+    {% empty %}<p class="empty">No chores due right now.</p>{% endfor %}
+  </section>
+  <section id="goals" class="card">
+    <div class="card-head"><h2>Things to improve</h2><span class="badge">Growing</span></div>
+    {% for goal in goals %}
+      <div class="task">
+        <div><strong>{{ goal.title }}</strong><small>{{ goal.encouragement }} · +{{ goal.token_reward }} tokens</small></div>
+        {% if goal.status == "active" %}
+          <form action="{% url 'submit_goal' goal.pk %}" method="post">{% csrf_token %}<button class="action">Goal reached</button></form>
+        {% else %}<span class="badge waiting">Waiting</span>{% endif %}
+      </div>
+    {% empty %}<p class="empty">Your next growth goal will show here.</p>{% endfor %}
+  </section>
+  <section id="store" class="card">
+    <div class="card-head"><h2>Family store</h2><span class="badge gold">Spend</span></div>
+    <div class="store-grid">
+      {% for item in store_items %}
+        <article class="item"><strong>{{ item.name }}</strong><small>{{ item.description }}</small><b>{{ item.token_cost }} tokens</b>
+          <form action="{% url 'buy_item' item.pk %}" method="post">{% csrf_token %}<button class="action" {% if wallet.tokens < item.token_cost %}disabled{% endif %}>Request</button></form>
+        </article>
+      {% empty %}<p class="empty">The family store is being stocked.</p>{% endfor %}
+    </div>
+  </section>
+  <section id="wallet" class="card">
+    <div class="card-head"><h2>Cash and tokens</h2><span class="badge">10 tokens = $1</span></div>
+    <div class="split">
+      <form method="post" action="{% url 'request_conversion' %}" class="form">
+        {% csrf_token %}<h3>Convert cash</h3>{{ convert_form.cash_amount }}<button class="primary">Convert to tokens</button>
+      </form>
+      <form method="post" action="{% url 'request_cashout' %}" class="form">
+        {% csrf_token %}<h3>Cash out</h3>{{ cashout_form.cash_amount }}<button class="primary">Ask guardian</button>
+      </form>
+    </div>
+    <h3 class="history-title">Recent activity</h3>
+    {% for entry in ledger %}
+      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.get_status_display }}</small></div><b>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% else %}{{ entry.cash_delta_cents|dollars }}{% endif %}</b></div>
+    {% empty %}<p class="empty">Activity will appear here.</p>{% endfor %}
+  </section>
+</main>
+{% endblock %}
