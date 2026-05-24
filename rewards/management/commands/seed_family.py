@@ -58,9 +58,13 @@ class Command(BaseCommand):
         ]
         for title, details in house_rules:
             HouseRule.objects.get_or_create(title=title, defaults={"details": details})
+        StoreItem.objects.filter(name="Pick dessert").update(
+            name="Ice cream sundae at Stewart's",
+            description="Choose an ice cream sundae at Stewart's.",
+        )
         store = [
             ("Extra screen time", "Choose 30 bonus minutes.", 25, StoreItem.Category.TREAT),
-            ("Pick dessert", "Choose the family dessert.", 35, StoreItem.Category.TREAT),
+            ("Ice cream sundae at Stewart's", "Choose an ice cream sundae at Stewart's.", 35, StoreItem.Category.TREAT),
             ("Movie night choice", "Choose the next movie.", 60, StoreItem.Category.TREAT),
             ("Stay up later", "One weekend bedtime pass.", 80, StoreItem.Category.TREAT),
             ("Park adventure", "Plan a fun family park outing.", 120, StoreItem.Category.EXPERIENCE),

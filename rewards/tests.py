@@ -1,16 +1,13 @@
 from datetime import date, datetime, time, timedelta, timezone as datetime_timezone
-from io import BytesIO
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import FamilyTransferForm
-from .models import BehaviorStar, ChildRule, Chore, DailyScheduleEvent, FamilySettings, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
+from .models import BehaviorNote, BehaviorStar, ChildRule, Chore, DailyScheduleEvent, FamilySettings, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
 from .services import ensure_today_chores
 
 
@@ -324,8 +321,8 @@ class LedgerApprovalTests(TestCase):
         self.client.force_login(self.child.user)
 
         response = self.client.post(
-            reverse("send_family_transfer"),
-            {"recipient_id": FamilyTransferForm.SPEND_CHOICE, "cash_amount": "2.25"},
+            reverse("request_store_spend"),
+            {"cash_amount": "2.25"},
         )
 
         self.assertRedirects(response, reverse("wallet_page"))
@@ -442,22 +439,17 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Pack homework")
         self.assertContains(response, "Kind voices")
 
-    @override_settings(GOOGLE_CALENDAR_ID="family@group.calendar.google.com", GOOGLE_CALENDAR_API_KEY="test-key")
-    def test_public_google_calendar_events_appear_on_child_daily_plan(self):
-        cache.clear()
-        payload = (
-            b'{"items":[{"summary":"Dance practice","location":"Community center",'
-            b'"start":{"date":"2026-05-24"}}]}'
+    def test_public_teamup_calendar_is_available_from_child_daily_plan(self):
+        FamilySettings.objects.create(
+            teamup_calendar_enabled=True,
+            teamup_calendar_url="https://teamup.com/ksfamilycalendar",
         )
         self.client.force_login(self.child.user)
 
-        with patch("rewards.services.urlopen", return_value=BytesIO(payload)):
-            with patch("rewards.services.timezone.localdate", return_value=date(2026, 5, 24)):
-                response = self.client.get(reverse("dashboard"))
+        response = self.client.get(reverse("dashboard"))
 
-        self.assertContains(response, "Family Google Calendar")
-        self.assertContains(response, "Dance practice")
-        self.assertContains(response, "Community center")
+        self.assertContains(response, "Teamup Calendar")
+        self.assertContains(response, "https://teamup.com/ksfamilycalendar")
 
     def test_guardian_can_hide_a_personal_rule(self):
         rule = ChildRule.objects.create(child=self.child, title="Temporary reminder")
@@ -477,6 +469,7 @@ class LedgerApprovalTests(TestCase):
         )
         self.child.refresh_from_db()
         self.assertTrue(self.child.grounded)
+        self.assertEqual(BehaviorNote.objects.get(child=self.child).title, "Grounded Mode issued")
 
         self.client.force_login(self.child.user)
         dashboard = self.client.get(reverse("dashboard"))
@@ -548,25 +541,48 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.tokens, 20)
         self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.BEHAVIOR).exists())
 
-    def test_only_dad_can_save_google_calendar_settings(self):
+    def test_only_dad_can_save_teamup_calendar_settings(self):
         self.client.force_login(self.guardian.user)
         self.client.post(
-            reverse("dad_google_calendar_settings"),
-            {"child_id": self.child.pk, "google_calendar_enabled": "on", "google_calendar_id": "family@group.calendar.google.com"},
+            reverse("dad_teamup_calendar_settings"),
+            {"child_id": self.child.pk, "teamup_calendar_enabled": "on", "teamup_calendar_url": "https://teamup.com/ksfamily"},
         )
         settings_record = FamilySettings.objects.get()
-        self.assertTrue(settings_record.google_calendar_enabled)
-        self.assertEqual(settings_record.google_calendar_id, "family@group.calendar.google.com")
+        self.assertTrue(settings_record.teamup_calendar_enabled)
+        self.assertEqual(settings_record.teamup_calendar_url, "https://teamup.com/ksfamily")
 
         mom_user = User.objects.create_user(username="mom", password="test")
         mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
         self.client.force_login(mom.user)
         self.client.post(
-            reverse("dad_google_calendar_settings"),
-            {"child_id": self.child.pk, "google_calendar_enabled": "on", "google_calendar_id": "changed@calendar.google.com"},
+            reverse("dad_teamup_calendar_settings"),
+            {"child_id": self.child.pk, "teamup_calendar_enabled": "on", "teamup_calendar_url": "https://teamup.com/changed"},
         )
         settings_record.refresh_from_db()
-        self.assertEqual(settings_record.google_calendar_id, "family@group.calendar.google.com")
+        self.assertEqual(settings_record.teamup_calendar_url, "https://teamup.com/ksfamily")
+
+    def test_scheduled_grounding_auto_lifts_and_note_is_visible_to_mom(self):
+        lift_at = timezone.now() + timedelta(hours=2)
+        self.client.force_login(self.guardian.user)
+        self.client.post(
+            reverse("guardian_lockdown"),
+            {"child_id": self.child.pk, "action": "lock", "reason": "Directions were not followed.", "lift_at": lift_at.strftime("%Y-%m-%dT%H:%M")},
+        )
+        note = BehaviorNote.objects.get(child=self.child)
+        self.assertEqual(note.issued_by, self.guardian)
+        self.assertIn("Directions", note.note)
+
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        self.client.force_login(mom.user)
+        self.assertContains(self.client.get(reverse("dashboard")), "Grounded Mode issued")
+
+        self.child.grounded_until = timezone.now() - timedelta(minutes=1)
+        self.child.save(update_fields=["grounded_until"])
+        self.client.force_login(self.child.user)
+        self.client.get(reverse("dashboard"))
+        self.child.refresh_from_db()
+        self.assertFalse(self.child.grounded)
 
     def test_mom_viewer_sees_progress_without_controls_or_balances(self):
         mom_user = User.objects.create_user(username="mom", password="test")

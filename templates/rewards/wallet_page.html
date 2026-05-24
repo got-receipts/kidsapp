@@ -19,9 +19,9 @@
       <input type="hidden" name="cash_amount" value="0.00" data-money-input>
       <p class="pay-label">Enter amount</p>
       <div class="pay-amount" aria-live="polite"><span>$</span><output data-money-display>0.00</output></div>
-      <label class="recipient-picker">Pay a family member
+      <label class="recipient-picker">Pay another child
         {{ family_transfer_form.recipient_id }}
-        <small>Choose a child to pay them now, or choose Spend at the store to send a pending purchase to Dad.</small>
+        <small>Family payments transfer available Spending immediately. Use Spend below for an in-store purchase.</small>
       </label>
       <div class="number-pad" aria-label="Amount keypad">
         <button type="button" data-money-key="1">1</button>
@@ -39,7 +39,7 @@
       </div>
       <div class="cash-actions">
         <button class="send-action" type="submit" formaction="{% url 'send_family_transfer' %}">Pay Family</button>
-        <button class="send-action" type="submit" formaction="{% url 'send_family_transfer' %}">Spend</button>
+        <button class="send-action purchase" type="submit" formnovalidate formaction="{% url 'request_store_spend' %}">Spend In Store</button>
         <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_spending_transfer' %}">Move to Spending</button>
         <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_conversion' %}">Savings to Tokens</button>
         <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_tokens_to_savings' %}">Tokens to Savings</button>

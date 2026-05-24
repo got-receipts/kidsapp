@@ -26,7 +26,6 @@ from .forms import (
     DailyScheduleEventForm,
     FamilyTransferForm,
     GoalForm,
-    GoogleCalendarSettingsForm,
     GradeForm,
     GroundingForm,
     HouseRuleForm,
@@ -34,8 +33,10 @@ from .forms import (
     SpendingTransferForm,
     StoreItemForm,
     TokensToSavingsForm,
+    TeamupCalendarSettingsForm,
 )
 from .models import (
+    BehaviorNote,
     BehaviorStar,
     ChildRule,
     Chore,
@@ -50,7 +51,7 @@ from .models import (
     StoreItem,
     Wallet,
 )
-from .services import ensure_today_chores, public_google_calendar_events
+from .services import ensure_today_chores, teamup_calendar_url
 
 
 class FamilyLoginView(LoginView):
@@ -63,7 +64,7 @@ def health(request):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v1';
+    source = """const CACHE = 'family-circle-v2';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -95,7 +96,9 @@ self.addEventListener('fetch', event => {
 
 
 def _profile(request):
-    return get_object_or_404(Profile, user=request.user)
+    profile = get_object_or_404(Profile, user=request.user)
+    profile.refresh_grounding()
+    return profile
 
 
 def _guardian(request):
@@ -153,6 +156,8 @@ def _star_calendar(child, requested_month):
 @login_required
 def dashboard(request):
     ensure_today_chores()
+    for child in Profile.objects.filter(role=Profile.Role.CHILD, grounded=True):
+        child.refresh_grounding()
     profile = _profile(request)
     store_items = StoreItem.objects.filter(active=True).order_by(
         Case(
@@ -172,11 +177,7 @@ def dashboard(request):
         unstarred = children.exclude(behavior_stars__day=today)
         pending = LedgerRequest.objects.filter(status=LedgerRequest.Status.PENDING).select_related("child", "chore")
         family_settings = FamilySettings.objects.first()
-        calendar_id = (
-            family_settings.google_calendar_id if family_settings and family_settings.google_calendar_enabled
-            else settings.GOOGLE_CALENDAR_ID if family_settings is None
-            else ""
-        )
+        calendar_url = teamup_calendar_url()
         history = selected.ledger_requests.select_related("store_item", "reviewed_by").all()[:30] if selected else []
         if selected and not can_manage:
             history = selected.ledger_requests.filter(
@@ -199,6 +200,7 @@ def dashboard(request):
             "selected_rules": selected.specific_rules.filter(active=True) if selected else [],
             "selected_grades": selected.grades.order_by("-created_at")[:8] if selected else [],
             "selected_goals": selected.goals.order_by("-created_at")[:8] if selected else [],
+            "behavior_notes": selected.behavior_notes.select_related("issued_by")[:20] if selected else [],
             "house_rules": HouseRule.objects.filter(active=True),
             "history": history,
             "star_weeks": star_weeks,
@@ -220,13 +222,13 @@ def dashboard(request):
             "balance_form": BalanceAdjustmentForm(),
             "grounding_form": GroundingForm(),
             "dad_controls": can_manage and profile.user.username.lower() == "dad",
-            "google_calendar_enabled": bool(calendar_id and settings.GOOGLE_CALENDAR_API_KEY),
-            "google_api_key_configured": bool(settings.GOOGLE_CALENDAR_API_KEY),
-            "google_calendar_form": GoogleCalendarSettingsForm(
+            "teamup_calendar_enabled": bool(calendar_url),
+            "teamup_calendar_url": calendar_url,
+            "teamup_calendar_form": TeamupCalendarSettingsForm(
                 instance=family_settings,
                 initial={
-                    "google_calendar_enabled": bool(settings.GOOGLE_CALENDAR_ID),
-                    "google_calendar_id": settings.GOOGLE_CALENDAR_ID,
+                    "teamup_calendar_enabled": bool(settings.TEAMUP_CALENDAR_URL),
+                    "teamup_calendar_url": settings.TEAMUP_CALENDAR_URL,
                 } if family_settings is None else None,
             ),
         }
@@ -273,7 +275,7 @@ def dashboard(request):
         "quest_deadline": timezone.make_aware(datetime.combine(today, time(19, 0))),
         "morning_deadline": timezone.make_aware(datetime.combine(today, time(10, 0))),
         "today_schedule": profile.schedule_events.filter(day=today),
-        "google_calendar_events": public_google_calendar_events(today),
+        "teamup_calendar_url": teamup_calendar_url(),
         "specific_rules": profile.specific_rules.filter(active=True),
         "house_rules": HouseRule.objects.filter(active=True),
         "show_recap": profile.last_recap_day != timezone.localdate(),
@@ -536,22 +538,7 @@ def send_family_transfer(request):
         return redirect("wallet_page")
     recipient = form.cleaned_data["recipient_id"]
     cents = _cents(form.cleaned_data["cash_amount"])
-    if recipient == FamilyTransferForm.SPEND_CHOICE:
-        with transaction.atomic():
-            wallet = Wallet.objects.select_for_update().get(child=profile)
-            if cents > wallet.spending_cents:
-                messages.error(request, "You do not have enough in Spending to cover that purchase.")
-                return redirect("wallet_page")
-            Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
-            LedgerRequest.objects.create(
-                child=profile,
-                requested_by=profile,
-                kind=LedgerRequest.Kind.SPEND,
-                description=f"Store spend pending: ${cents / 100:.2f}",
-                spending_delta_cents=-cents,
-            )
-        messages.success(request, "Your store spending request was sent to Dad and moved into pending transactions.")
-        return redirect("wallet_page")
+    recipient.refresh_grounding()
     if recipient.grounded:
         messages.error(request, "That family member is in Grounded Mode and cannot receive money right now.")
         return redirect("wallet_page")
@@ -591,6 +578,36 @@ def send_family_transfer(request):
             reviewed_at=timestamp,
         )
     messages.success(request, f"You sent ${cents / 100:.2f} to {recipient.display_name}.")
+    return redirect("wallet_page")
+
+
+@login_required
+@require_POST
+def request_store_spend(request):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    form = SpendingTransferForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Enter a valid amount for your store purchase.")
+        return redirect("wallet_page")
+    cents = _cents(form.cleaned_data["cash_amount"])
+    with transaction.atomic():
+        wallet = Wallet.objects.select_for_update().get(child=profile)
+        if cents > wallet.spending_cents:
+            messages.error(request, "You do not have enough in Spending to cover that purchase.")
+            return redirect("wallet_page")
+        Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
+        LedgerRequest.objects.create(
+            child=profile,
+            requested_by=profile,
+            kind=LedgerRequest.Kind.SPEND,
+            description=f"In-store spending pending: ${cents / 100:.2f}",
+            spending_delta_cents=-cents,
+        )
+    messages.success(request, "Purchase reserved in Pending Transactions and sent to Dad for verification.")
     return redirect("wallet_page")
 
 
@@ -705,17 +722,26 @@ def guardian_lockdown(request):
     child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
     if guardian is None:
         return redirect("dashboard")
+    child.refresh_grounding()
     locked = request.POST.get("action") == "lock"
     form = GroundingForm(request.POST)
     if locked and not form.is_valid():
-        messages.error(request, "Please check the Grounded Mode message.")
+        messages.error(request, "Please check the Grounded Mode reason and scheduled lift time.")
         return redirect(f"/?child={child.pk}")
     child.grounded = locked
     child.grounded_reason = form.cleaned_data.get("reason", "").strip() if locked else ""
     child.grounded_by = guardian if locked else None
     child.grounded_at = timezone.now() if locked else None
-    child.save(update_fields=["grounded", "grounded_reason", "grounded_by", "grounded_at"])
+    child.grounded_until = form.cleaned_data.get("lift_at") if locked else None
+    child.save(update_fields=["grounded", "grounded_reason", "grounded_by", "grounded_at", "grounded_until"])
     if locked:
+        BehaviorNote.objects.create(
+            child=child,
+            issued_by=guardian,
+            title="Grounded Mode issued",
+            note=child.grounded_reason or "Grounded Mode was issued.",
+            scheduled_lift_at=child.grounded_until,
+        )
         messages.success(request, f"{child.display_name} is now in Grounded Mode. Balances and rewards are locked.")
     else:
         messages.success(request, f"{child.display_name}'s Grounded Mode has been lifted.")
@@ -724,20 +750,20 @@ def guardian_lockdown(request):
 
 @login_required
 @require_POST
-def dad_google_calendar_settings(request):
+def dad_teamup_calendar_settings(request):
     dad = _dad(request)
     selected_id = request.POST.get("child_id", "")
     if dad is None:
         return redirect(f"/?child={selected_id}")
     family_settings = FamilySettings.objects.first()
-    form = GoogleCalendarSettingsForm(request.POST, instance=family_settings)
+    form = TeamupCalendarSettingsForm(request.POST, instance=family_settings)
     if not form.is_valid():
-        messages.error(request, "Please enter a valid public Google Calendar ID.")
+        messages.error(request, "Please enter a valid public Teamup calendar URL.")
         return redirect(f"/?child={selected_id}#settings")
     record = form.save(commit=False)
     record.updated_by = dad
     record.save()
-    messages.success(request, "Google Calendar display settings saved. Events are shown read-only.")
+    messages.success(request, "Teamup calendar settings saved. The calendar is displayed read-only.")
     return redirect(f"/?child={selected_id}#settings")
 
 
@@ -752,6 +778,7 @@ def award_star(request):
         day = timezone.localdate()
     if guardian is None or day > timezone.localdate():
         return redirect(f"/?child={child.pk}")
+    child.refresh_grounding()
     if child.grounded:
         messages.error(request, "Grounded Mode is active. Stars and their token rewards are locked.")
         return redirect(f"/?child={child.pk}&month={day:%Y-%m}")
@@ -800,6 +827,7 @@ def guardian_award(request):
     if guardian is None or not form.is_valid():
         messages.error(request, "Please enter a reason and valid award.")
         return redirect(f"/?child={child.pk}")
+    child.refresh_grounding()
     if child.grounded:
         messages.error(request, "Grounded Mode is active. Unlock this account before adding rewards.")
         return redirect(f"/?child={child.pk}")
@@ -825,6 +853,7 @@ def guardian_behavior_deduction(request):
     if guardian is None or not form.is_valid():
         messages.error(request, "Please enter a reason and number of tokens to remove.")
         return redirect(f"/?child={child.pk}")
+    child.refresh_grounding()
     if child.grounded:
         messages.error(request, "Grounded Mode is active. Unlock this account before changing its token balance.")
         return redirect(f"/?child={child.pk}")

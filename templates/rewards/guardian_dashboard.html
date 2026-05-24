@@ -1,10 +1,11 @@
 {% extends "rewards/base.html" %}
+{% load static %}
 {% load rewards_tags %}
 {% block title %}{{ profile.display_name }} | Family Circle{% endblock %}
 {% block content %}
 <main class="shell guardian">
   <header class="topbar">
-    <div class="identity"><span class="avatar guardian-avatar">{{ profile.display_name|slice:":1" }}</span><div><small>{% if can_manage %}Guardian{% else %}Family Viewer{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
+    <div class="identity"><img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt=""><div><small>{% if can_manage %}Guardian{% else %}Family Viewer{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
     <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
   <section class="wallet-card guardian-card">
@@ -35,6 +36,17 @@
       <div><strong>{{ selected_grades|length }}</strong><small>recent grades</small></div>
       {% endif %}
     </section>
+    {% if selected.grounded %}
+    <section class="grounded-status" role="status">
+      <div><p class="eyebrow">Grounded Mode active</p><strong>{{ selected.display_name }}'s wallet and rewards are locked.</strong></div>
+      <div class="grounded-meta">
+        <span><small>Issued</small>{{ selected.grounded_at|date:"M j, g:i A" }}</span>
+        <span><small>By</small>{% if selected.grounded_by %}{{ selected.grounded_by.display_name }}{% else %}Guardian{% endif %}</span>
+        <span><small>Scheduled lift</small>{% if selected.grounded_until %}{{ selected.grounded_until|date:"M j, g:i A" }}{% else %}Manual lift{% endif %}</span>
+        <span><small>Remaining</small>{% if selected.grounded_until %}<b data-grounding-deadline="{{ selected.grounded_until|date:'c' }}">Calculating...</b>{% else %}Until lifted{% endif %}</span>
+      </div>
+    </section>
+    {% endif %}
     <section class="grid">
       {% if can_manage %}
       <article class="card action-launcher">
@@ -81,6 +93,8 @@
         {% if selected.grounded %}
           <p><strong>{{ selected.display_name }} is currently grounded.</strong> Balances and rewards are locked.</p>
           {% if selected.grounded_reason %}<p class="lockdown-reason">{{ selected.grounded_reason }}</p>{% endif %}
+          <p>Issued by {% if selected.grounded_by %}{{ selected.grounded_by.display_name }}{% else %}a guardian{% endif %} on {{ selected.grounded_at|date:"M j, Y \a\t g:i A" }}.</p>
+          <p>{% if selected.grounded_until %}Scheduled to lift {{ selected.grounded_until|date:"M j, Y \a\t g:i A" }}. <strong data-grounding-deadline="{{ selected.grounded_until|date:'c' }}">Calculating...</strong>{% else %}This restriction stays active until manually lifted.{% endif %}</p>
           <form method="post" action="{% url 'guardian_lockdown' %}">
             {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="action" value="unlock">
             <button class="primary" type="submit">Lift Grounded Mode</button>
@@ -151,13 +165,12 @@
       </dialog>
       <dialog class="review-dialog action-dialog" id="action-settings">
         <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Dad only</p><h2>Google Calendar Settings</h2>
-        <p>Add a public family calendar to the children's daily plans. Events display read-only.</p>
-        <p class="calendar-key-status">Railway API key: <strong>{% if google_api_key_configured %}Configured{% else %}Not configured{% endif %}</strong></p>
-        <form class="form" method="post" action="{% url 'dad_google_calendar_settings' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ google_calendar_form.as_p }}<button class="primary">Save Google Calendar</button>
+        <p class="eyebrow">Dad only</p><h2>Teamup Calendar Settings</h2>
+        <p>Add a public Teamup calendar link to the dashboard. It displays read-only inside Family Circle.</p>
+        <form class="form" method="post" action="{% url 'dad_teamup_calendar_settings' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ teamup_calendar_form.as_p }}<button class="primary">Save Teamup Calendar</button>
         </form>
-        <div class="oauth-note"><strong>Private calendar sign-in</strong><p>Google sign-in requires an OAuth client, consent screen, and callback URL.</p></div>
+        <div class="oauth-note"><strong>Privacy reminder</strong><p>Use only a public-facing Teamup calendar intended for viewing on family devices.</p></div>
       </dialog>
       {% endif %}
       <article class="card chore-reviews">
@@ -201,7 +214,29 @@
         {% empty %}<p class="empty">No store or money requests waiting right now.</p>{% endfor %}
       </article>
       {% endif %}
-      <article class="card star-calendar">
+      <article class="card command-module">
+        <div class="card-head"><h2>Family calendar</h2><span class="badge">{% if teamup_calendar_url %}Teamup connected{% else %}Not connected{% endif %}</span></div>
+        <p class="control-note">Shared family events display in a read-only calendar view.</p>
+        {% if teamup_calendar_url %}<button class="module-button" type="button" data-open-dialog="teamup-calendar">Open Calendar</button>{% elif dad_controls %}<button class="module-button" type="button" data-open-dialog="action-settings">Connect Teamup</button>{% else %}<p class="empty">Dad can connect a public Teamup calendar.</p>{% endif %}
+      </article>
+      {% if teamup_calendar_url %}
+      <dialog class="review-dialog calendar-dialog" id="teamup-calendar">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Read-only family schedule</p><h2>Teamup Calendar</h2>
+        <iframe class="teamup-frame" title="Teamup family calendar" src="{{ teamup_calendar_url }}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </dialog>
+      {% endif %}
+      <article class="card behavior-notes">
+        <div class="card-head"><h2>Behavior notes</h2><span class="badge {% if behavior_notes %}coral{% endif %}">{{ behavior_notes|length }} recent</span></div>
+        {% for note in behavior_notes %}
+          <div class="note-entry {% if note.negative %}negative{% endif %}">
+            <strong>{{ note.title }}</strong>
+            <small>Issued by {% if note.issued_by %}{{ note.issued_by.display_name }}{% else %}a guardian{% endif %} on {{ note.issued_at|date:"M j, Y \a\t g:i A" }}</small>
+            <p>{{ note.note }}{% if note.scheduled_lift_at %} Scheduled lift: {{ note.scheduled_lift_at|date:"M j, Y \a\t g:i A" }}.{% endif %}</p>
+          </div>
+        {% empty %}<p class="empty">No behavior notes recorded.</p>{% endfor %}
+      </article>
+      <article class="card star-calendar" data-dashboard-module="Behavior Stars">
         <div class="card-head"><h2>Behavior star calendar</h2><span class="badge gold">1 star = 2 tokens</span></div>
         <div class="month-nav"><a href="?child={{ selected.pk }}&month={{ previous_month }}">&lsaquo;</a><strong>{{ star_month }}</strong><a href="?child={{ selected.pk }}&month={{ next_month }}">&rsaquo;</a></div>
         <div class="weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
@@ -221,7 +256,7 @@
         </div>
         <p class="calendar-help">{% if not can_manage %}Stars earned for good behavior appear here as they are recorded.{% elif selected.grounded %}Stars and token rewards are unavailable during Grounded Mode.{% else %}Tap a day to award {{ selected.display_name }} a good behavior star.{% endif %}</p>
       </article>
-      <article class="card">
+      <article class="card" data-dashboard-module="Today's Chores">
         <div class="card-head"><h2>Today's chores</h2><span class="badge gold">{% if can_manage %}Verify work{% else %}Daily progress{% endif %}</span></div>
         <p class="control-note">{% if not can_manage %}See which daily chores are in progress and which have been verified complete.{% elif selected.grounded %}Grounded chores are still verified, but no tokens are earned or removed.{% else %}When a child marks a chore finished, approve verified work. Declining it removes that chore's listed tokens and can create token debt.{% endif %}</p>
         {% for chore in selected_chores %}
@@ -232,9 +267,9 @@
           <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }} &middot; before 10 AM</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">No optional morning quest created.</p>{% endfor %}
       </article>
-      <article class="card daily-planner">
+      <article class="card daily-planner" data-dashboard-module="Schedule">
         <div class="card-head"><h2>{% if can_manage %}Schedule ahead{% else %}Upcoming schedule{% endif %}</h2><span class="badge">Morning message</span></div>
-        <p class="control-note">{% if google_calendar_enabled %}Shared public Google Calendar events are connected and shown read-only to children.{% elif can_manage %}Calendar display is off. Dad can add a public calendar in Settings after the Railway API key is configured.{% else %}No shared public calendar is connected right now.{% endif %}</p>
+        <p class="control-note">{% if teamup_calendar_enabled %}A public Teamup calendar is connected and available read-only in the calendar module.{% elif can_manage %}Calendar display is off. Dad can add a public Teamup calendar URL in Settings.{% else %}No shared public calendar is connected right now.{% endif %}</p>
         {% for event in selected_schedule %}
           <div class="planner-row">
             <div><strong>{{ event.day|date:"M j" }}{% if event.start_time %} at {{ event.start_time|time:"g:i A" }}{% endif %} - {{ event.title }}</strong><small>{{ event.details }}</small></div>
@@ -242,7 +277,7 @@
           </div>
         {% empty %}<p class="empty">No upcoming events in a morning message yet.</p>{% endfor %}
       </article>
-      <article class="card rules-control">
+      <article class="card rules-control" data-dashboard-module="Personal Rules">
         <div class="card-head"><h2>{{ selected.display_name }}'s rules</h2><span class="badge">Personal</span></div>
         {% for rule in selected_rules %}
           <div class="planner-row">
@@ -251,7 +286,7 @@
           </div>
         {% empty %}<p class="empty">No child-specific rules added.</p>{% endfor %}
       </article>
-      <article class="card rules-control house-control">
+      <article class="card rules-control house-control" data-dashboard-module="House Rules">
         <div class="card-head"><h2>House rules</h2><span class="badge gold">Everyone</span></div>
         {% for rule in house_rules %}
           <div class="planner-row">
@@ -260,19 +295,19 @@
           </div>
         {% empty %}<p class="empty">Add house rules to every child's morning message.</p>{% endfor %}
       </article>
-      <article class="card">
+      <article class="card" data-dashboard-module="School Grades">
         <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
         {% for grade in selected_grades %}
           <div class="row"><div><strong>{{ grade.subject }}</strong><small>{{ grade.assignment }}</small></div><b>{{ grade.percent }}%</b></div>
         {% empty %}<p class="empty">No grades have been added yet.</p>{% endfor %}
       </article>
-      <article class="card">
+      <article class="card" data-dashboard-module="Growth Goals">
         <div class="card-head"><h2>Growth goals</h2><span class="badge">Encouragement</span></div>
         {% for goal in selected_goals %}
           <div class="row"><div><strong>{{ goal.title }}</strong><small>{{ goal.encouragement }}</small></div><b>{{ goal.get_status_display }}</b></div>
         {% empty %}<p class="empty">No growth goals have been added yet.</p>{% endfor %}
       </article>
-      <article class="card activity-history">
+      <article class="card activity-history" data-dashboard-module="{% if can_manage %}Account History{% else %}Growth Highlights{% endif %}">
         <div class="card-head"><h2>{% if can_manage %}Account history{% else %}Growth highlights{% endif %}</h2><span class="badge">{% if can_manage %}Ledger{% else %}View only{% endif %}</span></div>
         {% for entry in history %}
           <div class="row">

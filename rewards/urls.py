@@ -20,6 +20,7 @@ urlpatterns = [
     path("wallet/cashout/", views.request_cashout, name="request_cashout"),
     path("wallet/spending/", views.request_spending_transfer, name="request_spending_transfer"),
     path("wallet/send/", views.send_family_transfer, name="send_family_transfer"),
+    path("wallet/spend/", views.request_store_spend, name="request_store_spend"),
     path("wallet/goal/", views.save_savings_goal, name="save_savings_goal"),
     path("recap/dismiss/", views.dismiss_recap, name="dismiss_recap"),
     path("guardian/add/<str:model>/", views.guardian_create, name="guardian_create"),
@@ -29,6 +30,6 @@ urlpatterns = [
     path("guardian/award/", views.guardian_award, name="guardian_award"),
     path("guardian/deduct/", views.guardian_behavior_deduction, name="guardian_behavior_deduction"),
     path("guardian/balance/", views.dad_balance_adjustment, name="dad_balance_adjustment"),
-    path("guardian/settings/google-calendar/", views.dad_google_calendar_settings, name="dad_google_calendar_settings"),
+    path("guardian/settings/teamup-calendar/", views.dad_teamup_calendar_settings, name="dad_teamup_calendar_settings"),
     path("guardian/review/<int:pk>/<str:decision>/", views.review_request, name="review_request"),
 ]

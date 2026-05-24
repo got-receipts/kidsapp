@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import F
+from django.utils import timezone
 
 
 class Profile(models.Model):
@@ -21,6 +22,7 @@ class Profile(models.Model):
     grounded_reason = models.CharField(max_length=180, blank=True)
     grounded_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="grounded_children")
     grounded_at = models.DateTimeField(null=True, blank=True)
+    grounded_until = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.display_name
@@ -32,6 +34,16 @@ class Profile(models.Model):
     @property
     def can_view_family(self):
         return self.role in [self.Role.GUARDIAN, self.Role.VIEWER]
+
+    def refresh_grounding(self):
+        if self.grounded and self.grounded_until and self.grounded_until <= timezone.now():
+            self.grounded = False
+            self.grounded_reason = ""
+            self.grounded_by = None
+            self.grounded_at = None
+            self.grounded_until = None
+            self.save(update_fields=["grounded", "grounded_reason", "grounded_by", "grounded_at", "grounded_until"])
+        return self.grounded
 
 
 class Wallet(models.Model):
@@ -119,8 +131,8 @@ class HouseRule(models.Model):
 
 
 class FamilySettings(models.Model):
-    google_calendar_id = models.CharField(max_length=255, blank=True)
-    google_calendar_enabled = models.BooleanField(default=False)
+    teamup_calendar_url = models.URLField(max_length=500, blank=True)
+    teamup_calendar_enabled = models.BooleanField(default=False)
     updated_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="family_settings_updates")
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -129,6 +141,22 @@ class FamilySettings(models.Model):
 
     def __str__(self):
         return "Family settings"
+
+
+class BehaviorNote(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="behavior_notes")
+    issued_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="behavior_notes_issued")
+    title = models.CharField(max_length=80)
+    note = models.CharField(max_length=240, blank=True)
+    negative = models.BooleanField(default=True)
+    issued_at = models.DateTimeField(auto_now_add=True)
+    scheduled_lift_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-issued_at"]
+
+    def __str__(self):
+        return f"{self.child.display_name}: {self.title}"
 
 
 class Grade(models.Model):
@@ -276,6 +304,7 @@ class LedgerRequest(models.Model):
             request = LedgerRequest.objects.select_for_update().get(pk=self.pk)
             if request.status != self.Status.PENDING:
                 return
+            request.child.refresh_grounding()
             changes_balance = bool(request.token_delta or request.cash_delta_cents or request.spending_delta_cents)
             if request.child.grounded and changes_balance and request.kind != self.Kind.BALANCE:
                 raise ValidationError("This account is in Grounded Mode. Unlock it before posting rewards or spending.")

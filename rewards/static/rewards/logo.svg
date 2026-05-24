@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 170">
+  <defs>
+    <linearGradient id="brandBg" x2="1" y2="1"><stop stop-color="#071524"/><stop offset="1" stop-color="#173b61"/></linearGradient>
+    <linearGradient id="brandLine" x2="1"><stop stop-color="#57e4df"/><stop offset="1" stop-color="#74aaff"/></linearGradient>
+    <linearGradient id="brandGold" y2="1"><stop stop-color="#f8db83"/><stop offset="1" stop-color="#efaa42"/></linearGradient>
+  </defs>
+  <rect x="5" y="5" width="160" height="160" rx="41" fill="url(#brandBg)"/>
+  <path d="M85 24 143 47v44c0 38-23 61-58 77-35-16-58-39-58-77V47z" fill="#0b2035" stroke="url(#brandLine)" stroke-width="4"/>
+  <path d="M45 82h20m40 0h20M85 57v22" stroke="#55dcda" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="44" cy="82" r="6" fill="#57e4df"/><circle cx="126" cy="82" r="6" fill="#57e4df"/><circle cx="85" cy="56" r="6" fill="#74aaff"/>
+  <path d="M85 85c-13-20-40-10-40 12 0 23 40 47 40 47s40-24 40-47c0-22-27-32-40-12z" fill="url(#brandGold)"/>
+  <text x="194" y="79" fill="#eaf4ff" font-family="Segoe UI, Arial, sans-serif" font-size="46" font-weight="700" letter-spacing="1">FAMILY CIRCLE</text>
+  <text x="197" y="112" fill="#62dadc" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600" letter-spacing="5">CONNECTED FAMILY HUB</text>
+  <path d="M198 132h458" stroke="url(#brandLine)" stroke-width="2" opacity=".55"/>
+</svg>

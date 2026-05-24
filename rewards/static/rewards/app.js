@@ -43,6 +43,29 @@ document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
   });
 });
 
+const connectionSequence = document.querySelector("[data-connection-sequence]");
+if (connectionSequence) {
+  const variant = connectionSequence.dataset.variant || "welcome";
+  const key = `family-circle-connected-${variant}`;
+  let alreadyShown = false;
+  try {
+    alreadyShown = window.sessionStorage.getItem(key) === "yes";
+    window.sessionStorage.setItem(key, "yes");
+  } catch (error) {
+    // Launch animation still works when storage is blocked.
+  }
+  if (alreadyShown) {
+    connectionSequence.remove();
+  } else {
+    document.body.classList.add("connecting");
+    window.setTimeout(() => {
+      connectionSequence.classList.add("connected");
+      document.body.classList.remove("connecting");
+      window.setTimeout(() => connectionSequence.remove(), 450);
+    }, variant === "child" ? 1550 : 1250);
+  }
+}
+
 const notificationButton = document.querySelector("#enable-notifications");
 if (notificationButton) {
   notificationButton.addEventListener("click", async () => {
@@ -121,6 +144,28 @@ document.querySelectorAll("[data-quest-deadline]").forEach((countdown) => {
   window.setInterval(updateCountdown, 1000);
 });
 
+document.querySelectorAll("[data-grounding-deadline]").forEach((countdown) => {
+  const deadline = new Date(countdown.dataset.groundingDeadline).getTime();
+  function updateGroundingCountdown() {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      countdown.textContent = "Releasing Grounded Mode...";
+      if (!countdown.dataset.releaseRequested) {
+        countdown.dataset.releaseRequested = "true";
+        window.setTimeout(() => window.location.reload(), 500);
+      }
+      return;
+    }
+    const minutes = Math.ceil(remaining / 60000);
+    const days = Math.floor(minutes / (24 * 60));
+    const hours = Math.floor((minutes % (24 * 60)) / 60);
+    const rest = minutes % 60;
+    countdown.textContent = days ? `${days}d ${hours}h ${rest}m` : `${hours}h ${rest}m`;
+  }
+  updateGroundingCountdown();
+  window.setInterval(updateGroundingCountdown, 60000);
+});
+
 document.querySelectorAll("[data-open-review]").forEach((button) => {
   button.addEventListener("click", () => {
     const dialog = document.getElementById(button.dataset.openReview);
@@ -133,6 +178,38 @@ document.querySelectorAll("[data-open-dialog]").forEach((button) => {
     const dialog = document.getElementById(button.dataset.openDialog);
     if (dialog) dialog.showModal();
   });
+});
+
+const guardianGrid = document.querySelector(".guardian .grid");
+if (guardianGrid) {
+  const modules = Array.from(guardianGrid.querySelectorAll("[data-dashboard-module]"));
+  if (modules.length) {
+    const launcher = document.createElement("article");
+    launcher.className = "card module-launcher";
+    launcher.innerHTML = '<div class="card-head"><h2>Dashboard Modules</h2><span class="badge">Open a view</span></div><div class="module-grid"></div>';
+    const buttonGrid = launcher.querySelector(".module-grid");
+    modules.forEach((module, index) => {
+      const title = module.dataset.dashboardModule;
+      const id = `dashboard-module-${index}`;
+      const dialog = document.createElement("dialog");
+      dialog.className = "review-dialog feature-dialog guardian-feature-dialog";
+      dialog.id = id;
+      dialog.innerHTML = '<form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>';
+      module.before(dialog);
+      dialog.appendChild(module);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "module-tile";
+      button.textContent = title;
+      button.addEventListener("click", () => dialog.showModal());
+      buttonGrid.appendChild(button);
+    });
+    guardianGrid.prepend(launcher);
+  }
+}
+
+document.querySelectorAll("[data-auto-open-dialog]").forEach((dialog) => {
+  if (dialog.showModal) dialog.showModal();
 });
 
 document.querySelectorAll("[data-confirm-deduction]").forEach((form) => {

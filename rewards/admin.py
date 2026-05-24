@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     BehaviorStar,
+    BehaviorNote,
     ChildRule,
     Chore,
     DailyScheduleEvent,
@@ -32,6 +33,7 @@ admin.site.register(
         GrowthGoal,
         StoreItem,
         BehaviorStar,
+        BehaviorNote,
         LedgerRequest,
         PushSubscription,
         ReminderDispatch,

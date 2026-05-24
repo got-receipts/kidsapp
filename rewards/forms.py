@@ -2,6 +2,8 @@ from django import forms
 
 from django.utils import timezone
 
+from urllib.parse import urlparse
+
 from .models import ChildRule, Chore, DailyScheduleEvent, FamilySettings, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
 
 
@@ -63,21 +65,37 @@ class HouseRuleForm(forms.ModelForm):
 
 class GroundingForm(forms.Form):
     reason = forms.CharField(max_length=180, required=False, label="Message for the child (optional)")
+    lift_at = forms.DateTimeField(
+        required=False,
+        label="Scheduled lift date and time (optional)",
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
+    )
+
+    def clean_lift_at(self):
+        lift_at = self.cleaned_data.get("lift_at")
+        if lift_at and lift_at <= timezone.now():
+            raise forms.ValidationError("Scheduled lift time must be in the future.")
+        return lift_at
 
 
-class GoogleCalendarSettingsForm(forms.ModelForm):
+class TeamupCalendarSettingsForm(forms.ModelForm):
     class Meta:
         model = FamilySettings
-        fields = ["google_calendar_enabled", "google_calendar_id"]
+        fields = ["teamup_calendar_enabled", "teamup_calendar_url"]
         labels = {
-            "google_calendar_enabled": "Show public Google Calendar events",
-            "google_calendar_id": "Public Google Calendar ID",
+            "teamup_calendar_enabled": "Show Teamup calendar in dashboard",
+            "teamup_calendar_url": "Public Teamup calendar URL",
         }
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("google_calendar_enabled") and not cleaned.get("google_calendar_id", "").strip():
-            self.add_error("google_calendar_id", "Enter a calendar ID before turning this on.")
+        url = cleaned.get("teamup_calendar_url", "").strip()
+        if cleaned.get("teamup_calendar_enabled") and not url:
+            self.add_error("teamup_calendar_url", "Enter a Teamup calendar URL before turning this on.")
+        if url:
+            hostname = (urlparse(url).hostname or "").lower()
+            if hostname != "teamup.com" and not hostname.endswith(".teamup.com"):
+                self.add_error("teamup_calendar_url", "Use a public calendar link hosted by Teamup.")
         return cleaned
 
 
@@ -110,9 +128,7 @@ class SpendingTransferForm(forms.Form):
 
 
 class FamilyTransferForm(forms.Form):
-    SPEND_CHOICE = "__spend__"
-
-    recipient_id = forms.ChoiceField(label="Send to")
+    recipient_id = forms.ModelChoiceField(queryset=Profile.objects.none(), label="Send to")
     cash_amount = forms.DecimalField(label="Amount to send ($)", min_value=0.01, decimal_places=2)
 
     def __init__(self, *args, sender=None, **kwargs):
@@ -120,20 +136,7 @@ class FamilyTransferForm(forms.Form):
         queryset = Profile.objects.filter(role=Profile.Role.CHILD)
         if sender is not None:
             queryset = queryset.exclude(pk=sender.pk)
-        self._recipients = {str(profile.pk): profile for profile in queryset.order_by("display_name")}
-        self.fields["recipient_id"].choices = [
-            (self.SPEND_CHOICE, "Spend at the store"),
-            *[(pk, profile.display_name) for pk, profile in self._recipients.items()],
-        ]
-
-    def clean_recipient_id(self):
-        recipient_id = self.cleaned_data["recipient_id"]
-        if recipient_id == self.SPEND_CHOICE:
-            return recipient_id
-        recipient = self._recipients.get(str(recipient_id))
-        if recipient is None:
-            raise forms.ValidationError("Choose a family member or Spend at the store.")
-        return recipient
+        self.fields["recipient_id"].queryset = queryset.order_by("display_name")
 
 
 class SavingsGoalForm(forms.ModelForm):

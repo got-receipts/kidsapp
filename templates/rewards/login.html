@@ -1,9 +1,10 @@
 {% extends "rewards/base.html" %}
+{% load static %}
 {% block title %}Sign In | Family Circle{% endblock %}
 {% block content %}
 <main class="login-page">
   <section class="welcome">
-    <div class="brand"><span class="mark">FC</span><div><small>Family Circle</small><strong>Learn. Earn. Grow.</strong></div></div>
+    <div class="brand"><img class="brand-logo" src="{% static 'rewards/logo.svg' %}" alt="Family Circle - Connected Family Hub"></div>
     <button class="theme-toggle login-theme" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button>
     <h1>Your family rewards hub.</h1>
     <p class="muted">School progress, chores, growing goals, tokens, savings, and a family store in one safe place.</p>

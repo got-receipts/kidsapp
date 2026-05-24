@@ -17,7 +17,7 @@ This is private family software. All rights reserved; it is not intended for red
 - Opt-in Dad/GG push reminders to award stars after 7:30 PM and an account ledger showing spending and rewards.
 - A daily animated child check-in summarizing newly earned stars/tokens, open quests, and the next reward target.
 - Guardian-managed daily schedules, personal rules, and house rules shown in each child's morning briefing and daily dashboard.
-- A read-only optional Google Calendar public-calendar feed for shared family events on the child dashboard.
+- A read-only optional Teamup public-calendar view embedded in dashboard popups.
 - Experience rewards including museum, park, Hoffman's Playland, Lake George trips, and a Great Escape grand prize.
 - In-app Savings and Spending balances with Dad-only recorded balance corrections and approval of withdrawals/transfers.
 - Unverified checked quests create recorded token penalties; token balances may go below zero while internal Savings and Spending remain overdraft-protected.
@@ -28,7 +28,8 @@ This is private family software. All rights reserved; it is not intended for red
 - Atomic ledger-backed balance updates so approvals from multiple devices remain consistent.
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `1.5.0`).
+- A futuristic vector identity, role-aware connection animation, and modal command-center layout designed for iPhone and iPad.
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.0.0`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Run Locally
@@ -59,7 +60,7 @@ The initial usernames are `kj`, `astoria`, `saphira`, `dad`, `mom`, and `gg`.
 
 Account access is deliberately different: Dad and GG are guardian accounts with family-management controls; Mom is a read-only **Family Viewer** account that can see progress but cannot approve, edit, lock accounts, change rewards, subscribe to action reminders, or access child balances.
 
-Dad and GG use the **Guardian Actions** panel to open focused popup interfaces for rewards, behavior deductions, Grounded Mode, grades, chores, goals, schedules, rules, and store updates. Behavior deductions are audited in account history and may make a token balance negative.
+Dad and GG use the **Guardian Actions** panel to open focused popup interfaces for rewards, behavior deductions, Grounded Mode, grades, chores, goals, schedules, rules, and store updates. Behavior deductions are audited in account history and may make a token balance negative. Grounded Mode supports a scheduled lift and records a behavior note that Mom can see in her read-only dashboard.
 
 Do not leave accounts using the fallback password on an online app. Replace the initial passwords with strong individual credentials before sharing the deployment URL.
 
@@ -84,21 +85,19 @@ Railway evaluates cron schedules in UTC. The command checks the configured `Amer
 
 On iPhone, push notifications require installing the PWA from Safari using **Add to Home Screen**, then enabling notifications from inside the installed app.
 
-## Google Calendar Display
+## Teamup Calendar Display
 
-To show shared family events in each child's morning briefing and Today's Plan, create or choose a Google Calendar that is safe to display publicly and enable the Google Calendar API in Google Cloud. Set the API key in Railway:
+To show a shared family schedule in the dashboards, create a Teamup calendar with a public-facing viewing link. Dad can open **Settings** on the guardian dashboard, enable calendar display, and enter that URL. You may also provide a deployment default in Railway:
 
 ```text
-GOOGLE_CALENDAR_API_KEY=your-google-api-key
+TEAMUP_CALENDAR_URL=https://teamup.com/c/ghm7w1
 ```
 
-Dad can then open **Settings** on the guardian dashboard, turn on calendar display, and enter the public calendar ID. `GOOGLE_CALENDAR_ID` remains supported as a deployment default until Dad saves in-app settings.
-
-This integration is read-only and uses Google Calendar's public events API. Do not publish private school, medical, location, or custody-related details in a public calendar. Private-calendar sign-in requires a Google OAuth client, consent configuration, and callback URL; it is deliberately not simulated with an API key.
+The calendar opens read-only inside a dashboard modal. Do not publish private school, medical, location, or custody-related details in a public calendar.
 
 ## Grounded Mode
 
-Dad or GG can activate **Grounded Mode** for an individual child from the guardian dashboard. The child can continue completing chores for verification, but balances, the store, wallet transfers, conversion requests, awards, stars, and chore reward posting are locked until Dad or GG lifts the mode. Dad's recorded balance corrections remain available for account administration.
+Dad or GG can activate **Grounded Mode** for an individual child from the guardian dashboard, optionally adding a scheduled lift time. The restriction lifts automatically on the first app request after that time is reached, or can be removed manually. The child receives an acknowledgement-only popup at dashboard entry, can continue completing chores for verification, and cannot see balances or use rewards and spending while locked. Mom can see the resulting behavior note without being granted action controls.
 
 ## iPhone And iPad Installation
 
