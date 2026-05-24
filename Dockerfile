@@ -13,4 +13,4 @@ COPY . .
 RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed_family && gunicorn family_circle.wsgi:application --bind 0.0.0.0:${PORT}"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && INITIAL_CHILD_PASSWORD=${INITIAL_CHILD_PASSWORD:-password123} INITIAL_GUARDIAN_PASSWORD=${INITIAL_GUARDIAN_PASSWORD:-password123} python manage.py seed_family && gunicorn family_circle.wsgi:application --bind 0.0.0.0:${PORT}"]

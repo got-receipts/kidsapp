@@ -26,7 +26,7 @@ class Command(BaseCommand):
         for username, display_name, role, specific_env, shared_env in accounts:
             password = os.getenv(specific_env) or os.getenv(shared_env)
             if options["dev"]:
-                password = password or "FamilyCircle123!"
+                password = password or "password123"
             if not User.objects.filter(username=username).exists() and not password:
                 missing_new_password = True
                 continue

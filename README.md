@@ -25,17 +25,19 @@ python manage.py seed_family --dev
 python manage.py runserver
 ```
 
-For `--dev`, all six accounts initially use `FamilyCircle123!`; change passwords before any real use.
+For `--dev`, all six accounts initially use `password123`; change passwords before any real use.
 
 ## Deploy To Railway
 
 1. Push this folder to a Git repository and create a Railway project from it.
 2. Add a Railway PostgreSQL database service and connect it to this app so `DATABASE_URL` is injected.
-3. Set the variables shown in `.env.example`, especially a strong `SECRET_KEY`, `CSRF_TRUSTED_ORIGINS`, `INITIAL_CHILD_PASSWORD`, and `INITIAL_GUARDIAN_PASSWORD`.
-4. Deploy. The container migrates the database, seeds the six accounts and starter store entries, then starts Gunicorn.
+3. Set the variables shown in `.env.example`, especially a strong `SECRET_KEY` and `CSRF_TRUSTED_ORIGINS`. Set `INITIAL_CHILD_PASSWORD` and `INITIAL_GUARDIAN_PASSWORD` before the first deploy for secure starter logins.
+4. Deploy. The container migrates the database, seeds the six accounts and starter store entries, then starts Gunicorn. If the two initial password variables were omitted on the first deploy, the app boots using the temporary password `password123` for all six seeded accounts so deployment does not fail.
 5. Provide per-account password variables instead of the shared initial variables before the first account creation when each family member should begin with a different password. A future account-settings screen can support self-service password changes.
 
 The initial usernames are `kj`, `astoria`, `saphira`, `dad`, `mom`, and `gg`.
+
+Do not leave accounts using the fallback password on an online app. Replace the initial passwords with strong individual credentials before sharing the deployment URL.
 
 ## iPhone Installation
 
