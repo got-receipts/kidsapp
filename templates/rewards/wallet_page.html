@@ -1,0 +1,81 @@
+{% extends "rewards/base.html" %}
+{% load rewards_tags %}
+{% block title %}My Wallet | Family Circle{% endblock %}
+{% block content %}
+<main class="shell kid-shell money-shell">
+  <header class="topbar">
+    <a class="money-back" href="{% url 'dashboard' %}"><span>&#8249;</span>Adventure board</a>
+    <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
+  </header>
+  <section class="wallet-card money-hero">
+    <p class="eyebrow">{{ profile.display_name }}'s wallet workshop</p>
+    <h1>Tokens &amp; Money</h1>
+    <p class="hero-copy">Choose a quick amount or make your own request. Dad reviews money moves before balances change.</p>
+    <div class="balances">
+      <div class="treasure"><strong>{{ wallet.tokens }}</strong><span>Tokens</span></div>
+      <div class="piggy"><strong>{{ wallet.cash_cents|dollars }}</strong><span>Savings</span></div>
+      <div class="spending"><strong>{{ wallet.spending_cents|dollars }}</strong><span>Spending</span></div>
+    </div>
+  </section>
+  <section class="rate-card">
+    <span class="rate-star">&#9733;</span>
+    <div><strong>$1.00 savings = 10 tokens</strong><small>Turn savings into tokens for store rewards.</small></div>
+  </section>
+  <section class="amount-grid">
+    <article class="card amount-card token-card">
+      <div class="card-head"><h2>Get Tokens</h2><span class="badge gold">Convert</span></div>
+      <p class="money-explainer">Select how much Savings you want to turn into Tokens.</p>
+      <form method="post" action="{% url 'request_conversion' %}" class="preset-grid">
+        {% csrf_token %}
+        <button class="preset-button" type="submit" name="cash_amount" value="0.50"><strong>5</strong><span>Tokens</span><small>$0.50</small></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="1.00"><strong>10</strong><span>Tokens</span><small>$1.00</small></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="2.00"><strong>20</strong><span>Tokens</span><small>$2.00</small></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="5.00"><strong>50</strong><span>Tokens</span><small>$5.00</small></button>
+      </form>
+      <form method="post" action="{% url 'request_conversion' %}" class="form custom-amount">
+        {% csrf_token %}
+        <label>Custom Savings amount {{ convert_form.cash_amount }}</label>
+        <button class="primary" type="submit">Ask Dad to Convert</button>
+      </form>
+    </article>
+    <article class="card amount-card spending-card">
+      <div class="card-head"><h2>Move to Spending</h2><span class="badge">Use later</span></div>
+      <p class="money-explainer">Move some Savings to your in-app Spending balance.</p>
+      <form method="post" action="{% url 'request_spending_transfer' %}" class="preset-grid">
+        {% csrf_token %}
+        <button class="preset-button" type="submit" name="cash_amount" value="1.00"><strong>$1</strong><span>Move</span></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="2.00"><strong>$2</strong><span>Move</span></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="5.00"><strong>$5</strong><span>Move</span></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="10.00"><strong>$10</strong><span>Move</span></button>
+      </form>
+      <form method="post" action="{% url 'request_spending_transfer' %}" class="form custom-amount">
+        {% csrf_token %}
+        <label>Custom Savings amount {{ spending_form.cash_amount }}</label>
+        <button class="primary" type="submit">Ask Dad to Move It</button>
+      </form>
+    </article>
+    <article class="card amount-card cash-card">
+      <div class="card-head"><h2>Ask for Cash</h2><span class="badge coral">Dad review</span></div>
+      <p class="money-explainer">Request money from Savings for Dad to provide outside the app.</p>
+      <form method="post" action="{% url 'request_cashout' %}" class="preset-grid">
+        {% csrf_token %}
+        <button class="preset-button" type="submit" name="cash_amount" value="1.00"><strong>$1</strong><span>Cash</span></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="2.00"><strong>$2</strong><span>Cash</span></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="5.00"><strong>$5</strong><span>Cash</span></button>
+        <button class="preset-button" type="submit" name="cash_amount" value="10.00"><strong>$10</strong><span>Cash</span></button>
+      </form>
+      <form method="post" action="{% url 'request_cashout' %}" class="form custom-amount">
+        {% csrf_token %}
+        <label>Custom Savings amount {{ cashout_form.cash_amount }}</label>
+        <button class="primary" type="submit">Send Request</button>
+      </form>
+    </article>
+  </section>
+  <section class="card money-history">
+    <div class="card-head"><h2>Wallet Activity</h2><span class="badge">Family ledger</span></div>
+    {% for entry in ledger %}
+      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.get_status_display }}</small></div><b>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% elif entry.spending_delta_cents %}Spend {{ entry.spending_delta_cents|dollars }}{% else %}Save {{ entry.cash_delta_cents|dollars }}{% endif %}</b></div>
+    {% empty %}<p class="empty">Activity will appear here.</p>{% endfor %}
+  </section>
+</main>
+{% endblock %}

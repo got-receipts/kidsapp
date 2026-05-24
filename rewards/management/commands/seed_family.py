@@ -3,7 +3,7 @@ import os
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
-from rewards.models import GrowthGoal, Profile, StoreItem, Wallet
+from rewards.models import GrowthGoal, HouseRule, Profile, StoreItem, Wallet
 from rewards.services import ensure_today_chores
 
 
@@ -51,14 +51,30 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Family Circle accounts are ready: KJ, Astoria, Saphira, Dad, Mom and GG."))
 
     def _starter_content(self, children):
-        store = [
-            ("Extra screen time", "Choose 30 bonus minutes.", 25),
-            ("Pick dessert", "Choose the family dessert.", 35),
-            ("Movie night choice", "Choose the next movie.", 60),
-            ("Stay up later", "One weekend bedtime pass.", 80),
+        house_rules = [
+            ("Finish chores on time", "Complete daily chores before 7:00 PM to earn credit."),
+            ("Listen to directions", "Follow directions from Dad, Mom, or GG for the day."),
+            ("Use kindness", "Speak kindly and make safe, caring choices."),
         ]
-        for name, description, cost in store:
-            StoreItem.objects.get_or_create(name=name, defaults={"description": description, "token_cost": cost})
+        for title, details in house_rules:
+            HouseRule.objects.get_or_create(title=title, defaults={"details": details})
+        store = [
+            ("Extra screen time", "Choose 30 bonus minutes.", 25, StoreItem.Category.TREAT),
+            ("Pick dessert", "Choose the family dessert.", 35, StoreItem.Category.TREAT),
+            ("Movie night choice", "Choose the next movie.", 60, StoreItem.Category.TREAT),
+            ("Stay up later", "One weekend bedtime pass.", 80, StoreItem.Category.TREAT),
+            ("Park adventure", "Plan a fun family park outing.", 120, StoreItem.Category.EXPERIENCE),
+            ("Museum trip", "Explore a museum together.", 180, StoreItem.Category.EXPERIENCE),
+            ("Hoffman's Playland trip", "A day of rides and play.", 300, StoreItem.Category.EXPERIENCE),
+            ("Lake George beach day", "A day trip to the beach at Lake George.", 450, StoreItem.Category.EXPERIENCE),
+            ("Lake George weekend", "A three-day Lake George adventure.", 1200, StoreItem.Category.EXPERIENCE),
+            ("Great Escape grand prize", "A major-ticket amusement park adventure.", 2500, StoreItem.Category.GRAND),
+        ]
+        for name, description, cost, category in store:
+            StoreItem.objects.get_or_create(
+                name=name,
+                defaults={"description": description, "token_cost": cost, "category": category},
+            )
         for child in children:
             GrowthGoal.objects.get_or_create(
                 child=child,

@@ -10,12 +10,20 @@ This is private family software. All rights reserved; it is not intended for red
 - School grades, chores, things-to-improve goals, a token store, and cash balances.
 - Guardian approval for chore rewards, goal rewards, store spending, token conversion, and cash-out requests.
 - Twelve rotating daily chores divided among the three children, with token credit available only before 7:00 PM Eastern.
+- A live child-facing 7:00 PM quest countdown plus separate checked and guardian-verified progress bars.
 - A daily good-behavior star calendar; each awarded star adds 2 tokens.
 - Opt-in guardian push reminders to award stars after 7:30 PM and an account ledger showing spending and rewards.
+- A daily animated child check-in summarizing newly earned stars/tokens, open quests, and the next reward target.
+- Guardian-managed daily schedules, personal rules, and house rules shown in each child's morning briefing and daily dashboard.
+- Experience rewards including museum, park, Hoffman's Playland, Lake George trips, and a Great Escape grand prize.
+- In-app Savings and Spending balances with Dad-only recorded balance corrections and approval of withdrawals/transfers.
+- Unverified checked quests create recorded token penalties; token balances may go below zero while internal Savings and Spending remain overdraft-protected.
+- A separate child wallet page with large preset buttons and a custom amount option for token conversions, spending transfers, and cash requests.
+- Child-created savings goals with animated progress based on their internal Savings balance.
 - Atomic ledger-backed balance updates so approvals from multiple devices remain consistent.
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `0.4.0`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `0.9.0`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Run Locally
@@ -45,6 +53,12 @@ For `--dev`, all six accounts initially use `password123`; change passwords befo
 The initial usernames are `kj`, `astoria`, `saphira`, `dad`, `mom`, and `gg`.
 
 Do not leave accounts using the fallback password on an online app. Replace the initial passwords with strong individual credentials before sharing the deployment URL.
+
+## Money Safety Boundary
+
+`Savings` and `Spending` are internal Family Circle ledger balances. The app does not debit a parent's bank account, hold funds, create a spendable virtual card, or issue an Apple Wallet payment card. Dad can record real-world money provided or withdrawn and the audit history keeps those corrections visible.
+
+An Apple Wallet display pass or a real funded card can be considered later only through an appropriate pass-signing setup or regulated card/payment provider, with stronger authentication and parental controls.
 
 ## Star Reminder Notifications
 

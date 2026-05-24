@@ -92,3 +92,22 @@ if (document.querySelector(".toast.success")) {
 window.setTimeout(() => {
   document.querySelectorAll(".toast").forEach((toast) => toast.remove());
 }, 4500);
+
+document.querySelectorAll("[data-quest-deadline]").forEach((countdown) => {
+  const deadline = new Date(countdown.dataset.questDeadline).getTime();
+  function updateCountdown() {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      countdown.textContent = "Time is up for today's credit";
+      countdown.classList.add("expired");
+      return;
+    }
+    const totalSeconds = Math.floor(remaining / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    countdown.textContent = `${hours}h ${minutes}m ${seconds}s left`;
+  }
+  updateCountdown();
+  window.setInterval(updateCountdown, 1000);
+});

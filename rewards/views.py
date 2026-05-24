@@ -9,13 +9,40 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Case, IntegerField, Sum, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .forms import AwardForm, CashOutForm, ChoreForm, ConvertForm, GoalForm, GradeForm, StoreItemForm
-from .models import BehaviorStar, Chore, GrowthGoal, LedgerRequest, Profile, PushSubscription, StoreItem
+from .forms import (
+    AwardForm,
+    BalanceAdjustmentForm,
+    CashOutForm,
+    ChildRuleForm,
+    ChoreForm,
+    ConvertForm,
+    DailyScheduleEventForm,
+    GoalForm,
+    GradeForm,
+    HouseRuleForm,
+    SavingsGoalForm,
+    SpendingTransferForm,
+    StoreItemForm,
+)
+from .models import (
+    BehaviorStar,
+    ChildRule,
+    Chore,
+    DailyScheduleEvent,
+    GrowthGoal,
+    HouseRule,
+    LedgerRequest,
+    Profile,
+    PushSubscription,
+    SavingsGoal,
+    StoreItem,
+)
 from .services import ensure_today_chores
 
 
@@ -72,6 +99,16 @@ def _guardian(request):
     return profile
 
 
+def _dad(request):
+    guardian = _guardian(request)
+    if guardian is None:
+        return None
+    if guardian.user.username.lower() != "dad":
+        messages.error(request, "Only Dad can change savings or spending balances.")
+        return None
+    return guardian
+
+
 def _cents(amount):
     return int((Decimal(amount) * 100).quantize(Decimal("1")))
 
@@ -103,7 +140,15 @@ def _star_calendar(child, requested_month):
 def dashboard(request):
     ensure_today_chores()
     profile = _profile(request)
-    store_items = StoreItem.objects.filter(active=True)
+    store_items = StoreItem.objects.filter(active=True).order_by(
+        Case(
+            When(category=StoreItem.Category.TREAT, then=0),
+            When(category=StoreItem.Category.EXPERIENCE, then=1),
+            When(category=StoreItem.Category.GRAND, then=2),
+            output_field=IntegerField(),
+        ),
+        "token_cost",
+    )
     if profile.is_guardian:
         children = Profile.objects.filter(role=Profile.Role.CHILD).select_related("wallet")
         selected = children.filter(pk=request.GET.get("child")).first() or children.first()
@@ -117,6 +162,9 @@ def dashboard(request):
             "store_items": store_items,
             "pending": LedgerRequest.objects.filter(status=LedgerRequest.Status.PENDING).select_related("child"),
             "selected_chores": selected.chores.filter(due_date=today).order_by("title") if selected else [],
+            "selected_schedule": selected.schedule_events.filter(day__gte=today)[:20] if selected else [],
+            "selected_rules": selected.specific_rules.filter(active=True) if selected else [],
+            "house_rules": HouseRule.objects.filter(active=True),
             "history": selected.ledger_requests.select_related("store_item", "reviewed_by").all()[:30] if selected else [],
             "star_weeks": star_weeks,
             "star_month": star_month,
@@ -129,28 +177,82 @@ def dashboard(request):
             "chore_form": ChoreForm(),
             "goal_form": GoalForm(),
             "item_form": StoreItemForm(),
+            "schedule_form": DailyScheduleEventForm(),
+            "child_rule_form": ChildRuleForm(),
+            "house_rule_form": HouseRuleForm(),
             "award_form": AwardForm(),
+            "balance_form": BalanceAdjustmentForm(),
+            "dad_controls": profile.user.username.lower() == "dad",
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     today_chores = profile.chores.filter(due_date=timezone.localdate()).order_by("title")
-    completed = today_chores.filter(status__in=[Chore.Status.SUBMITTED, Chore.Status.COMPLETED]).count()
+    checked = today_chores.filter(status__in=[Chore.Status.SUBMITTED, Chore.Status.COMPLETED]).count()
+    verified = today_chores.filter(status=Chore.Status.COMPLETED).count()
+    not_verified = today_chores.filter(status=Chore.Status.NOT_VERIFIED).count()
+    since = profile.last_recap_at
+    recap_entries = profile.ledger_requests.filter(status=LedgerRequest.Status.APPROVED)
+    recap_stars = profile.behavior_stars.all()
+    if since:
+        recap_entries = recap_entries.filter(reviewed_at__gt=since)
+        recap_stars = recap_stars.filter(created_at__gt=since)
+    else:
+        recap_entries = recap_entries.none()
+        recap_stars = recap_stars.none()
+    recap_token_total = recap_entries.filter(token_delta__gt=0).aggregate(total=Sum("token_delta"))["total"] or 0
+    recap_token_loss = -(recap_entries.filter(kind=LedgerRequest.Kind.PENALTY).aggregate(total=Sum("token_delta"))["total"] or 0)
+    recap_purchases = recap_entries.filter(kind=LedgerRequest.Kind.STORE).count()
+    next_prize = store_items.filter(token_cost__gt=profile.wallet.tokens).order_by("token_cost").first()
+    savings_goal = SavingsGoal.objects.filter(child=profile).first()
+    today = timezone.localdate()
     context = {
         "profile": profile,
         "wallet": profile.wallet,
         "grades": profile.grades.all().order_by("-created_at")[:8],
         "chores": today_chores,
         "chore_total": today_chores.count(),
-        "chore_completed": completed,
-        "chore_percent": round(completed / today_chores.count() * 100) if today_chores.count() else 0,
+        "chore_completed": checked,
+        "chore_percent": round(checked / today_chores.count() * 100) if today_chores.count() else 0,
+        "chore_verified": verified,
+        "chore_verified_percent": round(verified / today_chores.count() * 100) if today_chores.count() else 0,
+        "chore_not_verified": not_verified,
         "star_count": profile.behavior_stars.count(),
         "star_today": profile.behavior_stars.filter(day=timezone.localdate()).exists(),
         "goals": profile.goals.exclude(status=GrowthGoal.Status.COMPLETED).order_by("created_at"),
         "store_items": store_items,
-        "ledger": profile.ledger_requests.all()[:10],
-        "convert_form": ConvertForm(),
-        "cashout_form": CashOutForm(),
+        "savings_goal": savings_goal,
+        "savings_goal_form": SavingsGoalForm(instance=savings_goal),
+        "today": today,
+        "quest_deadline": timezone.make_aware(datetime.combine(today, time(19, 0))),
+        "today_schedule": profile.schedule_events.filter(day=today),
+        "specific_rules": profile.specific_rules.filter(active=True),
+        "house_rules": HouseRule.objects.filter(active=True),
+        "show_recap": profile.last_recap_day != timezone.localdate(),
+        "recap_first_visit": since is None,
+        "recap_star_count": recap_stars.count(),
+        "recap_token_total": recap_token_total,
+        "recap_token_loss": recap_token_loss,
+        "recap_purchases": recap_purchases,
+        "recap_tasks_left": today_chores.filter(status__in=[Chore.Status.OPEN, Chore.Status.IN_PROGRESS]).count(),
+        "next_prize": next_prize,
+        "tokens_to_next_prize": next_prize.token_cost - profile.wallet.tokens if next_prize else 0,
     }
     return render(request, "rewards/child_dashboard.html", context)
+
+
+@login_required
+def wallet_page(request):
+    profile = _profile(request)
+    if profile.is_guardian:
+        return redirect("dashboard")
+    context = {
+        "profile": profile,
+        "wallet": profile.wallet,
+        "ledger": profile.ledger_requests.all()[:20],
+        "convert_form": ConvertForm(),
+        "cashout_form": CashOutForm(),
+        "spending_form": SpendingTransferForm(),
+    }
+    return render(request, "rewards/wallet_page.html", context)
 
 
 @login_required
@@ -243,11 +345,11 @@ def request_conversion(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Conversions must be in 10 cent increments.")
-        return redirect("dashboard")
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your available cash balance.")
-        return redirect("dashboard")
+        return redirect("wallet_page")
     tokens = cents // 10
     LedgerRequest.objects.create(
         child=profile,
@@ -258,7 +360,7 @@ def request_conversion(request):
         cash_delta_cents=-cents,
     )
     messages.success(request, "Conversion requested. The rate is 10 tokens for each $1.")
-    return redirect("dashboard")
+    return redirect("wallet_page")
 
 
 @login_required
@@ -266,12 +368,15 @@ def request_conversion(request):
 def request_cashout(request):
     profile = _profile(request)
     form = CashOutForm(request.POST)
-    if profile.is_guardian or not form.is_valid():
+    if profile.is_guardian:
         return redirect("dashboard")
+    if not form.is_valid():
+        messages.error(request, "Please choose or enter an amount to request.")
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your available cash balance.")
-        return redirect("dashboard")
+        return redirect("wallet_page")
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -279,7 +384,63 @@ def request_cashout(request):
         description=f"Cash out ${cents / 100:.2f}",
         cash_delta_cents=-cents,
     )
-    messages.success(request, "Cash-out request sent to Dad, Mom, and GG.")
+    messages.success(request, "Cash-out request sent to Dad for review.")
+    return redirect("wallet_page")
+
+
+@login_required
+@require_POST
+def request_spending_transfer(request):
+    profile = _profile(request)
+    form = SpendingTransferForm(request.POST)
+    if profile.is_guardian:
+        return redirect("dashboard")
+    if not form.is_valid():
+        messages.error(request, "Please choose or enter an amount to move.")
+        return redirect("wallet_page")
+    cents = _cents(form.cleaned_data["cash_amount"])
+    if cents > profile.wallet.cash_cents:
+        messages.error(request, "That is more than your savings balance.")
+        return redirect("wallet_page")
+    LedgerRequest.objects.create(
+        child=profile,
+        requested_by=profile,
+        kind=LedgerRequest.Kind.TRANSFER,
+        description=f"Move ${cents / 100:.2f} from savings to spending",
+        cash_delta_cents=-cents,
+        spending_delta_cents=cents,
+    )
+    messages.success(request, "Your request to move money to spending was sent to Dad.")
+    return redirect("wallet_page")
+
+
+@login_required
+@require_POST
+def save_savings_goal(request):
+    profile = _profile(request)
+    if profile.is_guardian:
+        return redirect("dashboard")
+    goal = SavingsGoal.objects.filter(child=profile).first()
+    form = SavingsGoalForm(request.POST, instance=goal)
+    if not form.is_valid():
+        messages.error(request, "Please choose a goal name and a savings amount.")
+        return redirect("dashboard")
+    goal = form.save(commit=False)
+    goal.child = profile
+    goal.target_cents = _cents(form.cleaned_data["target_amount"])
+    goal.save()
+    messages.success(request, f"Your savings goal is set: {goal.name}!")
+    return redirect("dashboard")
+
+
+@login_required
+@require_POST
+def dismiss_recap(request):
+    profile = _profile(request)
+    if not profile.is_guardian:
+        profile.last_recap_at = timezone.now()
+        profile.last_recap_day = timezone.localdate()
+        profile.save(update_fields=["last_recap_at", "last_recap_day"])
     return redirect("dashboard")
 
 
@@ -289,8 +450,25 @@ def guardian_create(request, model):
     guardian = _guardian(request)
     if guardian is None:
         return redirect("dashboard")
+    if model == "house_rule":
+        form = HouseRuleForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Please check the house rule and try again.")
+            return redirect(f"/?child={request.POST.get('child_id', '')}")
+        record = form.save(commit=False)
+        record.created_by = guardian
+        record.save()
+        messages.success(request, "House rule added for everyone.")
+        return redirect(f"/?child={request.POST.get('child_id', '')}")
     child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
-    forms = {"grade": GradeForm, "chore": ChoreForm, "goal": GoalForm, "item": StoreItemForm}
+    forms = {
+        "grade": GradeForm,
+        "chore": ChoreForm,
+        "goal": GoalForm,
+        "item": StoreItemForm,
+        "schedule": DailyScheduleEventForm,
+        "child_rule": ChildRuleForm,
+    }
     form_class = forms.get(model)
     if not form_class:
         return redirect("dashboard")
@@ -309,9 +487,33 @@ def guardian_create(request, model):
             record.cash_reward_cents = _cents(form.cleaned_data["cash_reward"])
             record.due_date = timezone.localdate()
             record.assigned_by = guardian
+        if model in ["schedule", "child_rule"]:
+            record.created_by = guardian
         record.save()
-    messages.success(request, f"{model.title()} added for {child.display_name}.")
+    labels = {"schedule": "Schedule event", "child_rule": "Personal rule"}
+    messages.success(request, f"{labels.get(model, model.title())} added for {child.display_name}.")
     return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_remove(request, model, pk):
+    guardian = _guardian(request)
+    if guardian is None:
+        return redirect("dashboard")
+    models = {"schedule": DailyScheduleEvent, "child_rule": ChildRule, "house_rule": HouseRule}
+    record_model = models.get(model)
+    if record_model is None:
+        return redirect("dashboard")
+    record = get_object_or_404(record_model, pk=pk)
+    selected_id = getattr(record, "child_id", None) or request.POST.get("child_id", "")
+    if model == "schedule":
+        record.delete()
+    else:
+        record.active = False
+        record.save(update_fields=["active"])
+    messages.info(request, "Item removed from the daily plan.")
+    return redirect(f"/?child={selected_id}")
 
 
 @login_required
@@ -385,18 +587,54 @@ def guardian_award(request):
 
 @login_required
 @require_POST
+def dad_balance_adjustment(request):
+    dad = _dad(request)
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    form = BalanceAdjustmentForm(request.POST)
+    if dad is None or not form.is_valid():
+        messages.error(request, "Please enter a valid balance adjustment.")
+        return redirect(f"/?child={child.pk}")
+    cents = _cents(form.cleaned_data["cash_amount"])
+    sign = 1 if form.cleaned_data["direction"] == BalanceAdjustmentForm.ADD else -1
+    account = form.cleaned_data["account"]
+    entry = LedgerRequest.objects.create(
+        child=child,
+        requested_by=dad,
+        kind=LedgerRequest.Kind.BALANCE,
+        description=f"{account.title()} correction: {form.cleaned_data['reason']}",
+        cash_delta_cents=sign * cents if account == BalanceAdjustmentForm.SAVINGS else 0,
+        spending_delta_cents=sign * cents if account == BalanceAdjustmentForm.SPENDING else 0,
+    )
+    try:
+        entry.approve(dad)
+    except ValidationError as error:
+        entry.delete()
+        messages.error(request, error.message)
+        return redirect(f"/?child={child.pk}")
+    messages.success(request, f"{child.display_name}'s {account} balance has been updated.")
+    return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
 def review_request(request, pk, decision):
     guardian = _guardian(request)
     entry = get_object_or_404(LedgerRequest, pk=pk)
     if guardian is None:
         return redirect("dashboard")
+    if entry.requires_dad_approval and guardian.user.username.lower() != "dad":
+        messages.error(request, "Only Dad can approve savings and spending requests.")
+        return redirect(f"/?child={entry.child.pk}")
     try:
         if decision == "approve":
             entry.approve(guardian)
             messages.success(request, "Request approved and balance updated.")
         else:
             entry.decline(guardian)
-            messages.info(request, "Request declined.")
+            if entry.kind == LedgerRequest.Kind.CHORE:
+                messages.info(request, "Quest not verified. Its listed tokens were removed from the child's balance.")
+            else:
+                messages.info(request, "Request declined.")
     except ValidationError as error:
         messages.error(request, error.message)
     return redirect(f"/?child={entry.child.pk}")

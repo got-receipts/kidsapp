@@ -24,18 +24,23 @@
     <section class="summary">
       <h2>{{ selected.display_name }}</h2>
       <div><strong>{{ selected.wallet.tokens }}</strong><small>tokens</small></div>
-      <div><strong>{{ selected.wallet.cash_cents|dollars }}</strong><small>cash</small></div>
+      <div><strong>{{ selected.wallet.cash_cents|dollars }}</strong><small>savings</small></div>
+      <div><strong>{{ selected.wallet.spending_cents|dollars }}</strong><small>spending</small></div>
     </section>
     <section class="grid">
       <article class="card approvals">
         <div class="card-head"><h2>Waiting for approval</h2><span class="badge waiting">{{ pending|length }}</span></div>
         {% for entry in pending %}
           <div class="task">
-            <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}{{ entry.cash_delta_cents|dollars }}{% endif %}</small></div>
-            <div class="buttons">
-              <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action">Approve</button></form>
-              <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger">Decline</button></form>
-            </div>
+            <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.cash_delta_cents %}Savings {{ entry.cash_delta_cents|dollars }} {% endif %}{% if entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% endif %}</small></div>
+            {% if entry.requires_dad_approval and not dad_controls %}
+              <span class="badge waiting">Dad review only</span>
+            {% else %}
+              <div class="buttons">
+                <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action">Approve</button></form>
+                <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger">Decline</button></form>
+              </div>
+            {% endif %}
           </div>
         {% empty %}<p class="empty">Nothing waiting right now.</p>{% endfor %}
       </article>
@@ -60,10 +65,50 @@
         <p class="calendar-help">Tap a day to award {{ selected.display_name }} a good behavior star.</p>
       </article>
       <article class="card">
-        <div class="card-head"><h2>Today's chores</h2><span class="badge gold">Before 7 PM</span></div>
+        <div class="card-head"><h2>Today's chores</h2><span class="badge gold">Verify work</span></div>
+        <p class="control-note">When a child marks a chore finished, approve verified work. Declining it removes that chore's listed tokens and can create token debt.</p>
         {% for chore in selected_chores %}
-          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>+{{ chore.token_reward }} t</b></div>
+          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>{% if chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">Today's chore rotation has not been created.</p>{% endfor %}
+      </article>
+      <article class="card daily-planner">
+        <div class="card-head"><h2>Schedule ahead</h2><span class="badge">Morning message</span></div>
+        {% for event in selected_schedule %}
+          <div class="planner-row">
+            <div><strong>{{ event.day|date:"M j" }}{% if event.start_time %} at {{ event.start_time|time:"g:i A" }}{% endif %} - {{ event.title }}</strong><small>{{ event.details }}</small></div>
+            <form method="post" action="{% url 'guardian_remove' 'schedule' event.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove event">Remove</button></form>
+          </div>
+        {% empty %}<p class="empty">No upcoming events in a morning message yet.</p>{% endfor %}
+        <form class="form planner-form" method="post" action="{% url 'guardian_create' 'schedule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}
+          <button class="primary">Add to schedule</button>
+        </form>
+      </article>
+      <article class="card rules-control">
+        <div class="card-head"><h2>{{ selected.display_name }}'s rules</h2><span class="badge">Personal</span></div>
+        {% for rule in selected_rules %}
+          <div class="planner-row">
+            <div><strong>{{ rule.title }}</strong><small>{{ rule.details }}</small></div>
+            <form method="post" action="{% url 'guardian_remove' 'child_rule' rule.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove rule">Remove</button></form>
+          </div>
+        {% empty %}<p class="empty">No child-specific rules added.</p>{% endfor %}
+        <form class="form planner-form" method="post" action="{% url 'guardian_create' 'child_rule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ child_rule_form.as_p }}
+          <button class="primary">Add personal rule</button>
+        </form>
+      </article>
+      <article class="card rules-control house-control">
+        <div class="card-head"><h2>House rules</h2><span class="badge gold">Everyone</span></div>
+        {% for rule in house_rules %}
+          <div class="planner-row">
+            <div><strong>{{ rule.title }}</strong><small>{{ rule.details }}</small></div>
+            <form method="post" action="{% url 'guardian_remove' 'house_rule' rule.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" aria-label="Remove house rule">Remove</button></form>
+          </div>
+        {% empty %}<p class="empty">Add house rules to every child's morning message.</p>{% endfor %}
+        <form class="form planner-form" method="post" action="{% url 'guardian_create' 'house_rule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ house_rule_form.as_p }}
+          <button class="primary">Add house rule</button>
+        </form>
       </article>
       <article class="card">
         <h2>Quick award</h2>
@@ -72,6 +117,16 @@
           <button class="primary">Add award</button>
         </form>
       </article>
+      {% if dad_controls %}
+      <article class="card banking-controls">
+        <div class="card-head"><h2>Dad's balance controls</h2><span class="badge coral">Recorded</span></div>
+        <p class="control-note">Add or remove internal savings and spending amounts to correct issues or record money provided outside this app.</p>
+        <form class="form" method="post" action="{% url 'dad_balance_adjustment' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ balance_form.as_p }}
+          <button class="primary">Record balance change</button>
+        </form>
+      </article>
+      {% endif %}
       <article class="card">
         <h2>Add grade</h2>
         <form class="form" method="post" action="{% url 'guardian_create' 'grade' %}">
@@ -105,7 +160,7 @@
         {% for entry in history %}
           <div class="row">
             <div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; {{ entry.get_status_display }}{% if entry.reviewed_by %} by {{ entry.reviewed_by.display_name }}{% endif %}</small></div>
-            <b class="{% if entry.token_delta < 0 or entry.cash_delta_cents < 0 %}spent{% else %}earned{% endif %}">{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% else %}{{ entry.cash_delta_cents|dollars }}{% endif %}</b>
+            <b class="{% if entry.token_delta < 0 or entry.cash_delta_cents < 0 or entry.spending_delta_cents < 0 %}spent{% else %}earned{% endif %}">{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% elif entry.spending_delta_cents %}Spending {{ entry.spending_delta_cents|dollars }}{% else %}Savings {{ entry.cash_delta_cents|dollars }}{% endif %}</b>
           </div>
         {% empty %}<p class="empty">Rewards and purchases will appear here.</p>{% endfor %}
       </article>
