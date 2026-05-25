@@ -29,7 +29,7 @@ This is private family software. All rights reserved; it is not intended for red
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.1.1`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.1.2`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -61,9 +61,17 @@ For `--dev`, all six accounts initially use `password123`; change passwords befo
 
 1. Push this folder to a Git repository and create a Railway project from it.
 2. Add a Railway PostgreSQL database service and connect it to this app so `DATABASE_URL` is injected.
-3. Set the variables shown in `.env.example`, especially a strong `SECRET_KEY`. Railway-generated `*.up.railway.app` domains are trusted automatically for secure form submissions; set `CSRF_TRUSTED_ORIGINS` only when using a custom domain. Set `INITIAL_CHILD_PASSWORD` and `INITIAL_GUARDIAN_PASSWORD` before the first deploy for secure starter logins.
+3. Set the variables shown in `.env.example`, especially a strong `SECRET_KEY`. Railway-generated `*.up.railway.app` domains are trusted automatically for secure form submissions; set `CSRF_TRUSTED_ORIGINS` only when using a custom domain. For this private installation, set `INITIAL_CHILD_PASSWORD=password123` and `INITIAL_GUARDIAN_PASSWORD=password123` so the starter logins match `ACCOUNT_LOGINS.md`.
 4. Deploy. The container migrates the database, seeds the six accounts and starter store entries, then starts Gunicorn. If the two initial password variables were omitted on the first deploy, the app boots using the temporary password `password123` for all six seeded accounts so deployment does not fail.
 5. Provide per-account password variables instead of the shared initial variables before the first account creation when each family member should begin with a different password. A future account-settings screen can support self-service password changes.
+
+Version `2.1.2` includes a one-time PostgreSQL login recovery migration: if an earlier database already contains any starter family account, deployment resets the six family login passwords to `password123` and restores missing starter profiles or child wallets. It runs only once during migration and does not overwrite passwords on later restarts.
+
+For a deliberate future password repair after this migration has already run, execute the seed command once with password variables configured:
+
+```text
+python manage.py seed_family --reset-passwords
+```
 
 The initial usernames are `kj`, `astoria`, `saphira`, `dad`, `mom`, and `gg`.
 

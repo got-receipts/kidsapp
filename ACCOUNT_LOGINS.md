@@ -15,7 +15,7 @@ password123
 | KJ | `kj` | `password123` | Child dashboard |
 | Astoria | `astoria` | `password123` | Child dashboard |
 | Saphira | `saphira` | `password123` | Child dashboard |
-| Dad | `dad` | `password123` | Full guardian management, balance controls, Teamup settings |
+| Dad | `dad` | `password123` | Full guardian management, balance controls, calendar publishing |
 | Mom | `mom` | `password123` | Read-only family progress view |
 | GG | `gg` | `password123` | Guardian management and approvals |
 
@@ -29,6 +29,8 @@ INITIAL_GUARDIAN_PASSWORD=password123
 ```
 
 The deployment also has Docker fallback behavior that uses `password123` for first-time seeded accounts when these two variables are not supplied.
+
+Release `2.1.2` includes a one-time PostgreSQL recovery migration that resets existing starter family account passwords to `password123` when an older database already contains any of these accounts.
 
 ## Important Security Note
 

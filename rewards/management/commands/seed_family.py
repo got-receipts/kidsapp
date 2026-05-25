@@ -12,6 +12,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--dev", action="store_true", help="Use development-only starter passwords.")
+        parser.add_argument(
+            "--reset-passwords",
+            action="store_true",
+            help="Replace passwords for the six seeded family accounts using the configured password variables.",
+        )
 
     def handle(self, *args, **options):
         accounts = [
@@ -28,11 +33,12 @@ class Command(BaseCommand):
             password = os.getenv(specific_env) or os.getenv(shared_env)
             if options["dev"]:
                 password = password or "password123"
-            if not User.objects.filter(username=username).exists() and not password:
+            account_exists = User.objects.filter(username=username).exists()
+            if (not account_exists or options["reset_passwords"]) and not password:
                 missing_new_password = True
                 continue
             user, created = User.objects.get_or_create(username=username)
-            if created:
+            if created or options["reset_passwords"]:
                 user.set_password(password)
                 user.save(update_fields=["password"])
             profile, _ = Profile.objects.update_or_create(
@@ -44,7 +50,7 @@ class Command(BaseCommand):
                 children.append(profile)
         if missing_new_password:
             raise CommandError(
-                "Set INITIAL_CHILD_PASSWORD and INITIAL_GUARDIAN_PASSWORD (or account-specific password variables) before the first deploy."
+                "Set INITIAL_CHILD_PASSWORD and INITIAL_GUARDIAN_PASSWORD (or account-specific password variables) before creating or resetting seeded accounts."
             )
         self._starter_content(children)
         ensure_today_chores()
