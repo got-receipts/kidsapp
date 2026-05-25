@@ -29,7 +29,6 @@
       {% for event in today_schedule %}
         <div class="brief-event"><b>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Today{% endif %}</b><span><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</span></div>
       {% empty %}<p>No special events planned today. Check your quests below!</p>{% endfor %}
-      {% if teamup_calendar_url %}<p>A shared Teamup family calendar is available in Today's Plan.</p>{% endif %}
       <h3>Rules to Remember</h3>
       <div class="brief-rules">
         {% for rule in specific_rules %}<p><strong>{{ rule.title }}</strong>{% if rule.details %} - {{ rule.details }}{% endif %}</p>{% endfor %}
@@ -102,8 +101,7 @@
         <h3>My schedule</h3>
         {% for event in today_schedule %}
           <div class="timeline-event"><time>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Today{% endif %}</time><div><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</div></div>
-        {% empty %}<p class="empty">No special events listed today.</p>{% endfor %}
-        {% if teamup_calendar_url %}<button class="module-button calendar-open" type="button" data-open-dialog="child-teamup-calendar">Open Family Calendar</button>{% endif %}
+        {% empty %}<p class="empty">No approved schedule has been sent for today.</p>{% endfor %}
       </div>
       <div class="rule-board">
         <h3>My rules</h3>
@@ -117,13 +115,6 @@
       </div>
     </div>
   </section></dialog>
-  {% if teamup_calendar_url %}
-  <dialog class="review-dialog calendar-dialog" id="child-teamup-calendar">
-    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-    <p class="eyebrow">Today's family schedule</p><h2>Teamup Calendar</h2>
-    <iframe class="teamup-frame" title="Teamup family calendar" src="{{ teamup_calendar_url }}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
-  </dialog>
-  {% endif %}
   {% if not profile.grounded %}<dialog class="review-dialog feature-dialog" id="child-school"><form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form><section class="card">
     <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
     {% for grade in grades %}

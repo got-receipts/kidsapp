@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import BehaviorNote, BehaviorStar, ChildRule, Chore, DailyScheduleEvent, FamilySettings, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
+from .models import BehaviorNote, BehaviorStar, ChildRule, Chore, DailyScheduleEvent, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
 from .services import ensure_today_chores
 
 
@@ -431,6 +431,7 @@ class LedgerApprovalTests(TestCase):
         self.assertTrue(DailyScheduleEvent.objects.filter(child=self.child, title="Library visit").exists())
         self.assertTrue(ChildRule.objects.filter(child=self.child, title="Pack homework").exists())
         self.assertTrue(HouseRule.objects.filter(title="Kind voices").exists())
+        self.client.post(reverse("dad_approve_schedule"), {"child_id": self.child.pk, "day": today})
 
         self.client.force_login(self.child.user)
         response = self.client.get(reverse("dashboard"))
@@ -439,17 +440,24 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Pack homework")
         self.assertContains(response, "Kind voices")
 
-    def test_public_teamup_calendar_is_available_from_child_daily_plan(self):
-        FamilySettings.objects.create(
-            teamup_calendar_enabled=True,
-            teamup_calendar_url="https://teamup.com/ksfamilycalendar",
+    def test_draft_schedule_is_hidden_from_child_until_dad_publishes_current_day(self):
+        event = DailyScheduleEvent.objects.create(
+            child=self.child,
+            day=timezone.localdate(),
+            title="Dance practice",
+            details="Bring shoes.",
+            created_by=self.guardian,
         )
         self.client.force_login(self.child.user)
 
         response = self.client.get(reverse("dashboard"))
+        self.assertNotContains(response, "Dance practice")
 
-        self.assertContains(response, "Teamup Calendar")
-        self.assertContains(response, "https://teamup.com/ksfamilycalendar")
+        self.client.force_login(self.guardian.user)
+        self.client.post(reverse("dad_approve_schedule"), {"child_id": self.child.pk, "day": event.day.isoformat()})
+        self.client.force_login(self.child.user)
+        response = self.client.get(reverse("dashboard"))
+        self.assertContains(response, "Dance practice")
 
     def test_guardian_can_hide_a_personal_rule(self):
         rule = ChildRule.objects.create(child=self.child, title="Temporary reminder")
@@ -541,25 +549,36 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.tokens, 20)
         self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.BEHAVIOR).exists())
 
-    def test_only_dad_can_save_teamup_calendar_settings(self):
+    def test_gg_sees_calendar_but_only_dad_can_create_or_publish_schedule(self):
+        gg_user = User.objects.create_user(username="gg", password="test")
+        gg = Profile.objects.create(user=gg_user, display_name="GG", role=Profile.Role.GUARDIAN)
+        day = (timezone.localdate() + timedelta(days=1)).isoformat()
+        self.client.force_login(gg.user)
+        self.client.post(
+            reverse("guardian_create", args=["schedule"]),
+            {"child_id": self.child.pk, "day": day, "title": "Future plan", "details": ""},
+        )
+        self.assertFalse(DailyScheduleEvent.objects.filter(title="Future plan").exists())
+        self.assertContains(self.client.get(reverse("dashboard")), "Family Calendar")
+
         self.client.force_login(self.guardian.user)
         self.client.post(
-            reverse("dad_teamup_calendar_settings"),
-            {"child_id": self.child.pk, "teamup_calendar_enabled": "on", "teamup_calendar_url": "https://teamup.com/ksfamily"},
+            reverse("guardian_create", args=["schedule"]),
+            {"child_id": self.child.pk, "day": day, "title": "Future plan", "details": ""},
         )
-        settings_record = FamilySettings.objects.get()
-        self.assertTrue(settings_record.teamup_calendar_enabled)
-        self.assertEqual(settings_record.teamup_calendar_url, "https://teamup.com/ksfamily")
+        event = DailyScheduleEvent.objects.get(title="Future plan")
+        self.client.force_login(gg.user)
+        self.client.post(reverse("dad_approve_schedule"), {"child_id": self.child.pk, "day": day})
+        event.refresh_from_db()
+        self.assertIsNone(event.approved_at)
 
-        mom_user = User.objects.create_user(username="mom", password="test")
-        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
-        self.client.force_login(mom.user)
-        self.client.post(
-            reverse("dad_teamup_calendar_settings"),
-            {"child_id": self.child.pk, "teamup_calendar_enabled": "on", "teamup_calendar_url": "https://teamup.com/changed"},
-        )
-        settings_record.refresh_from_db()
-        self.assertEqual(settings_record.teamup_calendar_url, "https://teamup.com/ksfamily")
+        self.client.force_login(self.guardian.user)
+        self.client.post(reverse("dad_approve_schedule"), {"child_id": self.child.pk, "day": day})
+        event.refresh_from_db()
+        self.assertIsNotNone(event.approved_at)
+
+        self.client.force_login(self.child.user)
+        self.assertNotContains(self.client.get(reverse("dashboard")), "Future plan")
 
     def test_scheduled_grounding_auto_lifts_and_note_is_visible_to_mom(self):
         lift_at = timezone.now() + timedelta(hours=2)
@@ -603,6 +622,7 @@ class LedgerApprovalTests(TestCase):
         self.assertNotContains(response, "Approve Completed")
         self.assertNotContains(response, "Add grade")
         self.assertNotContains(response, "Add award")
+        self.assertNotContains(response, "Open Family Calendar")
 
     def test_mom_viewer_cannot_post_guardian_changes(self):
         mom_user = User.objects.create_user(username="mom", password="test")

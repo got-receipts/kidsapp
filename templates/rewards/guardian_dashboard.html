@@ -20,6 +20,9 @@
   {% if star_reminder_due %}
     <section class="reminder-callout"><strong>Star check-in time!</strong> It is after 7:30 PM. Still waiting on stars for: {% for child in unstarred %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
   {% endif %}
+  {% if schedule_reminder_due %}
+    <section class="reminder-callout schedule-callout"><strong>Tomorrow's schedule check!</strong> It is after 9:00 PM. Create and approve the {{ tomorrow|date:"F j" }} plan for: {% for child in schedule_waiting %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
+  {% endif %}
   <nav class="child-picker" aria-label="Select child">
     {% for child in children %}<a href="?child={{ child.pk }}" class="{% if child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}{% if child.grounded %} <small>Locked</small>{% endif %}</a>{% endfor %}
   </nav>
@@ -59,10 +62,10 @@
           <button class="action-tile" type="button" data-open-dialog="action-grade">Add Grade</button>
           <button class="action-tile" type="button" data-open-dialog="action-chore">Assign Chore</button>
           <button class="action-tile" type="button" data-open-dialog="action-goal">Add Goal</button>
-          <button class="action-tile" type="button" data-open-dialog="action-schedule">Schedule</button>
+          <button class="action-tile" type="button" data-open-dialog="guardian-calendar">Calendar</button>
           <button class="action-tile" type="button" data-open-dialog="action-rule">Rules</button>
           <button class="action-tile" type="button" data-open-dialog="action-store">Store Item</button>
-          {% if dad_controls %}<button class="action-tile gold" type="button" data-open-dialog="action-balance">Balance</button><button class="action-tile gold" type="button" data-open-dialog="action-settings">Settings</button>{% endif %}
+          {% if dad_controls %}<button class="action-tile gold" type="button" data-open-dialog="action-balance">Balance</button>{% endif %}
         </div>
       </article>
       <dialog class="review-dialog action-dialog" id="action-deduct">
@@ -128,13 +131,6 @@
           {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ goal_form.as_p }}<button class="primary">Add goal</button>
         </form>
       </dialog>
-      <dialog class="review-dialog action-dialog" id="action-schedule">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Morning message</p><h2>Add schedule event</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'schedule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}<button class="primary">Add to schedule</button>
-        </form>
-      </dialog>
       <dialog class="review-dialog action-dialog" id="action-rule">
         <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
         <p class="eyebrow">Family expectations</p><h2>Add a rule</h2>
@@ -162,15 +158,6 @@
         <form class="form" method="post" action="{% url 'dad_balance_adjustment' %}">
           {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ balance_form.as_p }}<button class="primary">Record balance change</button>
         </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-settings">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Dad only</p><h2>Teamup Calendar Settings</h2>
-        <p>Add a public Teamup calendar link to the dashboard. It displays read-only inside Family Circle.</p>
-        <form class="form" method="post" action="{% url 'dad_teamup_calendar_settings' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ teamup_calendar_form.as_p }}<button class="primary">Save Teamup Calendar</button>
-        </form>
-        <div class="oauth-note"><strong>Privacy reminder</strong><p>Use only a public-facing Teamup calendar intended for viewing on family devices.</p></div>
       </dialog>
       {% endif %}
       <article class="card chore-reviews">
@@ -214,16 +201,51 @@
         {% empty %}<p class="empty">No store or money requests waiting right now.</p>{% endfor %}
       </article>
       {% endif %}
+      {% if can_manage %}
       <article class="card command-module">
-        <div class="card-head"><h2>Family calendar</h2><span class="badge">{% if teamup_calendar_url %}Teamup connected{% else %}Not connected{% endif %}</span></div>
-        <p class="control-note">Shared family events display in a read-only calendar view.</p>
-        {% if teamup_calendar_url %}<button class="module-button" type="button" data-open-dialog="teamup-calendar">Open Calendar</button>{% elif dad_controls %}<button class="module-button" type="button" data-open-dialog="action-settings">Connect Teamup</button>{% else %}<p class="empty">Dad can connect a public Teamup calendar.</p>{% endif %}
+        <div class="card-head"><h2>Family calendar</h2><span class="badge">{% if dad_controls %}Dad publishes{% else %}View access{% endif %}</span></div>
+        <p class="control-note">Plan future days here. Children receive only an approved schedule on the actual day.</p>
+        <button class="module-button" type="button" data-open-dialog="guardian-calendar">Open Family Calendar</button>
       </article>
-      {% if teamup_calendar_url %}
-      <dialog class="review-dialog calendar-dialog" id="teamup-calendar">
+      <dialog class="review-dialog native-calendar-dialog" id="guardian-calendar">
         <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Read-only family schedule</p><h2>Teamup Calendar</h2>
-        <iframe class="teamup-frame" title="Teamup family calendar" src="{{ teamup_calendar_url }}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        <p class="eyebrow">Private guardian planner</p><h2>Family Calendar</h2>
+        <p>Future dates can be planned ahead. Dad prepares the next day's plan around 9:00 PM and approves it for release; children see an approved plan only when that day arrives.</p>
+        {% if dad_controls %}
+        <section class="calendar-composer">
+          <h3>Add event for {{ selected.display_name }}</h3>
+          <form class="form" method="post" action="{% url 'guardian_create' 'schedule' %}">
+            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}<button class="primary">Save Draft Event</button>
+          </form>
+        </section>
+        {% else %}
+          <p class="viewer-calendar-note">GG can view planned and published events here. Dad controls creating and approving child schedules.</p>
+        {% endif %}
+        <section class="calendar-agenda">
+          {% regroup family_calendar_events by day as calendar_days %}
+          {% for calendar_day in calendar_days %}
+            <div class="agenda-day">
+              <h3>{{ calendar_day.grouper|date:"l, F j" }}</h3>
+              {% regroup calendar_day.list by child as child_plans %}
+              {% for plan in child_plans %}
+                <div class="day-plan">
+                  <div class="day-plan-head">
+                    <strong>{{ plan.grouper.display_name }}</strong>
+                    {% if dad_controls %}
+                    <form method="post" action="{% url 'dad_approve_schedule' %}">
+                      {% csrf_token %}<input type="hidden" name="child_id" value="{{ plan.grouper.pk }}"><input type="hidden" name="day" value="{{ calendar_day.grouper|date:'Y-m-d' }}">
+                      <button class="action" type="submit">Approve Day</button>
+                    </form>
+                    {% endif %}
+                  </div>
+                  {% for event in plan.list %}
+                  <div class="agenda-event"><span>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Any time{% endif %}</span><div><strong>{{ event.title }}</strong><small>{{ event.details }}</small></div><b class="badge {% if not event.approved_at %}waiting{% endif %}">{% if event.approved_at %}Published{% else %}Draft{% endif %}</b>{% if dad_controls %}<form method="post" action="{% url 'guardian_remove' 'schedule' event.pk %}">{% csrf_token %}<button class="remove-button">Remove</button></form>{% endif %}</div>
+                  {% endfor %}
+                </div>
+              {% endfor %}
+            </div>
+          {% empty %}<p class="empty">No family schedule events have been drafted yet.</p>{% endfor %}
+        </section>
       </dialog>
       {% endif %}
       <article class="card behavior-notes">
@@ -269,11 +291,11 @@
       </article>
       <article class="card daily-planner" data-dashboard-module="Schedule">
         <div class="card-head"><h2>{% if can_manage %}Schedule ahead{% else %}Upcoming schedule{% endif %}</h2><span class="badge">Morning message</span></div>
-        <p class="control-note">{% if teamup_calendar_enabled %}A public Teamup calendar is connected and available read-only in the calendar module.{% elif can_manage %}Calendar display is off. Dad can add a public Teamup calendar URL in Settings.{% else %}No shared public calendar is connected right now.{% endif %}</p>
+        <p class="control-note">{% if can_manage %}Drafts and published dates are managed in the Family Calendar. Children see published items only on their scheduled day.{% else %}Only approved upcoming schedule items are visible in this read-only view.{% endif %}</p>
         {% for event in selected_schedule %}
           <div class="planner-row">
             <div><strong>{{ event.day|date:"M j" }}{% if event.start_time %} at {{ event.start_time|time:"g:i A" }}{% endif %} - {{ event.title }}</strong><small>{{ event.details }}</small></div>
-            {% if can_manage %}<form method="post" action="{% url 'guardian_remove' 'schedule' event.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Remove event">Remove</button></form>{% endif %}
+            {% if can_manage %}<span class="badge {% if not event.approved_at %}waiting{% endif %}">{% if event.approved_at %}Published{% else %}Draft{% endif %}</span>{% endif %}
           </div>
         {% empty %}<p class="empty">No upcoming events in a morning message yet.</p>{% endfor %}
       </article>

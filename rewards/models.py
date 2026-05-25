@@ -92,6 +92,8 @@ class DailyScheduleEvent(models.Model):
     title = models.CharField(max_length=100)
     details = models.CharField(max_length=240, blank=True)
     created_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="events_created")
+    approved_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="schedules_approved")
+    approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -128,19 +130,6 @@ class HouseRule(models.Model):
 
     def __str__(self):
         return self.title
-
-
-class FamilySettings(models.Model):
-    teamup_calendar_url = models.URLField(max_length=500, blank=True)
-    teamup_calendar_enabled = models.BooleanField(default=False)
-    updated_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="family_settings_updates")
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name_plural = "family settings"
-
-    def __str__(self):
-        return "Family settings"
 
 
 class BehaviorNote(models.Model):

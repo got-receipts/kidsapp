@@ -25,11 +25,11 @@ urlpatterns = [
     path("recap/dismiss/", views.dismiss_recap, name="dismiss_recap"),
     path("guardian/add/<str:model>/", views.guardian_create, name="guardian_create"),
     path("guardian/remove/<str:model>/<int:pk>/", views.guardian_remove, name="guardian_remove"),
+    path("guardian/schedule/approve/", views.dad_approve_schedule, name="dad_approve_schedule"),
     path("guardian/lockdown/", views.guardian_lockdown, name="guardian_lockdown"),
     path("guardian/star/", views.award_star, name="award_star"),
     path("guardian/award/", views.guardian_award, name="guardian_award"),
     path("guardian/deduct/", views.guardian_behavior_deduction, name="guardian_behavior_deduction"),
     path("guardian/balance/", views.dad_balance_adjustment, name="dad_balance_adjustment"),
-    path("guardian/settings/teamup-calendar/", views.dad_teamup_calendar_settings, name="dad_teamup_calendar_settings"),
     path("guardian/review/<int:pk>/<str:decision>/", views.review_request, name="review_request"),
 ]

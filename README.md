@@ -16,8 +16,8 @@ This is private family software. All rights reserved; it is not intended for red
 - Dad/GG behavior deductions with a confirmation popup, recorded reason, and token debt support.
 - Opt-in Dad/GG push reminders to award stars after 7:30 PM and an account ledger showing spending and rewards.
 - A daily animated child check-in summarizing newly earned stars/tokens, open quests, and the next reward target.
-- Guardian-managed daily schedules, personal rules, and house rules shown in each child's morning briefing and daily dashboard.
-- A read-only optional Teamup public-calendar view embedded in dashboard popups.
+- A native guardian-only Family Calendar where Dad drafts and approves dated schedules before children receive them.
+- Guardian-managed personal rules and house rules shown in each child's morning briefing and daily dashboard.
 - Experience rewards including museum, park, Hoffman's Playland, Lake George trips, and a Great Escape grand prize.
 - In-app Savings and Spending balances with Dad-only recorded balance corrections and approval of withdrawals/transfers.
 - Unverified checked quests create recorded token penalties; token balances may go below zero while internal Savings and Spending remain overdraft-protected.
@@ -85,15 +85,11 @@ Railway evaluates cron schedules in UTC. The command checks the configured `Amer
 
 On iPhone, push notifications require installing the PWA from Safari using **Add to Home Screen**, then enabling notifications from inside the installed app.
 
-## Teamup Calendar Display
+## Family Calendar Publishing
 
-To show a shared family schedule in the dashboards, create a Teamup calendar with a public-facing viewing link. Dad can open **Settings** on the guardian dashboard, enable calendar display, and enter that URL. You may also provide a deployment default in Railway:
+The family schedule is managed entirely inside Family Circle. Dad can open **Family Calendar** on the guardian dashboard, add events for future dates, and approve a child's day once the plan is ready. GG can view the large family calendar without creating or publishing events.
 
-```text
-TEAMUP_CALENDAR_URL=https://teamup.com/c/ghm7w1
-```
-
-The calendar opens read-only inside a dashboard modal. Do not publish private school, medical, location, or custody-related details in a public calendar.
+The expected routine is for Dad to prepare and approve the next day's schedule around 9:00 PM. Events may be drafted and approved in advance, but a child sees only approved events assigned to that child on the current day. No external calendar link or public calendar configuration is required.
 
 ## Grounded Mode
 

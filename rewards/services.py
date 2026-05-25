@@ -1,9 +1,8 @@
 from datetime import time
 
-from django.conf import settings
 from django.utils import timezone
 
-from .models import Chore, FamilySettings, Profile
+from .models import Chore, Profile
 
 
 CHORE_LIBRARY = [
@@ -51,12 +50,3 @@ def ensure_today_chores():
                 "optional": True,
             },
         )
-
-
-def teamup_calendar_url():
-    family_settings = FamilySettings.objects.first()
-    if family_settings is None:
-        return settings.TEAMUP_CALENDAR_URL
-    if family_settings.teamup_calendar_enabled:
-        return family_settings.teamup_calendar_url
-    return ""

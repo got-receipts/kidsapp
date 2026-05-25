@@ -33,7 +33,6 @@ from .forms import (
     SpendingTransferForm,
     StoreItemForm,
     TokensToSavingsForm,
-    TeamupCalendarSettingsForm,
 )
 from .models import (
     BehaviorNote,
@@ -41,7 +40,6 @@ from .models import (
     ChildRule,
     Chore,
     DailyScheduleEvent,
-    FamilySettings,
     GrowthGoal,
     HouseRule,
     LedgerRequest,
@@ -51,7 +49,7 @@ from .models import (
     StoreItem,
     Wallet,
 )
-from .services import ensure_today_chores, teamup_calendar_url
+from .services import ensure_today_chores
 
 
 class FamilyLoginView(LoginView):
@@ -114,7 +112,7 @@ def _dad(request):
     if guardian is None:
         return None
     if guardian.user.username.lower() != "dad":
-        messages.error(request, "Only Dad can change savings or spending balances.")
+        messages.error(request, "Only Dad can complete this action.")
         return None
     return guardian
 
@@ -170,14 +168,23 @@ def dashboard(request):
     )
     if profile.can_view_family:
         can_manage = profile.is_guardian
+        dad_controls = can_manage and profile.user.username.lower() == "dad"
         children = Profile.objects.filter(role=Profile.Role.CHILD).select_related("wallet")
         selected = children.filter(pk=request.GET.get("child")).first() or children.first()
         star_weeks, star_month, previous_month, next_month = _star_calendar(selected, request.GET.get("month")) if selected else ([], "", "", "")
         today = timezone.localdate()
+        tomorrow = today + timedelta(days=1)
         unstarred = children.exclude(behavior_stars__day=today)
+        schedule_waiting = children.exclude(
+            pk__in=DailyScheduleEvent.objects.filter(day=tomorrow, approved_at__isnull=False).values("child_id")
+        )
         pending = LedgerRequest.objects.filter(status=LedgerRequest.Status.PENDING).select_related("child", "chore")
-        family_settings = FamilySettings.objects.first()
-        calendar_url = teamup_calendar_url()
+        family_calendar_events = (
+            DailyScheduleEvent.objects.filter(day__gte=today)
+            .select_related("child", "created_by", "approved_by")
+            .order_by("day", "start_time", "child__display_name")[:120]
+            if can_manage else []
+        )
         history = selected.ledger_requests.select_related("store_item", "reviewed_by").all()[:30] if selected else []
         if selected and not can_manage:
             history = selected.ledger_requests.filter(
@@ -196,7 +203,13 @@ def dashboard(request):
             "pending_chore_reviews": pending.filter(child=selected, kind=LedgerRequest.Kind.CHORE) if selected else [],
             "selected_chores": selected.chores.filter(due_date=today, optional=False).order_by("title") if selected else [],
             "selected_optional_chores": selected.chores.filter(due_date=today, optional=True).order_by("title") if selected else [],
-            "selected_schedule": selected.schedule_events.filter(day__gte=today)[:20] if selected else [],
+            "selected_schedule": (
+                selected.schedule_events.filter(day__gte=today)[:20]
+                if selected and can_manage
+                else selected.schedule_events.filter(day__gte=today, approved_at__isnull=False)[:20]
+                if selected else []
+            ),
+            "family_calendar_events": family_calendar_events,
             "selected_rules": selected.specific_rules.filter(active=True) if selected else [],
             "selected_grades": selected.grades.order_by("-created_at")[:8] if selected else [],
             "selected_goals": selected.goals.order_by("-created_at")[:8] if selected else [],
@@ -209,6 +222,9 @@ def dashboard(request):
             "next_month": next_month,
             "unstarred": unstarred,
             "star_reminder_due": can_manage and timezone.localtime().time() >= time(19, 30) and unstarred.exists(),
+            "schedule_reminder_due": dad_controls and timezone.localtime().time() >= time(21, 0) and schedule_waiting.exists(),
+            "schedule_waiting": schedule_waiting,
+            "tomorrow": tomorrow,
             "vapid_public_key": settings.VAPID_PUBLIC_KEY,
             "grade_form": GradeForm(),
             "chore_form": ChoreForm(),
@@ -221,16 +237,7 @@ def dashboard(request):
             "behavior_deduction_form": BehaviorDeductionForm(),
             "balance_form": BalanceAdjustmentForm(),
             "grounding_form": GroundingForm(),
-            "dad_controls": can_manage and profile.user.username.lower() == "dad",
-            "teamup_calendar_enabled": bool(calendar_url),
-            "teamup_calendar_url": calendar_url,
-            "teamup_calendar_form": TeamupCalendarSettingsForm(
-                instance=family_settings,
-                initial={
-                    "teamup_calendar_enabled": bool(settings.TEAMUP_CALENDAR_URL),
-                    "teamup_calendar_url": settings.TEAMUP_CALENDAR_URL,
-                } if family_settings is None else None,
-            ),
+            "dad_controls": dad_controls,
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     today_chores = profile.chores.filter(due_date=timezone.localdate(), optional=False).order_by("title")
@@ -274,8 +281,7 @@ def dashboard(request):
         "today": today,
         "quest_deadline": timezone.make_aware(datetime.combine(today, time(19, 0))),
         "morning_deadline": timezone.make_aware(datetime.combine(today, time(10, 0))),
-        "today_schedule": profile.schedule_events.filter(day=today),
-        "teamup_calendar_url": teamup_calendar_url(),
+        "today_schedule": profile.schedule_events.filter(day=today, approved_at__isnull=False),
         "specific_rules": profile.specific_rules.filter(active=True),
         "house_rules": HouseRule.objects.filter(active=True),
         "show_recap": profile.last_recap_day != timezone.localdate(),
@@ -660,6 +666,9 @@ def guardian_create(request, model):
         messages.success(request, "House rule added for everyone.")
         return redirect(f"/?child={request.POST.get('child_id', '')}")
     child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    if model == "schedule" and guardian.user.username.lower() != "dad":
+        messages.error(request, "Only Dad can create or publish family schedule events.")
+        return redirect(f"/?child={child.pk}")
     forms = {
         "grade": GradeForm,
         "chore": ChoreForm,
@@ -690,7 +699,10 @@ def guardian_create(request, model):
             record.created_by = guardian
         record.save()
     labels = {"schedule": "Schedule event", "child_rule": "Personal rule"}
-    messages.success(request, f"{labels.get(model, model.title())} added for {child.display_name}.")
+    if model == "schedule":
+        messages.success(request, f"Schedule draft added for {child.display_name}. Dad must approve that date before it appears for the child.")
+    else:
+        messages.success(request, f"{labels.get(model, model.title())} added for {child.display_name}.")
     return redirect(f"/?child={child.pk}")
 
 
@@ -707,12 +719,36 @@ def guardian_remove(request, model, pk):
     record = get_object_or_404(record_model, pk=pk)
     selected_id = getattr(record, "child_id", None) or request.POST.get("child_id", "")
     if model == "schedule":
+        if guardian.user.username.lower() != "dad":
+            messages.error(request, "Only Dad can change the published family schedule.")
+            return redirect(f"/?child={selected_id}")
         record.delete()
     else:
         record.active = False
         record.save(update_fields=["active"])
     messages.info(request, "Item removed from the daily plan.")
     return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def dad_approve_schedule(request):
+    dad = _dad(request)
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    if dad is None:
+        return redirect(f"/?child={child.pk}")
+    try:
+        day = date.fromisoformat(request.POST.get("day", ""))
+    except ValueError:
+        messages.error(request, "Select a valid schedule date to publish.")
+        return redirect(f"/?child={child.pk}")
+    entries = child.schedule_events.filter(day=day)
+    if not entries.exists():
+        messages.error(request, "Add at least one event before approving this day's schedule.")
+        return redirect(f"/?child={child.pk}")
+    entries.update(approved_by=dad, approved_at=timezone.now())
+    messages.success(request, f"{child.display_name}'s schedule for {day:%B} {day.day} is approved for release on that day.")
+    return redirect(f"/?child={child.pk}")
 
 
 @login_required
@@ -746,25 +782,6 @@ def guardian_lockdown(request):
     else:
         messages.success(request, f"{child.display_name}'s Grounded Mode has been lifted.")
     return redirect(f"/?child={child.pk}")
-
-
-@login_required
-@require_POST
-def dad_teamup_calendar_settings(request):
-    dad = _dad(request)
-    selected_id = request.POST.get("child_id", "")
-    if dad is None:
-        return redirect(f"/?child={selected_id}")
-    family_settings = FamilySettings.objects.first()
-    form = TeamupCalendarSettingsForm(request.POST, instance=family_settings)
-    if not form.is_valid():
-        messages.error(request, "Please enter a valid public Teamup calendar URL.")
-        return redirect(f"/?child={selected_id}#settings")
-    record = form.save(commit=False)
-    record.updated_by = dad
-    record.save()
-    messages.success(request, "Teamup calendar settings saved. The calendar is displayed read-only.")
-    return redirect(f"/?child={selected_id}#settings")
 
 
 @login_required

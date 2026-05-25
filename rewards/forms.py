@@ -1,10 +1,10 @@
 from django import forms
 
+from datetime import timedelta
+
 from django.utils import timezone
 
-from urllib.parse import urlparse
-
-from .models import ChildRule, Chore, DailyScheduleEvent, FamilySettings, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
+from .models import ChildRule, Chore, DailyScheduleEvent, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
 
 
 class GradeForm(forms.ModelForm):
@@ -37,7 +37,7 @@ class DailyScheduleEventForm(forms.ModelForm):
     class Meta:
         model = DailyScheduleEvent
         fields = ["day", "start_time", "title", "details"]
-        labels = {"day": "Date", "start_time": "Time (optional)", "details": "Notes (optional)"}
+        labels = {"day": "Schedule date", "start_time": "Time (optional)", "details": "Notes (optional)"}
         widgets = {
             "day": forms.DateInput(attrs={"type": "date"}),
             "start_time": forms.TimeInput(attrs={"type": "time"}),
@@ -46,7 +46,13 @@ class DailyScheduleEventForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if not self.is_bound:
-            self.initial["day"] = timezone.localdate()
+            self.initial["day"] = timezone.localdate() + timedelta(days=1)
+
+    def clean_day(self):
+        day = self.cleaned_data["day"]
+        if day < timezone.localdate():
+            raise forms.ValidationError("Schedule events cannot be added to a past date.")
+        return day
 
 
 class ChildRuleForm(forms.ModelForm):
@@ -76,27 +82,6 @@ class GroundingForm(forms.Form):
         if lift_at and lift_at <= timezone.now():
             raise forms.ValidationError("Scheduled lift time must be in the future.")
         return lift_at
-
-
-class TeamupCalendarSettingsForm(forms.ModelForm):
-    class Meta:
-        model = FamilySettings
-        fields = ["teamup_calendar_enabled", "teamup_calendar_url"]
-        labels = {
-            "teamup_calendar_enabled": "Show Teamup calendar in dashboard",
-            "teamup_calendar_url": "Public Teamup calendar URL",
-        }
-
-    def clean(self):
-        cleaned = super().clean()
-        url = cleaned.get("teamup_calendar_url", "").strip()
-        if cleaned.get("teamup_calendar_enabled") and not url:
-            self.add_error("teamup_calendar_url", "Enter a Teamup calendar URL before turning this on.")
-        if url:
-            hostname = (urlparse(url).hostname or "").lower()
-            if hostname != "teamup.com" and not hostname.endswith(".teamup.com"):
-                self.add_error("teamup_calendar_url", "Use a public calendar link hosted by Teamup.")
-        return cleaned
 
 
 class ConvertForm(forms.Form):

@@ -93,7 +93,6 @@ LOGOUT_REDIRECT_URL = "login"
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:family-circle@example.com")
-TEAMUP_CALENDAR_URL = os.getenv("TEAMUP_CALENDAR_URL", "https://teamup.com/c/ghm7w1")
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
