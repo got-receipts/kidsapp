@@ -415,8 +415,13 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px;
   line-height: 1.45;
 }
-.money-shell { max-width: 780px; }
+.money-shell { max-width: 880px; }
 .money-shell ~ .app-footer { padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+.wallet-title {
+  margin: 8px 0 17px;
+  font-size: clamp(28px, 7vw, 38px);
+  letter-spacing: -.06em;
+}
 .money-back {
   display: inline-flex;
   align-items: center;
@@ -541,17 +546,33 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 13px;
   overflow: hidden;
   border-radius: 30px;
-  background: #36d24a;
+  background:
+    radial-gradient(circle at 88% 9%, rgb(255 255 255 / 18%), transparent 24%),
+    linear-gradient(150deg, #20bd55, #087d47);
   color: #fff;
-  box-shadow: 0 20px 42px rgb(19 103 38 / 24%);
+  box-shadow: 0 22px 48px rgb(9 75 48 / 25%);
 }
-.pay-title {
-  padding: 20px 20px 1px;
-  color: #fff;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -.03em;
-  text-align: center;
+.payment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 20px 4px;
+}
+.payment-header .pay-label { margin: 0 0 4px; }
+.payment-header h2 {
+  color: white;
+  font-size: clamp(28px, 8vw, 36px);
+  letter-spacing: -.05em;
+}
+.payment-status {
+  padding: 9px 11px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 10%);
+  color: #dfffe9;
+  font-size: 11px;
+  font-weight: 800;
 }
 .cash-balance-bar {
   display: grid;
@@ -574,9 +595,10 @@ a { color: inherit; text-decoration: none; }
 }
 .cash-balance-bar strong { color: #fff; font-size: 17px; }
 .cashpad {
-  padding: 15px 20px 20px;
+  padding: 8px 20px 20px;
   text-align: center;
 }
+.amount-label { margin-top: 13px !important; }
 .pay-label {
   margin: 8px 0 2px;
   color: rgb(255 255 255 / 82%);
@@ -594,6 +616,24 @@ a { color: inherit; text-decoration: none; }
 }
 .pay-amount span { margin-right: 3px; color: #fff; font-size: 42px; font-weight: 700; }
 .pay-amount output { font-size: clamp(62px, 17vw, 82px); font-weight: 650; letter-spacing: -.07em; }
+.payment-primary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  max-width: 390px;
+  margin: 0 auto 14px;
+}
+.money-primary {
+  min-height: 53px;
+  border-radius: 999px;
+  color: white;
+  font-size: 16px;
+  font-weight: 850;
+  transition: transform .15s ease, filter .15s ease;
+}
+.money-primary:active { transform: scale(.97); }
+.money-primary.send { background: #121b19; }
+.money-primary.spend { background: rgb(255 255 255 / 19%); border: 1px solid rgb(255 255 255 / 30%); }
 .recipient-picker {
   display: block;
   max-width: 370px;
@@ -620,7 +660,7 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: repeat(3, minmax(58px, 82px));
   justify-content: center;
   gap: 9px 18px;
-  margin: 0 auto 20px;
+  margin: 0 auto 18px;
 }
 .number-pad button {
   display: grid;
@@ -639,28 +679,40 @@ a { color: inherit; text-decoration: none; }
   background: rgb(14 64 22 / 14%);
 }
 .number-pad .pad-delete { color: #fff; font-size: 27px; }
+.wallet-tools {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 13px;
+  border-radius: 18px;
+  background: rgb(0 0 0 / 10%);
+}
+.wallet-tools h3 {
+  margin: 0 0 10px;
+  color: rgb(255 255 255 / 83%);
+  font-size: 12px;
+  letter-spacing: .1em;
+  text-align: left;
+  text-transform: uppercase;
+}
 .cash-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 9px;
-  max-width: 390px;
   margin: auto;
 }
 .cash-actions button {
-  min-height: 50px;
-  padding: 9px;
-  border-radius: 999px;
-  font-size: 13px;
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  min-height: 68px;
+  padding: 8px 5px;
+  border-radius: 15px;
+  font-size: 12px;
   font-weight: 800;
 }
-.cash-actions .send-action {
-  grid-column: 1 / -1;
-  background: #222;
-  color: #fff;
-  font-size: 16px;
-}
-.cash-actions .request-action { background: #222; color: #fff; }
-.cash-actions .convert-action { background: #14351c; }
+.cash-actions .request-action { background: rgb(7 46 30 / 54%); color: #fff; }
+.cash-actions .convert-action { background: rgb(7 46 30 / 72%); }
+.cash-actions small { color: rgb(255 255 255 / 68%); font-size: 10px; line-height: 1.2; }
 .money-boundary {
   max-width: 410px;
   margin: 16px auto 0;
@@ -669,7 +721,9 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.45;
 }
 .money-boundary strong { display: block; margin-bottom: 4px; color: #fff; }
-[data-theme="dark"] .pay-screen { background: #2db83f; }
+[data-theme="dark"] .pay-screen { background: linear-gradient(150deg, #159949, #075f3b); }
+.wallet-ledger-grid { display: grid; gap: 13px; }
+.pay-screen-embedded { margin-top: 12px; border-radius: 24px; box-shadow: none; }
 .day-plan-card {
   overflow: hidden;
   border: 2px solid rgb(246 198 103 / 30%);
@@ -1030,13 +1084,12 @@ a { color: inherit; text-decoration: none; }
   width: min(calc(100% - 18px), 920px);
   max-height: 94vh;
 }
-.wallet-frame {
-  display: block;
-  width: 100%;
-  height: min(76vh, 820px);
-  border: 0;
-  border-radius: 18px;
-  background: var(--cream);
+.wallet-dialog {
+  width: min(calc(100% - 14px), 900px);
+  height: min(calc(100vh - 18px), 1000px);
+  max-height: none;
+  padding: 42px 11px 14px;
+  overflow-y: auto;
 }
 .module-button {
   min-height: 43px;
@@ -1383,6 +1436,42 @@ button.calendar-day:active { transform: scale(.93); }
   font-size: 13px;
   font-weight: bold;
 }
+.payment-confirmation {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 22px;
+  background: linear-gradient(155deg, #18b653, #067542);
+  color: white;
+  text-align: center;
+  animation: confirmationIn .25s ease-out;
+  transition: opacity .35s ease, transform .35s ease;
+}
+.payment-confirmation.fade-out { opacity: 0; transform: scale(1.03); }
+.payment-check {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  margin-bottom: 15px;
+  border: 4px solid white;
+  border-radius: 50%;
+  animation: confirmPop .45s ease-out;
+}
+.payment-check span {
+  width: 39px;
+  height: 20px;
+  border-bottom: 5px solid white;
+  border-left: 5px solid white;
+  transform: translateY(-5px) rotate(-45deg);
+}
+.payment-confirmation p { color: rgb(255 255 255 / 76%); font-size: 13px; font-weight: bold; letter-spacing: .16em; text-transform: uppercase; }
+.payment-confirmation strong { font-size: clamp(27px, 7vw, 39px); letter-spacing: -.04em; }
+.payment-confirmation small { color: rgb(255 255 255 / 83%); font-size: 14px; }
 .celebration {
   position: fixed;
   z-index: 25;
@@ -1531,6 +1620,8 @@ button.calendar-day:active { transform: scale(.93); }
 }
 @keyframes spinLink { to { transform: rotate(360deg); } }
 @keyframes gridDrift { to { transform: translateY(44px); } }
+@keyframes confirmationIn { from { opacity: 0; transform: scale(1.025); } }
+@keyframes confirmPop { from { opacity: 0; transform: scale(.65); } }
 @keyframes fillUp {
   from { height: 0; }
 }
@@ -1571,6 +1662,10 @@ button.calendar-day:active { transform: scale(.93); }
   .amount-grid .cash-card { grid-column: 1 / -1; }
   .amount-grid .cash-card .preset-grid { grid-template-columns: repeat(4, 1fr); }
   .recap-backdrop { align-items: center; }
+  .wallet-ledger-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 430px) {
+  .cash-actions { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 520px) {
   .agenda-event { grid-template-columns: 1fr auto; }

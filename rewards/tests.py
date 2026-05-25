@@ -245,7 +245,8 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Tokens &amp; Money")
         self.assertContains(response, "data-money-pad")
-        self.assertContains(response, "Pay Family")
+        self.assertContains(response, "Send money to")
+        self.assertContains(response, "Spend")
         self.assertContains(response, "Savings to Tokens")
         self.assertContains(response, "Tokens to Savings")
         self.assertContains(response, "Astoria")
@@ -314,6 +315,24 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(received.spending_delta_cents, 225)
         self.assertEqual(received.counterparty, self.child)
         self.assertEqual(sent.status, LedgerRequest.Status.APPROVED)
+
+    def test_embedded_wallet_transfer_returns_to_open_wallet_with_confirmation_marker(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        self.wallet.spending_cents = 500
+        self.wallet.save(update_fields=["spending_cents"])
+        self.client.force_login(self.child.user)
+
+        response = self.client.post(
+            reverse("send_family_transfer"),
+            {"recipient_id": sibling.pk, "cash_amount": "1.50", "wallet_surface": "dashboard"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, "/?wallet=1")
+        self.assertContains(response, 'id="child-wallet" data-auto-open-dialog')
+        self.assertContains(response, "payment-success")
 
     def test_child_can_reserve_spending_for_store_purchase_pending_dad_approval(self):
         self.wallet.spending_cents = 500

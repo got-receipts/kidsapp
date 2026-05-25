@@ -128,6 +128,26 @@ def _cents(amount):
     return int((Decimal(amount) * 100).quantize(Decimal("1")))
 
 
+def _wallet_context(profile):
+    pending_spending = profile.ledger_requests.filter(
+        kind=LedgerRequest.Kind.SPEND,
+        status=LedgerRequest.Status.PENDING,
+    )
+    return {
+        "wallet": profile.wallet,
+        "ledger": profile.ledger_requests.all()[:20],
+        "pending_spending": pending_spending,
+        "pending_spending_total_cents": sum(-entry.spending_delta_cents for entry in pending_spending),
+        "family_transfer_form": FamilyTransferForm(sender=profile),
+    }
+
+
+def _wallet_return(request):
+    if request.POST.get("wallet_surface") == "dashboard":
+        return redirect("/?wallet=1")
+    return redirect("wallet_page")
+
+
 def _star_calendar(child, requested_month):
     today = timezone.localdate()
     try:
@@ -293,7 +313,10 @@ def dashboard(request):
         "recap_tasks_left": today_chores.filter(status__in=[Chore.Status.OPEN, Chore.Status.IN_PROGRESS]).count(),
         "next_prize": next_prize,
         "tokens_to_next_prize": next_prize.token_cost - profile.wallet.tokens if next_prize else 0,
+        "wallet_embedded": True,
+        "open_wallet": request.GET.get("wallet") == "1",
     }
+    context.update(_wallet_context(profile))
     return render(request, "rewards/child_dashboard.html", context)
 
 
@@ -304,18 +327,8 @@ def wallet_page(request):
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
-    pending_spending = profile.ledger_requests.filter(
-        kind=LedgerRequest.Kind.SPEND,
-        status=LedgerRequest.Status.PENDING,
-    )
-    context = {
-        "profile": profile,
-        "wallet": profile.wallet,
-        "ledger": profile.ledger_requests.all()[:20],
-        "pending_spending": pending_spending,
-        "pending_spending_total_cents": sum(-entry.spending_delta_cents for entry in pending_spending),
-        "family_transfer_form": FamilyTransferForm(sender=profile),
-    }
+    context = {"profile": profile, "wallet_embedded": False}
+    context.update(_wallet_context(profile))
     return render(request, "rewards/wallet_page.html", context)
 
 
@@ -428,11 +441,11 @@ def request_conversion(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Conversions must be in 10 cent increments.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your available cash balance.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     tokens = cents // 10
     LedgerRequest.objects.create(
         child=profile,
@@ -443,7 +456,7 @@ def request_conversion(request):
         cash_delta_cents=-cents,
     )
     messages.success(request, "Savings-to-Tokens request sent to Dad. The rate is $1 for 10 tokens.")
-    return redirect("wallet_page")
+    return _wallet_return(request)
 
 
 @login_required
@@ -457,12 +470,12 @@ def request_tokens_to_savings(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Conversions must be in 10 cent increments.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     cents = _cents(form.cleaned_data["cash_amount"])
     tokens = cents // 10
     if tokens > profile.wallet.tokens:
         messages.error(request, "You do not have enough Tokens for that Savings conversion.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -472,7 +485,7 @@ def request_tokens_to_savings(request):
         cash_delta_cents=cents,
     )
     messages.success(request, "Tokens-to-Savings request sent to Dad. The rate is 10 tokens for $1.")
-    return redirect("wallet_page")
+    return _wallet_return(request)
 
 
 @login_required
@@ -486,11 +499,11 @@ def request_cashout(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Please choose or enter an amount to request.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your available cash balance.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -499,7 +512,7 @@ def request_cashout(request):
         cash_delta_cents=-cents,
     )
     messages.success(request, "Cash-out request sent to Dad for review.")
-    return redirect("wallet_page")
+    return _wallet_return(request)
 
 
 @login_required
@@ -513,11 +526,11 @@ def request_spending_transfer(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Please choose or enter an amount to move.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your savings balance.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -527,7 +540,7 @@ def request_spending_transfer(request):
         spending_delta_cents=cents,
     )
     messages.success(request, "Your request to move money to spending was sent to Dad.")
-    return redirect("wallet_page")
+    return _wallet_return(request)
 
 
 @login_required
@@ -541,13 +554,13 @@ def send_family_transfer(request):
     form = FamilyTransferForm(request.POST, sender=profile)
     if not form.is_valid():
         messages.error(request, "Choose a family member and enter an amount to send.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     recipient = form.cleaned_data["recipient_id"]
     cents = _cents(form.cleaned_data["cash_amount"])
     recipient.refresh_grounding()
     if recipient.grounded:
         messages.error(request, "That family member is in Grounded Mode and cannot receive money right now.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     with transaction.atomic():
         wallets = {
             wallet.child_id: wallet
@@ -559,7 +572,7 @@ def send_family_transfer(request):
         recipient_wallet = wallets[recipient.pk]
         if cents > sender_wallet.spending_cents:
             messages.error(request, "You do not have enough in Spending to send that amount.")
-            return redirect("wallet_page")
+            return _wallet_return(request)
         Wallet.objects.filter(pk=sender_wallet.pk).update(spending_cents=F("spending_cents") - cents)
         Wallet.objects.filter(pk=recipient_wallet.pk).update(spending_cents=F("spending_cents") + cents)
         timestamp = timezone.now()
@@ -583,8 +596,8 @@ def send_family_transfer(request):
             status=LedgerRequest.Status.APPROVED,
             reviewed_at=timestamp,
         )
-    messages.success(request, f"You sent ${cents / 100:.2f} to {recipient.display_name}.")
-    return redirect("wallet_page")
+    messages.success(request, f"${cents / 100:.2f} sent to {recipient.display_name}.", extra_tags="payment-success sent")
+    return _wallet_return(request)
 
 
 @login_required
@@ -598,13 +611,13 @@ def request_store_spend(request):
     form = SpendingTransferForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Enter a valid amount for your store purchase.")
-        return redirect("wallet_page")
+        return _wallet_return(request)
     cents = _cents(form.cleaned_data["cash_amount"])
     with transaction.atomic():
         wallet = Wallet.objects.select_for_update().get(child=profile)
         if cents > wallet.spending_cents:
             messages.error(request, "You do not have enough in Spending to cover that purchase.")
-            return redirect("wallet_page")
+            return _wallet_return(request)
         Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
         LedgerRequest.objects.create(
             child=profile,
@@ -613,8 +626,8 @@ def request_store_spend(request):
             description=f"In-store spending pending: ${cents / 100:.2f}",
             spending_delta_cents=-cents,
         )
-    messages.success(request, "Purchase reserved in Pending Transactions and sent to Dad for verification.")
-    return redirect("wallet_page")
+    messages.success(request, f"${cents / 100:.2f} reserved for spending. Dad will verify it.", extra_tags="payment-success spent")
+    return _wallet_return(request)
 
 
 @login_required

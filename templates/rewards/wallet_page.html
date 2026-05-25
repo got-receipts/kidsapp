@@ -7,58 +7,7 @@
     <a class="money-back" href="{% url 'dashboard' %}"><span>&#8249;</span>Adventure board</a>
     <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
-  <section class="pay-screen">
-    <h1 class="pay-title">Tokens &amp; Money</h1>
-    <div class="cash-balance-bar">
-      <div><small>Spending</small><strong>{{ wallet.spending_cents|dollars }}</strong></div>
-      <div><small>Savings</small><strong>{{ wallet.cash_cents|dollars }}</strong></div>
-      <div><small>Tokens</small><strong>{{ wallet.tokens }}</strong></div>
-    </div>
-    <form class="cashpad" method="post" data-money-pad>
-      {% csrf_token %}
-      <input type="hidden" name="cash_amount" value="0.00" data-money-input>
-      <p class="pay-label">Enter amount</p>
-      <div class="pay-amount" aria-live="polite"><span>$</span><output data-money-display>0.00</output></div>
-      <label class="recipient-picker">Pay another child
-        {{ family_transfer_form.recipient_id }}
-        <small>Family payments transfer available Spending immediately. Use Spend below for an in-store purchase.</small>
-      </label>
-      <div class="number-pad" aria-label="Amount keypad">
-        <button type="button" data-money-key="1">1</button>
-        <button type="button" data-money-key="2">2</button>
-        <button type="button" data-money-key="3">3</button>
-        <button type="button" data-money-key="4">4</button>
-        <button type="button" data-money-key="5">5</button>
-        <button type="button" data-money-key="6">6</button>
-        <button type="button" data-money-key="7">7</button>
-        <button type="button" data-money-key="8">8</button>
-        <button type="button" data-money-key="9">9</button>
-        <button type="button" class="pad-dot" data-money-key=".">.</button>
-        <button type="button" data-money-key="0">0</button>
-        <button type="button" class="pad-delete" data-money-delete aria-label="Delete digit">&#9003;</button>
-      </div>
-      <div class="cash-actions">
-        <button class="send-action" type="submit" formaction="{% url 'send_family_transfer' %}">Pay Family</button>
-        <button class="send-action purchase" type="submit" formnovalidate formaction="{% url 'request_store_spend' %}">Spend In Store</button>
-        <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_spending_transfer' %}">Move to Spending</button>
-        <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_conversion' %}">Savings to Tokens</button>
-        <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_tokens_to_savings' %}">Tokens to Savings</button>
-        <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_cashout' %}">Cash Request</button>
-      </div>
-      <p class="money-boundary"><strong>Exchange rate: $1.00 = 10 Tokens.</strong> Moving Savings, either conversion direction, cash requests, and store spending wait for Dad's approval. Spend requests reserve money right away and stay pending until Dad reviews them. Enter dollar amounts in 10-cent increments when converting.</p>
-    </form>
-  </section>
-  <section class="card money-history">
-    <div class="card-head"><h2>Pending Transactions</h2><span class="badge">{{ pending_spending_total_cents|dollars }} reserved</span></div>
-    {% for entry in pending_spending %}
-      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; Waiting for Dad</small></div><b>Spend {{ entry.spending_delta_cents|dollars }}</b></div>
-    {% empty %}<p class="empty">No pending spending transactions.</p>{% endfor %}
-  </section>
-  <section class="card money-history">
-    <div class="card-head"><h2>Wallet Activity</h2><span class="badge">Family ledger</span></div>
-    {% for entry in ledger %}
-      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.get_status_display }}</small></div><b>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% elif entry.spending_delta_cents %}Spend {{ entry.spending_delta_cents|dollars }}{% else %}Save {{ entry.cash_delta_cents|dollars }}{% endif %}</b></div>
-    {% empty %}<p class="empty">Activity will appear here.</p>{% endfor %}
-  </section>
+  <h1 class="wallet-title">Tokens &amp; Money</h1>
+  {% include "rewards/_wallet_console.html" %}
 </main>
 {% endblock %}

@@ -1,0 +1,68 @@
+{% load rewards_tags %}
+<section class="pay-screen {% if wallet_embedded %}pay-screen-embedded{% endif %}">
+  <header class="payment-header">
+    <div>
+      <p class="pay-label">Available Spending</p>
+      <h2>{{ wallet.spending_cents|dollars }}</h2>
+    </div>
+    <span class="payment-status">Secure Wallet</span>
+  </header>
+  <div class="cash-balance-bar">
+    <div><small>Spending</small><strong>{{ wallet.spending_cents|dollars }}</strong></div>
+    <div><small>Savings</small><strong>{{ wallet.cash_cents|dollars }}</strong></div>
+    <div><small>Tokens</small><strong>{{ wallet.tokens }}</strong></div>
+  </div>
+  <form class="cashpad" method="post" data-money-pad>
+    {% csrf_token %}
+    {% if wallet_embedded %}<input type="hidden" name="wallet_surface" value="dashboard">{% endif %}
+    <input type="hidden" name="cash_amount" value="0.00" data-money-input>
+    <p class="pay-label amount-label">Enter amount</p>
+    <div class="pay-amount" aria-live="polite"><span>$</span><output data-money-display>0.00</output></div>
+    <div class="payment-primary-actions">
+      <button class="money-primary send" type="submit" formaction="{% url 'send_family_transfer' %}">Send</button>
+      <button class="money-primary spend" type="submit" formnovalidate formaction="{% url 'request_store_spend' %}">Spend</button>
+    </div>
+    <label class="recipient-picker">Send money to
+      {{ family_transfer_form.recipient_id }}
+      <small>Choose a sibling only when tapping Send. Spend reserves your store purchase for Dad to verify.</small>
+    </label>
+    <div class="number-pad" aria-label="Amount keypad">
+      <button type="button" data-money-key="1">1</button>
+      <button type="button" data-money-key="2">2</button>
+      <button type="button" data-money-key="3">3</button>
+      <button type="button" data-money-key="4">4</button>
+      <button type="button" data-money-key="5">5</button>
+      <button type="button" data-money-key="6">6</button>
+      <button type="button" data-money-key="7">7</button>
+      <button type="button" data-money-key="8">8</button>
+      <button type="button" data-money-key="9">9</button>
+      <button type="button" class="pad-dot" data-money-key=".">.</button>
+      <button type="button" data-money-key="0">0</button>
+      <button type="button" class="pad-delete" data-money-delete aria-label="Delete digit">&#9003;</button>
+    </div>
+    <section class="wallet-tools" aria-label="More money tools">
+      <h3>Move &amp; convert</h3>
+      <div class="cash-actions">
+        <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_spending_transfer' %}"><strong>Move</strong><small>Savings to spending</small></button>
+        <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_conversion' %}"><strong>Convert</strong><small>Savings to tokens</small></button>
+        <button class="request-action convert-action" type="submit" formnovalidate formaction="{% url 'request_tokens_to_savings' %}"><strong>Save</strong><small>Tokens to savings</small></button>
+        <button class="request-action" type="submit" formnovalidate formaction="{% url 'request_cashout' %}"><strong>Withdraw</strong><small>Cash request</small></button>
+      </div>
+    </section>
+    <p class="money-boundary"><strong>Exchange rate: $1.00 = 10 Tokens.</strong> Conversions, withdrawals, money moves, and store spending wait for Dad's approval. Spending is reserved immediately while a purchase is pending.</p>
+  </form>
+</section>
+<section class="wallet-ledger-grid">
+  <section class="card money-history">
+    <div class="card-head"><h2>Pending</h2><span class="badge">{{ pending_spending_total_cents|dollars }} reserved</span></div>
+    {% for entry in pending_spending %}
+      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; Waiting for Dad</small></div><b>{{ entry.spending_delta_cents|dollars }}</b></div>
+    {% empty %}<p class="empty">No pending spending transactions.</p>{% endfor %}
+  </section>
+  <section class="card money-history">
+    <div class="card-head"><h2>Activity</h2><span class="badge">Ledger</span></div>
+    {% for entry in ledger %}
+      <div class="row"><div><strong>{{ entry.description }}</strong><small>{{ entry.get_status_display }}</small></div><b>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% elif entry.spending_delta_cents %}{{ entry.spending_delta_cents|dollars }}{% else %}{{ entry.cash_delta_cents|dollars }}{% endif %}</b></div>
+    {% empty %}<p class="empty">Activity will appear here.</p>{% endfor %}
+  </section>
+</section>

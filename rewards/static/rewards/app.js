@@ -104,7 +104,23 @@ if (notificationButton) {
   });
 }
 
-if (document.querySelector(".toast.success")) {
+const paymentSuccess = document.querySelector(".toast.payment-success");
+if (paymentSuccess) {
+  const paymentOverlay = document.createElement("section");
+  const spent = paymentSuccess.classList.contains("spent");
+  paymentOverlay.className = "payment-confirmation";
+  paymentOverlay.setAttribute("role", "status");
+  paymentOverlay.innerHTML = `
+    <div class="payment-check"><span></span></div>
+    <p>${spent ? "Spend requested" : "Sent successfully"}</p>
+    <strong>${paymentSuccess.textContent}</strong>
+    <small>${spent ? "Reserved until Dad verifies the purchase" : "Your family payment is complete"}</small>
+  `;
+  paymentSuccess.remove();
+  document.body.appendChild(paymentOverlay);
+  window.setTimeout(() => paymentOverlay.classList.add("fade-out"), 2100);
+  window.setTimeout(() => paymentOverlay.remove(), 2500);
+} else if (document.querySelector(".toast.success")) {
   const celebration = document.createElement("div");
   celebration.className = "celebration";
   celebration.innerHTML = "<span></span><span></span><span></span><span></span><span></span>";
@@ -242,10 +258,13 @@ document.querySelectorAll("[data-money-pad]").forEach((pad) => {
     });
   });
 
-  pad.querySelector("[data-money-delete]").addEventListener("click", () => {
-    typedAmount = typedAmount.slice(0, -1);
-    updateAmount();
-  });
+  const deleteButton = pad.querySelector("[data-money-delete]");
+  if (deleteButton) {
+    deleteButton.addEventListener("click", () => {
+      typedAmount = typedAmount.slice(0, -1);
+      updateAmount();
+    });
+  }
 
   pad.addEventListener("submit", (event) => {
     if (Number.parseFloat(field.value) <= 0) {

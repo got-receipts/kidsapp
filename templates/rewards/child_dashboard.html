@@ -221,10 +221,10 @@
       {% empty %}<p class="empty">The family store is being stocked.</p>{% endfor %}
     </div>
   </section></dialog>
-  <dialog class="review-dialog wallet-dialog" id="child-wallet">
+  <dialog class="review-dialog wallet-dialog" id="child-wallet" {% if open_wallet %}data-auto-open-dialog{% endif %}>
     <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-    <p class="eyebrow">Tokens and money</p><h2>My Wallet</h2>
-    <iframe class="wallet-frame" title="My wallet tools" src="{% url 'wallet_page' %}" loading="lazy"></iframe>
+    <p class="eyebrow">My money</p><h2>Wallet</h2>
+    {% include "rewards/_wallet_console.html" %}
   </dialog>
   {% endif %}
   <nav class="kid-dock" aria-label="Quick navigation">
