@@ -183,7 +183,7 @@ class TokenGiftForm(forms.Form):
 
 
 class SpendingTransferForm(forms.Form):
-    cash_amount = forms.DecimalField(label="Move to spendable cash ($)", min_value=0.01, decimal_places=2)
+    cash_amount = forms.DecimalField(label="Amount ($)", min_value=0.01, decimal_places=2)
 
 
 class FamilyTransferForm(forms.Form):
@@ -229,7 +229,7 @@ class BalanceAdjustmentForm(forms.Form):
     ADD = "add"
     REMOVE = "remove"
 
-    account = forms.ChoiceField(choices=[(SAVINGS, "Wallet cash"), (SPENDING, "Spendable cash")])
+    account = forms.ChoiceField(choices=[(SAVINGS, "Cash App balance")])
     direction = forms.ChoiceField(choices=[(ADD, "Add money"), (REMOVE, "Remove money")])
     cash_amount = forms.DecimalField(label="Amount ($)", min_value=0.01, decimal_places=2)
     reason = forms.CharField(max_length=100, label="Reason")

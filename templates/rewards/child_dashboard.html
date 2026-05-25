@@ -94,9 +94,9 @@
       <p class="hero-copy">Pick an app to explore your quests, rewards, and wallet.</p>
       <div class="balances">
         <div class="treasure"><strong>{{ wallet.tokens }}</strong><span>Tokens</span></div>
-        <div class="piggy"><strong>{{ wallet.cash_cents|dollars }}</strong><span>Wallet Cash</span></div>
-        <div class="spending"><strong>{{ wallet.spending_cents|dollars }}</strong><span>Spendable</span></div>
+        <div class="piggy"><strong>{{ cash_app_balance_cents|dollars }}</strong><span>Cash</span></div>
         <div class="star-balance"><strong>{{ star_count }}</strong><span>Stars</span></div>
+        <div class="streak-balance"><strong>{{ streak_count }}</strong><span>Day streak</span></div>
       </div>
     {% endif %}
   </section>

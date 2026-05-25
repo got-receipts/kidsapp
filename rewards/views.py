@@ -152,6 +152,14 @@ def _cash_for_tokens(tokens, family_settings):
     return int((Decimal(tokens) * Decimal("100") / family_settings.tokens_per_dollar).quantize(Decimal("1")))
 
 
+def _cash_sources(wallet, cents):
+    wallet_cash = min(wallet.cash_cents, cents)
+    legacy_cash = cents - wallet_cash
+    if legacy_cash > wallet.spending_cents:
+        return None
+    return wallet_cash, legacy_cash
+
+
 def _notify(child, kind, title, message):
     if child.role == Profile.Role.CHILD:
         Notification.objects.create(recipient=child, kind=kind, title=title, message=message[:240])
@@ -198,13 +206,11 @@ def _wallet_context(profile):
     )
     return {
         "wallet": profile.wallet,
+        "cash_app_balance_cents": profile.wallet.available_cash_cents,
         "ledger": profile.ledger_requests.all()[:20],
         "pending_spending": pending_spending,
-        "pending_spending_total_cents": sum(-entry.spending_delta_cents for entry in pending_spending),
-        "pending_wallet_actions": profile.ledger_requests.filter(
-            kind__in=[LedgerRequest.Kind.TRANSFER, LedgerRequest.Kind.SPEND],
-            status=LedgerRequest.Status.PENDING,
-        ),
+        "pending_spending_total_cents": sum(-entry.money_delta_cents for entry in pending_spending),
+        "pending_wallet_actions": pending_spending,
         "family_settings": FamilySettings.load(),
         "token_cashout_form": TokenCashoutForm(),
         "token_gift_form": TokenGiftForm(sender=profile),
@@ -288,6 +294,7 @@ def _child_context(profile, family_settings, include_welcome=True):
     return {
         "profile": profile,
         "wallet": profile.wallet,
+        "cash_app_balance_cents": profile.wallet.available_cash_cents,
         "grades": profile.grades.all().order_by("-created_at")[:8],
         "chores": today_chores,
         "optional_chores": optional_chores,
@@ -651,27 +658,11 @@ def request_cashout(request):
 @require_POST
 def request_spending_transfer(request):
     profile = _profile(request)
-    form = SpendingTransferForm(request.POST)
     if profile.can_view_family:
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
-    if not form.is_valid():
-        messages.error(request, "Please choose or enter an amount to make spendable.")
-        return redirect("wallet_page")
-    cents = _cents(form.cleaned_data["cash_amount"])
-    if cents > profile.wallet.cash_cents:
-        messages.error(request, "That is more than your wallet cash balance.")
-        return redirect("wallet_page")
-    LedgerRequest.objects.create(
-        child=profile,
-        requested_by=profile,
-        kind=LedgerRequest.Kind.TRANSFER,
-        description=f"Move ${cents / 100:.2f} from wallet cash to spending",
-        cash_delta_cents=-cents,
-        spending_delta_cents=cents,
-    )
-    messages.success(request, "Your request to make wallet cash spendable was sent to Dad.")
+    messages.info(request, "Your Cash App balance is already available to send or spend. No transfer is needed.")
     return redirect("wallet_page")
 
 
@@ -753,11 +744,16 @@ def send_family_transfer(request):
             wallet.child_id: wallet
             for wallet in Wallet.objects.select_for_update().filter(child_id__in=[profile.pk, recipient.pk]).order_by("pk")
         }
-        if cents > wallets[profile.pk].spending_cents:
-            messages.error(request, "You do not have enough spendable cash to send that amount.")
+        sources = _cash_sources(wallets[profile.pk], cents)
+        if sources is None:
+            messages.error(request, "You do not have enough cash to send that amount.")
             return redirect("wallet_page")
-        Wallet.objects.filter(pk=wallets[profile.pk].pk).update(spending_cents=F("spending_cents") - cents)
-        Wallet.objects.filter(pk=wallets[recipient.pk].pk).update(spending_cents=F("spending_cents") + cents)
+        wallet_cash, legacy_cash = sources
+        Wallet.objects.filter(pk=wallets[profile.pk].pk).update(
+            cash_cents=F("cash_cents") - wallet_cash,
+            spending_cents=F("spending_cents") - legacy_cash,
+        )
+        Wallet.objects.filter(pk=wallets[recipient.pk].pk).update(cash_cents=F("cash_cents") + cents)
         timestamp = timezone.now()
         sent = LedgerRequest.objects.create(
             child=profile,
@@ -765,7 +761,8 @@ def send_family_transfer(request):
             counterparty=recipient,
             kind=LedgerRequest.Kind.GIFT,
             description=f"Sent ${cents / 100:.2f} to {recipient.display_name}",
-            spending_delta_cents=-cents,
+            cash_delta_cents=-wallet_cash,
+            spending_delta_cents=-legacy_cash,
             status=LedgerRequest.Status.APPROVED,
             reviewed_at=timestamp,
         )
@@ -775,7 +772,7 @@ def send_family_transfer(request):
             counterparty=profile,
             kind=LedgerRequest.Kind.GIFT,
             description=f"Received ${cents / 100:.2f} from {profile.display_name}",
-            spending_delta_cents=cents,
+            cash_delta_cents=cents,
             status=LedgerRequest.Status.APPROVED,
             reviewed_at=timestamp,
         )
@@ -800,16 +797,22 @@ def request_store_spend(request):
     cents = _cents(form.cleaned_data["cash_amount"])
     with transaction.atomic():
         wallet = Wallet.objects.select_for_update().get(child=profile)
-        if cents > wallet.spending_cents:
-            messages.error(request, "You do not have enough spendable cash for that purchase.")
+        sources = _cash_sources(wallet, cents)
+        if sources is None:
+            messages.error(request, "You do not have enough cash for that purchase.")
             return redirect("wallet_page")
-        Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
+        wallet_cash, legacy_cash = sources
+        Wallet.objects.filter(pk=wallet.pk).update(
+            cash_cents=F("cash_cents") - wallet_cash,
+            spending_cents=F("spending_cents") - legacy_cash,
+        )
         LedgerRequest.objects.create(
             child=profile,
             requested_by=profile,
             kind=LedgerRequest.Kind.SPEND,
             description=f"In-person spending pending: ${cents / 100:.2f}",
-            spending_delta_cents=-cents,
+            cash_delta_cents=-wallet_cash,
+            spending_delta_cents=-legacy_cash,
         )
     messages.success(request, f"${cents / 100:.2f} reserved for spending. Dad will verify it.", extra_tags="payment-success spent")
     return redirect("wallet_page")
@@ -1255,9 +1258,8 @@ def dad_balance_adjustment(request):
         child=child,
         requested_by=guardian,
         kind=LedgerRequest.Kind.BALANCE,
-        description=f"{'Wallet cash' if account == BalanceAdjustmentForm.SAVINGS else 'Spendable cash'} adjustment: {form.cleaned_data['reason']}",
-        cash_delta_cents=sign * cents if account == BalanceAdjustmentForm.SAVINGS else 0,
-        spending_delta_cents=sign * cents if account == BalanceAdjustmentForm.SPENDING else 0,
+        description=f"Cash App balance adjustment: {form.cleaned_data['reason']}",
+        cash_delta_cents=sign * cents,
     )
     try:
         entry.approve(guardian)

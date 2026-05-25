@@ -964,6 +964,50 @@ a { color: inherit; text-decoration: none; }
   text-align: left;
   text-transform: uppercase;
 }
+.cash-tool-grid {
+  display: grid;
+  gap: 9px;
+}
+.cash-tool {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border-radius: 15px;
+  background: rgb(0 0 0 / 13%);
+  color: #fff;
+  text-align: left;
+}
+.cash-tool > strong { font-size: 15px; }
+.cash-tool > small {
+  color: rgb(255 255 255 / 73%);
+  font-size: 11px;
+}
+.cash-tool label {
+  display: grid;
+  gap: 4px;
+  color: rgb(255 255 255 / 83%);
+  font-size: 11px;
+  font-weight: bold;
+}
+.cash-tool input,
+.cash-tool select {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 11px;
+  background: rgb(13 49 30 / 29%);
+  color: #fff;
+}
+.cash-tool button {
+  min-height: 41px;
+  margin-top: 2px;
+  border-radius: 12px;
+  background: rgb(7 46 30 / 54%);
+  color: #fff;
+  font-weight: 800;
+}
+.cash-tool button.convert-action { background: rgb(7 46 30 / 72%); }
+.cash-tool select option { color: #14263d; }
 .cash-actions {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2026,6 +2070,7 @@ button.calendar-day:active { transform: scale(.93); }
   .amount-grid .cash-card .preset-grid { grid-template-columns: repeat(4, 1fr); }
   .recap-backdrop { align-items: center; }
   .wallet-ledger-grid { grid-template-columns: 1fr 1fr; }
+  .cash-tool-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 430px) {
   .cash-actions { grid-template-columns: repeat(2, 1fr); }

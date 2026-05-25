@@ -53,6 +53,10 @@ class Wallet(models.Model):
     cash_cents = models.PositiveIntegerField(default=0)
     spending_cents = models.PositiveIntegerField(default=0)
 
+    @property
+    def available_cash_cents(self):
+        return self.cash_cents + self.spending_cents
+
     def __str__(self):
         return f"{self.child.display_name}'s wallet"
 
@@ -388,7 +392,11 @@ class LedgerRequest(models.Model):
 
     @property
     def reserves_spending_immediately(self):
-        return self.kind == self.Kind.SPEND and self.spending_delta_cents < 0
+        return self.kind == self.Kind.SPEND and (self.cash_delta_cents < 0 or self.spending_delta_cents < 0)
+
+    @property
+    def money_delta_cents(self):
+        return self.cash_delta_cents + self.spending_delta_cents
 
     def approve(self, guardian=None):
         from django.utils import timezone
@@ -485,7 +493,10 @@ class LedgerRequest(models.Model):
                 return
             if request.reserves_spending_immediately:
                 wallet = Wallet.objects.select_for_update().get(child=request.child)
-                Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - request.spending_delta_cents)
+                Wallet.objects.filter(pk=wallet.pk).update(
+                    cash_cents=F("cash_cents") - request.cash_delta_cents,
+                    spending_cents=F("spending_cents") - request.spending_delta_cents,
+                )
             request.status = self.Status.DECLINED
             request.reviewed_by = guardian
             request.reviewed_at = timezone.now()

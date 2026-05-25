@@ -21,8 +21,8 @@ This is private family software. All rights reserved; it is not intended for red
 - Guardian-managed individual rules with consequences and optional expiration/removal times, visible only to the assigned child.
 - Experience rewards including museum, park, Hoffman's Playland, Lake George trips, and a Great Escape grand prize.
 - Parent-configured token exchange rates; tokens convert immediately and irreversibly into wallet cash.
-- Wallet cash and spendable cash balances, parent-recorded real-world spending, and sibling cash transfers.
-- Unverified checked quests create recorded token penalties; token balances may go below zero while wallet and spendable cash remain overdraft-protected.
+- Cash App-style available cash, parent-recorded real-world spending, and sibling cash transfers.
+- Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
 - A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights without editing or financial controls.
@@ -85,7 +85,7 @@ Do not leave accounts using the fallback password on an online app. Replace the 
 
 ## Money Safety Boundary
 
-`Wallet cash` and `Spendable cash` are internal Family Circle ledger balances. The app does not debit a parent's bank account, hold funds, create a spendable virtual card, or issue an Apple Wallet payment card. Parents define the rate for converting earned tokens into wallet cash. That conversion is immediate and one-way: cash cannot become tokens again. Parents can record money provided or spent, and children may share tokens or available spendable cash with siblings; each transfer is audited.
+The Cash App balance is an internal Family Circle ledger balance. The app does not debit a parent's bank account, hold funds, create a spendable virtual card, or issue an Apple Wallet payment card. Parents define the rate for converting earned tokens into cash. That conversion is immediate and one-way: cash cannot become tokens again. Children can send tokens, send available cash to siblings, or record in-person spending with their parent; each transfer is audited.
 
 An Apple Wallet display pass or a real funded card can be considered later only through an appropriate pass-signing setup or regulated card/payment provider, with stronger authentication and parental controls.
 

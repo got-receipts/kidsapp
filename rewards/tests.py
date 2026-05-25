@@ -213,31 +213,23 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.tokens, 22)
         self.assertEqual(BehaviorStar.objects.filter(child=self.child).count(), 1)
 
-    def test_child_can_request_savings_move_but_only_dad_can_approve_it(self):
+    def test_legacy_move_to_spending_is_not_needed_in_cash_app_flow(self):
         self.client.force_login(self.child.user)
-        self.client.post(reverse("request_spending_transfer"), {"cash_amount": "2.00"})
-        entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.TRANSFER)
+        response = self.client.post(reverse("request_spending_transfer"), {"cash_amount": "2.00"}, follow=True)
 
-        gg_user = User.objects.create_user(username="gg", password="test")
-        Profile.objects.create(user=gg_user, display_name="GG", role=Profile.Role.GUARDIAN)
-        self.client.force_login(gg_user)
-        self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
-        entry.refresh_from_db()
-        self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
-
-        self.client.force_login(self.guardian.user)
-        self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
         self.wallet.refresh_from_db()
-        self.assertEqual(self.wallet.cash_cents, 300)
-        self.assertEqual(self.wallet.spending_cents, 200)
+        self.assertContains(response, "already available to send or spend")
+        self.assertEqual(self.wallet.cash_cents, 500)
+        self.assertEqual(self.wallet.spending_cents, 0)
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.TRANSFER).exists())
 
-    def test_dad_balance_correction_is_approved_and_audited(self):
+    def test_parent_cash_app_balance_correction_is_approved_and_audited(self):
         self.client.force_login(self.guardian.user)
         self.client.post(
             reverse("dad_balance_adjustment"),
             {
                 "child_id": self.child.pk,
-                "account": "spending",
+                "account": "savings",
                 "direction": "add",
                 "cash_amount": "4.25",
                 "reason": "Allowance loaded",
@@ -246,7 +238,7 @@ class LedgerApprovalTests(TestCase):
 
         self.wallet.refresh_from_db()
         entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.BALANCE)
-        self.assertEqual(self.wallet.spending_cents, 425)
+        self.assertEqual(self.wallet.cash_cents, 925)
         self.assertEqual(entry.status, LedgerRequest.Status.APPROVED)
 
     def test_non_dad_guardian_cannot_approve_savings_to_token_conversion(self):
@@ -277,16 +269,16 @@ class LedgerApprovalTests(TestCase):
         self.client.force_login(self.child.user)
         response = self.client.get(reverse("wallet_page"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tokens &amp; Wallet Cash")
+        self.assertContains(response, "Cash App")
+        self.assertContains(response, "Family Cash")
         self.assertContains(response, "Convert Tokens")
         self.assertContains(response, "Send Tokens")
-        self.assertContains(response, "Use Converted Cash")
-        self.assertContains(response, "Send Cash")
-        self.assertContains(response, "Cash cannot be turned back into tokens")
+        self.assertContains(response, "Send Money")
+        self.assertContains(response, "Spend Money")
+        self.assertContains(response, "Money stays money")
         self.assertContains(response, "Astoria")
-        self.assertContains(response, "Back")
         self.assertContains(response, "Home")
-        self.assertContains(response, "data-go-back")
+        self.assertContains(response, "data-money-pad")
 
         self.client.force_login(self.guardian.user)
         response = self.client.get(reverse("wallet_page"))
@@ -346,12 +338,31 @@ class LedgerApprovalTests(TestCase):
         self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.WALLET).exists())
         self.assertTrue(AuditLog.objects.filter(action="token_cashout_completed").exists())
 
-    def test_child_can_send_spending_to_another_child_with_history_for_both(self):
+    def test_converted_cash_can_be_sent_and_spent_from_cash_app_immediately(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
         sibling_wallet = Wallet.objects.create(child=sibling)
-        self.wallet.spending_cents = 500
-        self.wallet.save(update_fields=["spending_cents"])
+        self.wallet.cash_cents = 0
+        self.wallet.save(update_fields=["cash_cents"])
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("request_token_cashout"), {"tokens": "20"})
+        self.client.post(reverse("send_family_transfer"), {"recipient_id": sibling.pk, "cash_amount": "0.75"})
+        self.client.post(reverse("request_store_spend"), {"cash_amount": "1.00"})
+
+        self.wallet.refresh_from_db()
+        sibling_wallet.refresh_from_db()
+        spend = LedgerRequest.objects.get(child=self.child, kind=LedgerRequest.Kind.SPEND)
+        self.assertEqual(self.wallet.tokens, 0)
+        self.assertEqual(self.wallet.cash_cents, 25)
+        self.assertEqual(sibling_wallet.cash_cents, 75)
+        self.assertEqual(spend.cash_delta_cents, -100)
+        self.assertEqual(spend.status, LedgerRequest.Status.PENDING)
+
+    def test_child_can_send_cash_to_another_child_with_history_for_both(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        sibling_wallet = Wallet.objects.create(child=sibling)
         self.client.force_login(self.child.user)
 
         response = self.client.post(
@@ -362,13 +373,13 @@ class LedgerApprovalTests(TestCase):
         self.assertRedirects(response, reverse("wallet_page"))
         self.wallet.refresh_from_db()
         sibling_wallet.refresh_from_db()
-        self.assertEqual(self.wallet.spending_cents, 275)
-        self.assertEqual(sibling_wallet.spending_cents, 225)
+        self.assertEqual(self.wallet.cash_cents, 275)
+        self.assertEqual(sibling_wallet.cash_cents, 225)
         sent = LedgerRequest.objects.get(child=self.child, kind=LedgerRequest.Kind.GIFT)
         received = LedgerRequest.objects.get(child=sibling, kind=LedgerRequest.Kind.GIFT)
-        self.assertEqual(sent.spending_delta_cents, -225)
+        self.assertEqual(sent.cash_delta_cents, -225)
         self.assertEqual(sent.counterparty, sibling)
-        self.assertEqual(received.spending_delta_cents, 225)
+        self.assertEqual(received.cash_delta_cents, 225)
         self.assertEqual(received.counterparty, self.child)
         self.assertEqual(sent.status, LedgerRequest.Status.APPROVED)
 
@@ -376,8 +387,6 @@ class LedgerApprovalTests(TestCase):
         sibling_user = User.objects.create_user(username="astoria", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
         Wallet.objects.create(child=sibling)
-        self.wallet.spending_cents = 500
-        self.wallet.save(update_fields=["spending_cents"])
         self.client.force_login(self.child.user)
 
         response = self.client.post(
@@ -390,8 +399,6 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "payment-success")
 
     def test_child_can_reserve_spending_for_store_purchase_pending_dad_approval(self):
-        self.wallet.spending_cents = 500
-        self.wallet.save(update_fields=["spending_cents"])
         self.client.force_login(self.child.user)
 
         response = self.client.post(
@@ -402,8 +409,8 @@ class LedgerApprovalTests(TestCase):
         self.assertRedirects(response, reverse("wallet_page"))
         self.wallet.refresh_from_db()
         entry = LedgerRequest.objects.get(child=self.child, kind=LedgerRequest.Kind.SPEND)
-        self.assertEqual(self.wallet.spending_cents, 275)
-        self.assertEqual(entry.spending_delta_cents, -225)
+        self.assertEqual(self.wallet.cash_cents, 275)
+        self.assertEqual(entry.cash_delta_cents, -225)
         self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
 
         self.client.force_login(self.guardian.user)
@@ -411,28 +418,26 @@ class LedgerApprovalTests(TestCase):
 
         self.wallet.refresh_from_db()
         entry.refresh_from_db()
-        self.assertEqual(self.wallet.spending_cents, 275)
+        self.assertEqual(self.wallet.cash_cents, 275)
         self.assertEqual(entry.status, LedgerRequest.Status.APPROVED)
 
     def test_declined_store_spending_refunds_child_balance(self):
-        self.wallet.spending_cents = 500
-        self.wallet.save(update_fields=["spending_cents"])
         entry = LedgerRequest.objects.create(
             child=self.child,
             requested_by=self.child,
             kind=LedgerRequest.Kind.SPEND,
             description="Store spend pending: $2.25",
-            spending_delta_cents=-225,
+            cash_delta_cents=-225,
         )
-        self.wallet.spending_cents = 275
-        self.wallet.save(update_fields=["spending_cents"])
+        self.wallet.cash_cents = 275
+        self.wallet.save(update_fields=["cash_cents"])
         self.client.force_login(self.guardian.user)
 
         self.client.post(reverse("review_request", args=[entry.pk, "decline"]))
 
         self.wallet.refresh_from_db()
         entry.refresh_from_db()
-        self.assertEqual(self.wallet.spending_cents, 500)
+        self.assertEqual(self.wallet.cash_cents, 500)
         self.assertEqual(entry.status, LedgerRequest.Status.DECLINED)
 
     def test_mixed_price_store_purchase_reduces_inventory_after_parent_approval(self):
@@ -461,18 +466,19 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.cash_cents, 400)
         self.assertEqual(item.inventory_quantity, 0)
 
-    def test_child_cannot_send_more_than_available_spending(self):
+    def test_child_cannot_send_more_than_available_cash(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
         sibling_wallet = Wallet.objects.create(child=sibling)
         self.client.force_login(self.child.user)
 
-        self.client.post(reverse("send_family_transfer"), {"recipient_id": sibling.pk, "cash_amount": "1.00"})
+        self.client.post(reverse("send_family_transfer"), {"recipient_id": sibling.pk, "cash_amount": "6.00"})
 
         self.wallet.refresh_from_db()
         sibling_wallet.refresh_from_db()
+        self.assertEqual(self.wallet.cash_cents, 500)
         self.assertEqual(self.wallet.spending_cents, 0)
-        self.assertEqual(sibling_wallet.spending_cents, 0)
+        self.assertEqual(sibling_wallet.cash_cents, 0)
         self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.GIFT).exists())
 
     def test_daily_recap_shows_new_star_and_is_dismissed_for_today(self):
