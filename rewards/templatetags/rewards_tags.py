@@ -7,3 +7,8 @@ register = template.Library()
 def dollars(cents):
     sign = "-" if cents < 0 else ""
     return f"{sign}${abs(cents) / 100:.2f}"
+
+
+@register.filter
+def amount(cents):
+    return f"{cents / 100:.2f}"

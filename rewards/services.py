@@ -2,7 +2,7 @@ from datetime import time
 
 from django.utils import timezone
 
-from .models import Chore, Profile
+from .models import Chore, Notification, Profile
 
 
 CHORE_LIBRARY = [
@@ -32,9 +32,10 @@ def ensure_today_chores():
     if not children:
         return
     offset = today.toordinal() % len(children)
+    children_with_new_chores = set()
     for index, (title, instructions) in enumerate(CHORE_LIBRARY):
         child = children[(index + offset) % len(children)]
-        Chore.objects.get_or_create(
+        _, created = Chore.objects.get_or_create(
             child=child,
             title=title,
             due_date=today,
@@ -43,9 +44,11 @@ def ensure_today_chores():
                 "token_reward": 4,
             },
         )
+        if created:
+            children_with_new_chores.add(child.pk)
     for child in children:
         for title, instructions in MORNING_OPTIONAL_LIBRARY:
-            Chore.objects.get_or_create(
+            _, created = Chore.objects.get_or_create(
                 child=child,
                 title=title,
                 due_date=today,
@@ -55,4 +58,14 @@ def ensure_today_chores():
                     "credit_deadline": time(10, 0),
                     "optional": True,
                 },
+            )
+            if created:
+                children_with_new_chores.add(child.pk)
+    for child in children:
+        if child.pk in children_with_new_chores:
+            Notification.objects.create(
+                recipient=child,
+                kind=Notification.Kind.CHORE,
+                title="Today's quests are ready",
+                message="Open your quest board to earn tokens from today's chores.",
             )

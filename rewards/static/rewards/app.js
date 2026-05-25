@@ -235,6 +235,16 @@ document.querySelectorAll("[data-open-dialog]").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-go-back]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.href = button.dataset.fallbackUrl || "/";
+  });
+});
+
 const guardianGrid = document.querySelector(".guardian .grid");
 if (guardianGrid) {
   const modules = Array.from(guardianGrid.querySelectorAll("[data-dashboard-module]"));

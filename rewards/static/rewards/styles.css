@@ -274,6 +274,19 @@ a { color: inherit; text-decoration: none; }
   color: var(--navy);
 }
 .form textarea { min-height: 62px; resize: vertical; }
+.form select {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--input);
+  color: var(--navy);
+}
+.form input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+  accent-color: var(--mint);
+}
 .primary, .action, .danger {
   padding: 10px 13px;
   border-radius: 11px;
@@ -454,6 +467,78 @@ a { color: inherit; text-decoration: none; }
 [data-theme="dark"] .map-wallet b { background: #308382; }
 [data-theme="dark"] .map-plan { background: #392f19; }
 [data-theme="dark"] .map-plan b { background: #b27d23; color: #fff1cf; }
+.kid-home-screen .kid-app-grid a:hover,
+.kid-home-screen .kid-app-grid a:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 34px rgb(20 38 61 / 14%);
+}
+.child-app-screen {
+  min-height: calc(100vh - 42px);
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
+}
+.child-app-topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 13px;
+}
+.child-nav-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--navy);
+  background: var(--paper);
+  box-shadow: 0 5px 15px rgb(20 38 61 / 6%);
+  font-size: 13px;
+  font-weight: bold;
+}
+.child-nav-control span { font-size: 22px; line-height: .7; }
+.child-nav-control.home span { font-size: 18px; }
+.child-app-identity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+}
+.child-app-identity .app-emblem { width: 29px; height: 29px; border-radius: 10px; }
+.child-app-identity small {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: bold;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.child-app-switcher {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+  padding-bottom: 3px;
+}
+.child-app-switcher a {
+  flex: none;
+  padding: 8px 13px;
+  border-radius: 16px;
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 12px;
+  font-weight: bold;
+}
+.child-app-switcher a.active {
+  color: #fff;
+  background: var(--navy);
+}
+.child-native-page {
+  animation: childAppIn .22s ease-out;
+}
+.child-native-page h1 { font-size: clamp(21px, 6vw, 26px); }
+.child-native-page .house-title { margin-top: 16px; }
 .tabs a, .child-picker a {
   flex: none;
   padding: 9px 13px;
@@ -522,6 +607,74 @@ a { color: inherit; text-decoration: none; }
 .store-grand .item-type { background: var(--gold); color: #6d4310; }
 [data-theme="dark"] .store-experience .item-type { background: #234162; color: #bcd8ff; }
 [data-theme="dark"] .store-grand { background: linear-gradient(130deg, var(--paper), #342b16); }
+.notification-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 11px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+.notification-row strong, .notification-row small { display: block; }
+.notification-row small { margin-top: 4px; }
+.child-notifications .acknowledge { width: 100%; margin-top: 14px; }
+.recap-notifications {
+  margin: 15px 0;
+  padding: 12px;
+  border-radius: 17px;
+  background: var(--surface-soft);
+}
+.recap-notifications h3 { margin-bottom: 9px; }
+.rule-note .rule-understood {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--mint-pale);
+  color: #307360;
+  font-size: 11px;
+  font-weight: 800;
+}
+.rule-note form { margin-top: 9px; }
+.achievement-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.achievement-grid div {
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+}
+.achievement-grid strong, .achievement-grid small { display: block; }
+.achievement-grid .earned {
+  border-style: solid;
+  border-color: rgb(246 198 103 / 65%);
+  background: #fff2d3;
+  color: #704516;
+}
+[data-theme="dark"] .achievement-grid .earned { background: #392f19; color: #ffdc87; }
+.rules-control .planner-row {
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.rules-control .planner-row > div { flex: 1 1 230px; }
+.cashout-card { max-width: 520px; }
+.wallet-action-grid {
+  display: grid;
+  gap: 13px;
+}
+.compact-money-form + .compact-money-form {
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+@media (min-width: 720px) {
+  .wallet-action-grid { grid-template-columns: repeat(2, 1fr); }
+  .cashout-card { max-width: none; }
+}
 .split { display: grid; gap: 12px; }
 .split .form { padding: 12px; border-radius: 14px; background: var(--surface-soft); }
 .split h3, .history-title { font-size: 14px; }
@@ -1841,6 +1994,10 @@ button.calendar-day:active { transform: scale(.93); }
   20% { opacity: 1; transform: translateY(-25px) scale(1); }
   100% { opacity: 0; transform: translateY(60px) rotate(120deg); }
 }
+@keyframes childAppIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .001ms !important;
@@ -1882,4 +2039,5 @@ button.calendar-day:active { transform: scale(.93); }
 @media (min-width: 820px) {
   .kid-dock { display: none; }
   .kid-shell ~ .app-footer { padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+  .child-app-screen { padding-bottom: 22px; }
 }

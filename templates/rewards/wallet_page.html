@@ -1,13 +1,24 @@
 {% extends "rewards/base.html" %}
+{% load static %}
 {% load rewards_tags %}
 {% block title %}My Wallet | Family Circle{% endblock %}
 {% block content %}
-<main class="shell kid-shell money-shell">
-  <header class="topbar">
-    <a class="money-back" href="{% url 'dashboard' %}"><span>&#8249;</span>Adventure board</a>
-    <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
+<main class="shell kid-shell money-shell child-app-screen">
+  <header class="child-app-topbar">
+    <button class="child-nav-control" type="button" data-go-back data-fallback-url="{% url 'dashboard' %}" aria-label="Go back"><span>&#8249;</span> Back</button>
+    <div class="child-app-identity">
+      <img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt="">
+      <small>{{ profile.display_name }}'s wallet</small>
+    </div>
+    <a class="child-nav-control home" href="{% url 'dashboard' %}" aria-label="Go home"><span>&#8962;</span> Home</a>
   </header>
-  <h1 class="wallet-title">Tokens &amp; Money</h1>
+  <h1 class="wallet-title">Tokens &amp; Wallet Cash</h1>
   {% include "rewards/_wallet_console.html" %}
+  <nav class="kid-dock child-app-dock" aria-label="App navigation">
+    <a href="{% url 'dashboard' %}"><span>&#8962;</span>Home</a>
+    <a href="{% url 'child_section' 'today' %}"><span>&#9788;</span>Today</a>
+    <a href="{% url 'child_section' 'chores' %}"><span>&#10003;</span>Quests</a>
+    <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
+  </nav>
 </main>
 {% endblock %}

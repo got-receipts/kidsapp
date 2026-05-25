@@ -1,28 +1,34 @@
 from django.contrib import admin
 
 from .models import (
+    AuditLog,
     BehaviorStar,
     BehaviorNote,
     ChildRule,
     Chore,
     DailyScheduleEvent,
+    FamilySettings,
     Grade,
     GrowthGoal,
     HouseRule,
     LedgerRequest,
+    Notification,
     Profile,
     PushSubscription,
+    Purchase,
     ReminderDispatch,
     ScheduleReminderDispatch,
     SavingsGoal,
     StoreItem,
     Wallet,
+    RuleAcknowledgement,
 )
 
 admin.site.register(
     [
         Profile,
         Wallet,
+        FamilySettings,
         SavingsGoal,
         DailyScheduleEvent,
         ChildRule,
@@ -31,6 +37,10 @@ admin.site.register(
         Chore,
         GrowthGoal,
         StoreItem,
+        Purchase,
+        Notification,
+        RuleAcknowledgement,
+        AuditLog,
         BehaviorStar,
         BehaviorNote,
         LedgerRequest,

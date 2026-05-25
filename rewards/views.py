@@ -19,12 +19,11 @@ from .forms import (
     AwardForm,
     BalanceAdjustmentForm,
     BehaviorDeductionForm,
-    CashOutForm,
+    ChildProfileForm,
     ChildRuleForm,
     ChoreForm,
-    ConvertForm,
     DailyScheduleEventForm,
-    FamilyTransferForm,
+    FamilySettingsForm,
     GoalForm,
     GradeForm,
     GroundingForm,
@@ -32,24 +31,34 @@ from .forms import (
     SavingsGoalForm,
     SpendingTransferForm,
     StoreItemForm,
-    TokensToSavingsForm,
+    TokenCashoutForm,
+    TokenGiftForm,
+    FamilyTransferForm,
 )
 from .models import (
+    AuditLog,
     BehaviorNote,
     BehaviorStar,
     ChildRule,
     Chore,
     DailyScheduleEvent,
+    FamilySettings,
     GrowthGoal,
     HouseRule,
     LedgerRequest,
+    Notification,
     Profile,
+    Purchase,
     PushSubscription,
+    RuleAcknowledgement,
     SavingsGoal,
     StoreItem,
     Wallet,
 )
 from .services import ensure_today_chores
+
+
+CHILD_SECTIONS = {"today", "chores", "badges", "school", "store", "savings", "goals"}
 
 
 class FamilyLoginView(LoginView):
@@ -128,8 +137,58 @@ def _block_grounded_child(request, profile):
     return False
 
 
+def _child_destination(request, default="dashboard"):
+    section = request.POST.get("return_section")
+    if section in CHILD_SECTIONS:
+        return redirect("child_section", section=section)
+    return redirect(default)
+
+
 def _cents(amount):
     return int((Decimal(amount) * 100).quantize(Decimal("1")))
+
+
+def _cash_for_tokens(tokens, family_settings):
+    return int((Decimal(tokens) * Decimal("100") / family_settings.tokens_per_dollar).quantize(Decimal("1")))
+
+
+def _notify(child, kind, title, message):
+    if child.role == Profile.Role.CHILD:
+        Notification.objects.create(recipient=child, kind=kind, title=title, message=message[:240])
+
+
+def _audit(actor, child, action, description, **related):
+    AuditLog.objects.create(actor=actor, child=child, action=action, description=description[:240], **related)
+
+
+def _expire_rules():
+    now = timezone.now()
+    ChildRule.objects.filter(active=True).filter(
+        Q(expires_on__lt=timezone.localdate()) | Q(scheduled_remove_at__lte=now)
+    ).update(active=False)
+
+
+def _current_child_rules(child):
+    return child.specific_rules.filter(active=True).filter(
+        Q(expires_on__isnull=True) | Q(expires_on__gte=timezone.localdate()),
+        Q(scheduled_remove_at__isnull=True) | Q(scheduled_remove_at__gt=timezone.now()),
+    )
+
+
+def _current_house_rules():
+    return HouseRule.objects.filter(active=True)
+
+
+def _star_streak(child):
+    days = set(child.behavior_stars.values_list("day", flat=True))
+    day = timezone.localdate()
+    if day not in days:
+        day -= timedelta(days=1)
+    streak = 0
+    while day in days:
+        streak += 1
+        day -= timedelta(days=1)
+    return streak
 
 
 def _wallet_context(profile):
@@ -142,6 +201,13 @@ def _wallet_context(profile):
         "ledger": profile.ledger_requests.all()[:20],
         "pending_spending": pending_spending,
         "pending_spending_total_cents": sum(-entry.spending_delta_cents for entry in pending_spending),
+        "pending_wallet_actions": profile.ledger_requests.filter(
+            kind__in=[LedgerRequest.Kind.TRANSFER, LedgerRequest.Kind.SPEND],
+            status=LedgerRequest.Status.PENDING,
+        ),
+        "family_settings": FamilySettings.load(),
+        "token_cashout_form": TokenCashoutForm(),
+        "token_gift_form": TokenGiftForm(sender=profile),
         "family_transfer_form": FamilyTransferForm(sender=profile),
     }
 
@@ -169,13 +235,8 @@ def _star_calendar(child, requested_month):
     return weeks, shown.strftime("%B %Y"), previous, next_month
 
 
-@login_required
-def dashboard(request):
-    ensure_today_chores()
-    for child in Profile.objects.filter(role=Profile.Role.CHILD, grounded=True):
-        child.refresh_grounding()
-    profile = _profile(request)
-    store_items = StoreItem.objects.filter(active=True).order_by(
+def _store_catalog():
+    return StoreItem.objects.filter(active=True).order_by(
         Case(
             When(category=StoreItem.Category.TREAT, then=0),
             When(category=StoreItem.Category.EXPERIENCE, then=1),
@@ -184,6 +245,97 @@ def dashboard(request):
         ),
         "token_cost",
     )
+
+
+def _child_context(profile, family_settings, include_welcome=True):
+    store_items = [item for item in _store_catalog() if item.available_to(profile)]
+    today_chores = profile.chores.filter(due_date=timezone.localdate(), optional=False).order_by("title")
+    optional_chores = profile.chores.filter(due_date=timezone.localdate(), optional=True).order_by("title")
+    checked = today_chores.filter(status__in=[Chore.Status.SUBMITTED, Chore.Status.COMPLETED]).count()
+    verified = today_chores.filter(status=Chore.Status.COMPLETED).count()
+    not_verified = today_chores.filter(status=Chore.Status.NOT_VERIFIED).count()
+    since = profile.last_recap_at
+    recap_entries = profile.ledger_requests.filter(status=LedgerRequest.Status.APPROVED)
+    recap_stars = profile.behavior_stars.all()
+    if since:
+        recap_entries = recap_entries.filter(reviewed_at__gt=since)
+        recap_stars = recap_stars.filter(created_at__gt=since)
+    else:
+        recap_entries = recap_entries.none()
+        recap_stars = recap_stars.none()
+    recap_token_total = recap_entries.filter(token_delta__gt=0).aggregate(total=Sum("token_delta"))["total"] or 0
+    recap_token_loss = -(
+        recap_entries.filter(kind__in=[LedgerRequest.Kind.PENALTY, LedgerRequest.Kind.BEHAVIOR]).aggregate(total=Sum("token_delta"))["total"]
+        or 0
+    )
+    recap_purchases = recap_entries.filter(kind=LedgerRequest.Kind.STORE).count()
+    next_prize = next((item for item in store_items if item.token_cost > profile.wallet.tokens), None)
+    savings_goal = SavingsGoal.objects.filter(child=profile).first()
+    today = timezone.localdate()
+    specific_rules = list(_current_child_rules(profile))
+    house_rules = list(_current_house_rules())
+    acknowledged_house = set(
+        profile.rule_acknowledgements.filter(house_rule__isnull=False).values_list("house_rule_id", flat=True)
+    )
+    acknowledged_personal = set(
+        profile.rule_acknowledgements.filter(child_rule__isnull=False).values_list("child_rule_id", flat=True)
+    )
+    for rule in specific_rules:
+        rule.acknowledged = rule.pk in acknowledged_personal
+    for rule in house_rules:
+        rule.acknowledged = rule.pk in acknowledged_house
+    streak_count = _star_streak(profile)
+    return {
+        "profile": profile,
+        "wallet": profile.wallet,
+        "grades": profile.grades.all().order_by("-created_at")[:8],
+        "chores": today_chores,
+        "optional_chores": optional_chores,
+        "chore_total": today_chores.count(),
+        "chore_completed": checked,
+        "chore_percent": round(checked / today_chores.count() * 100) if today_chores.count() else 0,
+        "chore_verified": verified,
+        "chore_verified_percent": round(verified / today_chores.count() * 100) if today_chores.count() else 0,
+        "chore_not_verified": not_verified,
+        "star_count": profile.behavior_stars.count(),
+        "star_today": profile.behavior_stars.filter(day=today).exists(),
+        "goals": profile.goals.exclude(status=GrowthGoal.Status.COMPLETED).order_by("created_at"),
+        "store_items": store_items,
+        "family_settings": family_settings,
+        "savings_goal": savings_goal,
+        "savings_goal_form": SavingsGoalForm(instance=savings_goal),
+        "today": today,
+        "quest_deadline": timezone.make_aware(datetime.combine(today, time(19, 0))),
+        "morning_deadline": timezone.make_aware(datetime.combine(today, time(10, 0))),
+        "today_schedule": profile.schedule_events.filter(day=today, approved_at__isnull=False),
+        "specific_rules": specific_rules,
+        "house_rules": house_rules,
+        "unread_notifications": profile.notifications.filter(read_at__isnull=True)[:10],
+        "show_recap": include_welcome and profile.last_recap_day != today,
+        "recap_first_visit": since is None,
+        "recap_star_count": recap_stars.count(),
+        "recap_token_total": recap_token_total,
+        "recap_token_loss": recap_token_loss,
+        "recap_purchases": recap_purchases,
+        "recap_tasks_left": today_chores.filter(status__in=[Chore.Status.OPEN, Chore.Status.IN_PROGRESS]).count(),
+        "next_prize": next_prize,
+        "tokens_to_next_prize": next_prize.token_cost - profile.wallet.tokens if next_prize else 0,
+        "streak_count": streak_count,
+        "token_badge": profile.wallet.tokens >= 50,
+        "quest_badge": verified >= 3,
+        "streak_badge": streak_count >= 3,
+    }
+
+
+@login_required
+def dashboard(request):
+    ensure_today_chores()
+    _expire_rules()
+    for child in Profile.objects.filter(role=Profile.Role.CHILD, grounded=True):
+        child.refresh_grounding()
+    profile = _profile(request)
+    family_settings = FamilySettings.load()
+    store_items = _store_catalog()
     if profile.can_view_family:
         can_manage = profile.is_guardian
         dad_controls = can_manage and profile.user.username.lower() == "dad"
@@ -239,7 +391,11 @@ def dashboard(request):
             "selected_grades": selected.grades.order_by("-created_at")[:8] if selected else [],
             "selected_goals": selected.goals.order_by("-created_at")[:8] if selected else [],
             "behavior_notes": selected.behavior_notes.select_related("issued_by")[:20] if selected else [],
-            "house_rules": HouseRule.objects.filter(active=True),
+            "house_rules": _current_house_rules(),
+            "all_house_rules": HouseRule.objects.all(),
+            "all_selected_rules": selected.specific_rules.all() if selected else [],
+            "all_store_items": StoreItem.objects.all().order_by("name"),
+            "recent_audit": AuditLog.objects.select_related("actor", "child")[:20],
             "history": history,
             "star_weeks": star_weeks,
             "star_month": star_month,
@@ -252,12 +408,15 @@ def dashboard(request):
             "tomorrow": tomorrow,
             "vapid_public_key": settings.VAPID_PUBLIC_KEY,
             "grade_form": GradeForm(),
+            "child_profile_form": ChildProfileForm(instance=selected) if selected else None,
             "chore_form": ChoreForm(),
             "goal_form": GoalForm(),
             "item_form": StoreItemForm(),
             "schedule_form": DailyScheduleEventForm(),
             "child_rule_form": ChildRuleForm(),
             "house_rule_form": HouseRuleForm(),
+            "settings_form": FamilySettingsForm(instance=family_settings),
+            "family_settings": family_settings,
             "award_form": AwardForm(),
             "behavior_deduction_form": BehaviorDeductionForm(),
             "balance_form": BalanceAdjustmentForm(),
@@ -265,61 +424,24 @@ def dashboard(request):
             "dad_controls": dad_controls,
         }
         return render(request, "rewards/guardian_dashboard.html", context)
-    today_chores = profile.chores.filter(due_date=timezone.localdate(), optional=False).order_by("title")
-    optional_chores = profile.chores.filter(due_date=timezone.localdate(), optional=True).order_by("title")
-    checked = today_chores.filter(status__in=[Chore.Status.SUBMITTED, Chore.Status.COMPLETED]).count()
-    verified = today_chores.filter(status=Chore.Status.COMPLETED).count()
-    not_verified = today_chores.filter(status=Chore.Status.NOT_VERIFIED).count()
-    since = profile.last_recap_at
-    recap_entries = profile.ledger_requests.filter(status=LedgerRequest.Status.APPROVED)
-    recap_stars = profile.behavior_stars.all()
-    if since:
-        recap_entries = recap_entries.filter(reviewed_at__gt=since)
-        recap_stars = recap_stars.filter(created_at__gt=since)
-    else:
-        recap_entries = recap_entries.none()
-        recap_stars = recap_stars.none()
-    recap_token_total = recap_entries.filter(token_delta__gt=0).aggregate(total=Sum("token_delta"))["total"] or 0
-    recap_token_loss = -(recap_entries.filter(kind__in=[LedgerRequest.Kind.PENALTY, LedgerRequest.Kind.BEHAVIOR]).aggregate(total=Sum("token_delta"))["total"] or 0)
-    recap_purchases = recap_entries.filter(kind=LedgerRequest.Kind.STORE).count()
-    next_prize = store_items.filter(token_cost__gt=profile.wallet.tokens).order_by("token_cost").first()
-    savings_goal = SavingsGoal.objects.filter(child=profile).first()
-    today = timezone.localdate()
-    context = {
-        "profile": profile,
-        "wallet": profile.wallet,
-        "grades": profile.grades.all().order_by("-created_at")[:8],
-        "chores": today_chores,
-        "optional_chores": optional_chores,
-        "chore_total": today_chores.count(),
-        "chore_completed": checked,
-        "chore_percent": round(checked / today_chores.count() * 100) if today_chores.count() else 0,
-        "chore_verified": verified,
-        "chore_verified_percent": round(verified / today_chores.count() * 100) if today_chores.count() else 0,
-        "chore_not_verified": not_verified,
-        "star_count": profile.behavior_stars.count(),
-        "star_today": profile.behavior_stars.filter(day=timezone.localdate()).exists(),
-        "goals": profile.goals.exclude(status=GrowthGoal.Status.COMPLETED).order_by("created_at"),
-        "store_items": store_items,
-        "savings_goal": savings_goal,
-        "savings_goal_form": SavingsGoalForm(instance=savings_goal),
-        "today": today,
-        "quest_deadline": timezone.make_aware(datetime.combine(today, time(19, 0))),
-        "morning_deadline": timezone.make_aware(datetime.combine(today, time(10, 0))),
-        "today_schedule": profile.schedule_events.filter(day=today, approved_at__isnull=False),
-        "specific_rules": profile.specific_rules.filter(active=True),
-        "house_rules": HouseRule.objects.filter(active=True),
-        "show_recap": profile.last_recap_day != timezone.localdate(),
-        "recap_first_visit": since is None,
-        "recap_star_count": recap_stars.count(),
-        "recap_token_total": recap_token_total,
-        "recap_token_loss": recap_token_loss,
-        "recap_purchases": recap_purchases,
-        "recap_tasks_left": today_chores.filter(status__in=[Chore.Status.OPEN, Chore.Status.IN_PROGRESS]).count(),
-        "next_prize": next_prize,
-        "tokens_to_next_prize": next_prize.token_cost - profile.wallet.tokens if next_prize else 0,
-    }
-    return render(request, "rewards/child_dashboard.html", context)
+    return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
+
+
+@login_required
+def child_section(request, section):
+    if section not in CHILD_SECTIONS:
+        return redirect("dashboard")
+    ensure_today_chores()
+    _expire_rules()
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if profile.grounded and section not in {"today", "chores"}:
+        messages.info(request, "That area is available again when Grounded Mode is lifted.")
+        return redirect("dashboard")
+    context = _child_context(profile, FamilySettings.load(), include_welcome=False)
+    context["active_section"] = section
+    return render(request, "rewards/child_section.html", context)
 
 
 @login_required
@@ -348,7 +470,7 @@ def start_chore(request, pk):
         messages.info(request, "You started it. Tap finished before the deadline so a guardian can verify your work.")
     else:
         messages.info(request, f"You started it. Tap finished before {cutoff} to earn your tokens!")
-    return redirect("dashboard")
+    return _child_destination(request)
 
 
 @login_required
@@ -367,7 +489,7 @@ def submit_chore(request, pk):
         chore.save(update_fields=["status"])
         cutoff = "10 AM" if chore.optional else "7 PM"
         messages.info(request, f"Marked finished. It was after {cutoff}, so this chore does not earn tokens today.")
-        return redirect("dashboard")
+        return _child_destination(request)
     earns_rewards = not profile.grounded
     LedgerRequest.objects.create(
         child=profile,
@@ -375,7 +497,7 @@ def submit_chore(request, pk):
         kind=LedgerRequest.Kind.CHORE,
         description=f"{'Completed chore' if earns_rewards else 'Grounded chore check'}: {chore.title}",
         token_delta=chore.token_reward if earns_rewards else 0,
-        cash_delta_cents=chore.cash_reward_cents if earns_rewards else 0,
+        cash_delta_cents=0,
         chore=chore,
     )
     chore.status = Chore.Status.SUBMITTED
@@ -384,7 +506,7 @@ def submit_chore(request, pk):
         messages.success(request, "Nice work. A guardian can now approve your chore reward.")
     else:
         messages.success(request, "Nice work. A guardian can verify your chore, but Grounded Mode adds no tokens.")
-    return redirect("dashboard")
+    return _child_destination(request)
 
 
 @login_required
@@ -394,7 +516,7 @@ def submit_goal(request, pk):
     if profile.can_view_family:
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
-        return redirect("dashboard")
+        return _child_destination(request)
     goal = get_object_or_404(GrowthGoal, pk=pk, child=profile, status=GrowthGoal.Status.ACTIVE)
     LedgerRequest.objects.create(
         child=profile,
@@ -407,115 +529,121 @@ def submit_goal(request, pk):
     goal.status = GrowthGoal.Status.SUBMITTED
     goal.save(update_fields=["status"])
     messages.success(request, "Goal submitted for celebration and approval.")
-    return redirect("dashboard")
+    return _child_destination(request)
 
 
 @login_required
 @require_POST
 def buy_item(request, pk):
     profile = _profile(request)
-    item = get_object_or_404(StoreItem, pk=pk, active=True)
+    item = get_object_or_404(StoreItem, pk=pk)
     if profile.can_view_family:
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
-        return redirect("dashboard")
-    if profile.wallet.tokens < item.token_cost:
-        messages.error(request, "You do not have enough tokens yet.")
-        return redirect("dashboard")
-    LedgerRequest.objects.create(
-        child=profile,
-        requested_by=profile,
-        kind=LedgerRequest.Kind.STORE,
-        description=f"Store request: {item.name}",
-        token_delta=-item.token_cost,
-        store_item=item,
-    )
-    messages.success(request, "Store request sent to your guardians.")
-    return redirect("dashboard")
+        return _child_destination(request)
+    if not item.available_to(profile):
+        messages.error(request, "This store item is not currently available for your account.")
+        return _child_destination(request)
+    if profile.wallet.tokens < item.token_cost or profile.wallet.cash_cents < item.cash_cost_cents:
+        messages.error(request, "You do not have enough tokens or wallet cash for that reward.")
+        return _child_destination(request)
+    with transaction.atomic():
+        entry = LedgerRequest.objects.create(
+            child=profile,
+            requested_by=profile,
+            kind=LedgerRequest.Kind.STORE,
+            description=f"Store redemption: {item.name}",
+            token_delta=-item.token_cost,
+            cash_delta_cents=-item.cash_cost_cents,
+            store_item=item,
+        )
+        Purchase.objects.create(
+            child=profile,
+            item=item,
+            ledger=entry,
+            token_cost=item.token_cost,
+            cash_cost_cents=item.cash_cost_cents,
+        )
+        if not item.requires_approval:
+            entry.approve()
+    if item.requires_approval:
+        messages.success(request, "Store request sent to your parents for approval.")
+    else:
+        messages.success(request, "Reward unlocked! Your purchase is recorded in your wallet.")
+    return _child_destination(request)
 
 
 @login_required
 @require_POST
 def request_conversion(request):
     profile = _profile(request)
-    form = ConvertForm(request.POST)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    messages.info(request, "Wallet cash cannot be converted into tokens. Complete chores to earn tokens.")
+    return redirect("wallet_page")
+
+
+@login_required
+@require_POST
+def request_token_cashout(request):
+    profile = _profile(request)
+    form = TokenCashoutForm(request.POST)
     if profile.can_view_family:
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
     if not form.is_valid():
-        messages.error(request, "Conversions must be in 10 cent increments.")
+        messages.error(request, "Enter the number of tokens you want to cash out.")
         return redirect("wallet_page")
-    cents = _cents(form.cleaned_data["cash_amount"])
-    if cents > profile.wallet.cash_cents:
-        messages.error(request, "That is more than your available cash balance.")
+    tokens = form.cleaned_data["tokens"]
+    if tokens > profile.wallet.tokens:
+        messages.error(request, "You do not have enough tokens for that cash-out request.")
         return redirect("wallet_page")
-    tokens = cents // 10
-    LedgerRequest.objects.create(
-        child=profile,
-        requested_by=profile,
-        kind=LedgerRequest.Kind.CONVERT,
-        description=f"Convert ${cents / 100:.2f} to {tokens} tokens",
-        token_delta=tokens,
-        cash_delta_cents=-cents,
-    )
-    messages.success(request, "Savings-to-Tokens request sent to Dad. The rate is $1 for 10 tokens.")
+    family_settings = FamilySettings.load()
+    cents = _cash_for_tokens(tokens, family_settings)
+    note = form.cleaned_data.get("note", "")
+    description = f"Cash out {tokens} tokens to ${cents / 100:.2f} wallet cash"
+    if note:
+        description = f"{description}: {note}"
+    with transaction.atomic():
+        wallet = Wallet.objects.select_for_update().get(child=profile)
+        if tokens > wallet.tokens:
+            messages.error(request, "You do not have enough tokens for that cash-out request.")
+            return redirect("wallet_page")
+        Wallet.objects.filter(pk=wallet.pk).update(tokens=F("tokens") - tokens, cash_cents=F("cash_cents") + cents)
+        entry = LedgerRequest.objects.create(
+            child=profile,
+            requested_by=profile,
+            kind=LedgerRequest.Kind.CASH_OUT,
+            description=description,
+            token_delta=-tokens,
+            cash_delta_cents=cents,
+            status=LedgerRequest.Status.APPROVED,
+            reviewed_at=timezone.now(),
+        )
+        _notify(profile, Notification.Kind.WALLET, "Tokens converted to wallet cash", description)
+        _audit(profile, profile, "token_cashout_completed", description, ledger=entry)
+    messages.success(request, f"Converted {tokens} tokens into ${cents / 100:.2f} wallet cash.")
     return redirect("wallet_page")
 
 
 @login_required
 @require_POST
 def request_tokens_to_savings(request):
-    profile = _profile(request)
-    form = TokensToSavingsForm(request.POST)
-    if profile.can_view_family:
-        return redirect("dashboard")
-    if _block_grounded_child(request, profile):
-        return redirect("dashboard")
-    if not form.is_valid():
-        messages.error(request, "Conversions must be in 10 cent increments.")
-        return redirect("wallet_page")
-    cents = _cents(form.cleaned_data["cash_amount"])
-    tokens = cents // 10
-    if tokens > profile.wallet.tokens:
-        messages.error(request, "You do not have enough Tokens for that Savings conversion.")
-        return redirect("wallet_page")
-    LedgerRequest.objects.create(
-        child=profile,
-        requested_by=profile,
-        kind=LedgerRequest.Kind.CONVERT,
-        description=f"Convert {tokens} tokens to ${cents / 100:.2f} savings",
-        token_delta=-tokens,
-        cash_delta_cents=cents,
-    )
-    messages.success(request, "Tokens-to-Savings request sent to Dad. The rate is 10 tokens for $1.")
-    return redirect("wallet_page")
+    return request_token_cashout(request)
 
 
 @login_required
 @require_POST
 def request_cashout(request):
     profile = _profile(request)
-    form = CashOutForm(request.POST)
     if profile.can_view_family:
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
-    if not form.is_valid():
-        messages.error(request, "Please choose or enter an amount to request.")
-        return redirect("wallet_page")
-    cents = _cents(form.cleaned_data["cash_amount"])
-    if cents > profile.wallet.cash_cents:
-        messages.error(request, "That is more than your available cash balance.")
-        return redirect("wallet_page")
-    LedgerRequest.objects.create(
-        child=profile,
-        requested_by=profile,
-        kind=LedgerRequest.Kind.CASH_OUT,
-        description=f"Cash out ${cents / 100:.2f}",
-        cash_delta_cents=-cents,
-    )
-    messages.success(request, "Cash-out request sent to Dad for review.")
+    messages.info(request, "Your wallet cash is real-world spending money. A parent marks it spent after you use it.")
     return redirect("wallet_page")
 
 
@@ -529,21 +657,76 @@ def request_spending_transfer(request):
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
     if not form.is_valid():
-        messages.error(request, "Please choose or enter an amount to move.")
+        messages.error(request, "Please choose or enter an amount to make spendable.")
         return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
-        messages.error(request, "That is more than your savings balance.")
+        messages.error(request, "That is more than your wallet cash balance.")
         return redirect("wallet_page")
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
         kind=LedgerRequest.Kind.TRANSFER,
-        description=f"Move ${cents / 100:.2f} from savings to spending",
+        description=f"Move ${cents / 100:.2f} from wallet cash to spending",
         cash_delta_cents=-cents,
         spending_delta_cents=cents,
     )
-    messages.success(request, "Your request to move money to spending was sent to Dad.")
+    messages.success(request, "Your request to make wallet cash spendable was sent to Dad.")
+    return redirect("wallet_page")
+
+
+@login_required
+@require_POST
+def send_token_gift(request):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    form = TokenGiftForm(request.POST, sender=profile)
+    if not form.is_valid():
+        messages.error(request, "Choose a sibling and a valid number of tokens to send.")
+        return redirect("wallet_page")
+    recipient = form.cleaned_data["recipient_id"]
+    tokens = form.cleaned_data["tokens"]
+    recipient.refresh_grounding()
+    if recipient.grounded:
+        messages.error(request, "That sibling is in Grounded Mode and cannot receive tokens right now.")
+        return redirect("wallet_page")
+    with transaction.atomic():
+        wallets = {
+            wallet.child_id: wallet
+            for wallet in Wallet.objects.select_for_update().filter(child_id__in=[profile.pk, recipient.pk]).order_by("pk")
+        }
+        if tokens > wallets[profile.pk].tokens:
+            messages.error(request, "You do not have enough tokens to send that gift.")
+            return redirect("wallet_page")
+        Wallet.objects.filter(pk=wallets[profile.pk].pk).update(tokens=F("tokens") - tokens)
+        Wallet.objects.filter(pk=wallets[recipient.pk].pk).update(tokens=F("tokens") + tokens)
+        timestamp = timezone.now()
+        sent = LedgerRequest.objects.create(
+            child=profile,
+            requested_by=profile,
+            counterparty=recipient,
+            kind=LedgerRequest.Kind.GIFT,
+            description=f"Sent {tokens} tokens to {recipient.display_name}",
+            token_delta=-tokens,
+            status=LedgerRequest.Status.APPROVED,
+            reviewed_at=timestamp,
+        )
+        received = LedgerRequest.objects.create(
+            child=recipient,
+            requested_by=profile,
+            counterparty=profile,
+            kind=LedgerRequest.Kind.GIFT,
+            description=f"Received {tokens} tokens from {profile.display_name}",
+            token_delta=tokens,
+            status=LedgerRequest.Status.APPROVED,
+            reviewed_at=timestamp,
+        )
+        _notify(recipient, Notification.Kind.REWARD, "Token gift received", received.description)
+        _audit(profile, profile, "token_gift_sent", sent.description, ledger=sent)
+    messages.success(request, f"{tokens} token{'s' if tokens != 1 else ''} sent to {recipient.display_name}.")
     return redirect("wallet_page")
 
 
@@ -557,30 +740,26 @@ def send_family_transfer(request):
         return redirect("dashboard")
     form = FamilyTransferForm(request.POST, sender=profile)
     if not form.is_valid():
-        messages.error(request, "Choose a family member and enter an amount to send.")
+        messages.error(request, "Choose a sibling and enter a cash amount to send.")
         return redirect("wallet_page")
     recipient = form.cleaned_data["recipient_id"]
     cents = _cents(form.cleaned_data["cash_amount"])
     recipient.refresh_grounding()
     if recipient.grounded:
-        messages.error(request, "That family member is in Grounded Mode and cannot receive money right now.")
+        messages.error(request, "That sibling is in Grounded Mode and cannot receive money right now.")
         return redirect("wallet_page")
     with transaction.atomic():
         wallets = {
             wallet.child_id: wallet
-            for wallet in Wallet.objects.select_for_update()
-            .filter(child_id__in=[profile.pk, recipient.pk])
-            .order_by("pk")
+            for wallet in Wallet.objects.select_for_update().filter(child_id__in=[profile.pk, recipient.pk]).order_by("pk")
         }
-        sender_wallet = wallets[profile.pk]
-        recipient_wallet = wallets[recipient.pk]
-        if cents > sender_wallet.spending_cents:
-            messages.error(request, "You do not have enough in Spending to send that amount.")
+        if cents > wallets[profile.pk].spending_cents:
+            messages.error(request, "You do not have enough spendable cash to send that amount.")
             return redirect("wallet_page")
-        Wallet.objects.filter(pk=sender_wallet.pk).update(spending_cents=F("spending_cents") - cents)
-        Wallet.objects.filter(pk=recipient_wallet.pk).update(spending_cents=F("spending_cents") + cents)
+        Wallet.objects.filter(pk=wallets[profile.pk].pk).update(spending_cents=F("spending_cents") - cents)
+        Wallet.objects.filter(pk=wallets[recipient.pk].pk).update(spending_cents=F("spending_cents") + cents)
         timestamp = timezone.now()
-        LedgerRequest.objects.create(
+        sent = LedgerRequest.objects.create(
             child=profile,
             requested_by=profile,
             counterparty=recipient,
@@ -590,7 +769,7 @@ def send_family_transfer(request):
             status=LedgerRequest.Status.APPROVED,
             reviewed_at=timestamp,
         )
-        LedgerRequest.objects.create(
+        received = LedgerRequest.objects.create(
             child=recipient,
             requested_by=profile,
             counterparty=profile,
@@ -600,6 +779,8 @@ def send_family_transfer(request):
             status=LedgerRequest.Status.APPROVED,
             reviewed_at=timestamp,
         )
+        _notify(recipient, Notification.Kind.WALLET, "Sibling payment received", received.description)
+        _audit(profile, profile, "wallet_transfer_sent", sent.description, ledger=sent)
     messages.success(request, f"${cents / 100:.2f} sent to {recipient.display_name}.", extra_tags="payment-success sent")
     return redirect("wallet_page")
 
@@ -614,20 +795,20 @@ def request_store_spend(request):
         return redirect("dashboard")
     form = SpendingTransferForm(request.POST)
     if not form.is_valid():
-        messages.error(request, "Enter a valid amount for your store purchase.")
+        messages.error(request, "Enter a valid amount for your in-person purchase.")
         return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     with transaction.atomic():
         wallet = Wallet.objects.select_for_update().get(child=profile)
         if cents > wallet.spending_cents:
-            messages.error(request, "You do not have enough in Spending to cover that purchase.")
+            messages.error(request, "You do not have enough spendable cash for that purchase.")
             return redirect("wallet_page")
         Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
         LedgerRequest.objects.create(
             child=profile,
             requested_by=profile,
             kind=LedgerRequest.Kind.SPEND,
-            description=f"In-store spending pending: ${cents / 100:.2f}",
+            description=f"In-person spending pending: ${cents / 100:.2f}",
             spending_delta_cents=-cents,
         )
     messages.success(request, f"${cents / 100:.2f} reserved for spending. Dad will verify it.", extra_tags="payment-success spent")
@@ -641,18 +822,18 @@ def save_savings_goal(request):
     if profile.can_view_family:
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
-        return redirect("dashboard")
+        return _child_destination(request)
     goal = SavingsGoal.objects.filter(child=profile).first()
     form = SavingsGoalForm(request.POST, instance=goal)
     if not form.is_valid():
         messages.error(request, "Please choose a goal name and a savings amount.")
-        return redirect("dashboard")
+        return _child_destination(request)
     goal = form.save(commit=False)
     goal.child = profile
     goal.target_cents = _cents(form.cleaned_data["target_amount"])
     goal.save()
     messages.success(request, f"Your savings goal is set: {goal.name}!")
-    return redirect("dashboard")
+    return _child_destination(request)
 
 
 @login_required
@@ -663,6 +844,10 @@ def dismiss_recap(request):
         profile.last_recap_at = timezone.now()
         profile.last_recap_day = timezone.localdate()
         profile.save(update_fields=["last_recap_at", "last_recap_day"])
+        visible_notice_ids = list(
+            profile.notifications.filter(read_at__isnull=True).values_list("pk", flat=True)[:10]
+        )
+        profile.notifications.filter(pk__in=visible_notice_ids).update(read_at=timezone.now())
     return redirect("dashboard")
 
 
@@ -680,6 +865,9 @@ def guardian_create(request, model):
         record = form.save(commit=False)
         record.created_by = guardian
         record.save()
+        for child in Profile.objects.filter(role=Profile.Role.CHILD):
+            _notify(child, Notification.Kind.RULE, "New house rule", record.title)
+        _audit(guardian, None, "house_rule_created", record.title, house_rule=record)
         messages.success(request, "House rule added for everyone.")
         return redirect(f"/?child={request.POST.get('child_id', '')}")
     child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
@@ -709,18 +897,102 @@ def guardian_create(request, model):
         if model == "grade":
             record.recorded_by = guardian
         if model == "chore":
-            record.cash_reward_cents = _cents(form.cleaned_data["cash_reward"])
+            record.cash_reward_cents = 0
             record.due_date = timezone.localdate()
             record.assigned_by = guardian
         if model in ["schedule", "child_rule"]:
             record.created_by = guardian
         record.save()
+    if model == "chore":
+        _notify(child, Notification.Kind.CHORE, "New chore assigned", f"{record.title} earns {record.token_reward} tokens after approval.")
+    if model == "child_rule":
+        _notify(child, Notification.Kind.RULE, "Individual rule updated", record.title)
+        _audit(guardian, child, "child_rule_created", record.title, child_rule=record)
+    if model == "item":
+        _audit(guardian, None, "store_item_created", record.name)
     labels = {"schedule": "Schedule event", "child_rule": "Personal rule"}
     if model == "schedule":
         messages.success(request, f"Event queued for {child.display_name}. Dad must approve that date before it appears for the child.")
     else:
         messages.success(request, f"{labels.get(model, model.title())} added for {child.display_name}.")
     return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_child_profile(request):
+    guardian = _guardian(request)
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    if guardian is None:
+        return redirect("dashboard")
+    form = ChildProfileForm(request.POST, instance=child)
+    if not form.is_valid():
+        messages.error(request, "Please enter a valid birth date.")
+        return redirect(f"/?child={child.pk}")
+    form.save()
+    _audit(guardian, child, "child_profile_updated", "Store eligibility profile updated.")
+    messages.success(request, f"{child.display_name}'s store eligibility profile was updated.")
+    return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_edit(request, model, pk):
+    guardian = _guardian(request)
+    if guardian is None:
+        return redirect("dashboard")
+    models = {"child_rule": (ChildRule, ChildRuleForm), "house_rule": (HouseRule, HouseRuleForm), "item": (StoreItem, StoreItemForm)}
+    entry = models.get(model)
+    if entry is None:
+        return redirect("dashboard")
+    record_model, form_class = entry
+    record = get_object_or_404(record_model, pk=pk)
+    form = form_class(request.POST, instance=record)
+    selected_id = getattr(record, "child_id", None) or request.POST.get("child_id", "")
+    if not form.is_valid():
+        messages.error(request, "Please check the changes and try again.")
+        return redirect(f"/?child={selected_id}")
+    form.save()
+    if model == "house_rule":
+        record.acknowledgements.all().delete()
+        for child in Profile.objects.filter(role=Profile.Role.CHILD):
+            _notify(child, Notification.Kind.RULE, "House rule updated", record.title)
+        _audit(guardian, None, "house_rule_updated", record.title, house_rule=record)
+    elif model == "child_rule":
+        record.acknowledgements.all().delete()
+        _notify(record.child, Notification.Kind.RULE, "Individual rule updated", record.title)
+        _audit(guardian, record.child, "child_rule_updated", record.title, child_rule=record)
+    else:
+        _audit(guardian, None, "store_item_updated", record.name)
+    messages.success(request, "Changes saved.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def guardian_toggle(request, model, pk):
+    guardian = _guardian(request)
+    if guardian is None:
+        return redirect("dashboard")
+    record_model = {"child_rule": ChildRule, "house_rule": HouseRule, "item": StoreItem}.get(model)
+    if record_model is None:
+        return redirect("dashboard")
+    record = get_object_or_404(record_model, pk=pk)
+    record.active = not record.active
+    record.save(update_fields=["active"])
+    selected_id = getattr(record, "child_id", None) or request.POST.get("child_id", "")
+    label = "enabled" if record.active else "paused"
+    if model == "house_rule":
+        for child in Profile.objects.filter(role=Profile.Role.CHILD):
+            _notify(child, Notification.Kind.RULE, "House rules changed", f"{record.title} is now {label}.")
+        _audit(guardian, None, f"house_rule_{label}", record.title, house_rule=record)
+    elif model == "child_rule":
+        _notify(record.child, Notification.Kind.RULE, "Individual rules changed", f"{record.title} is now {label}.")
+        _audit(guardian, record.child, f"child_rule_{label}", record.title, child_rule=record)
+    else:
+        _audit(guardian, None, f"store_item_{label}", record.name)
+    messages.info(request, f"{getattr(record, 'title', getattr(record, 'name', 'Item'))} {label}.")
+    return redirect(f"/?child={selected_id}")
 
 
 @login_required
@@ -740,11 +1012,67 @@ def guardian_remove(request, model, pk):
             messages.error(request, "Only Dad can change the published family schedule.")
             return redirect(f"/?child={selected_id}")
         record.delete()
+    elif model == "house_rule":
+        for child in Profile.objects.filter(role=Profile.Role.CHILD):
+            _notify(child, Notification.Kind.RULE, "House rule removed", record.title)
+        _audit(guardian, None, "house_rule_deleted", record.title, house_rule=record)
+        record.delete()
     else:
-        record.active = False
-        record.save(update_fields=["active"])
-    messages.info(request, "Item removed from the daily plan.")
+        child = record.child
+        _notify(child, Notification.Kind.RULE, "Individual rule removed", record.title)
+        _audit(guardian, child, "child_rule_deleted", record.title, child_rule=record)
+        record.delete()
+    messages.info(request, "Item deleted.")
     return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def update_family_settings(request):
+    guardian = _guardian(request)
+    if guardian is None:
+        return redirect("dashboard")
+    settings_record = FamilySettings.load()
+    form = FamilySettingsForm(request.POST, instance=settings_record)
+    if not form.is_valid():
+        messages.error(request, "Enter a valid token exchange rate.")
+        return redirect(f"/?child={request.POST.get('child_id', '')}")
+    settings_record = form.save(commit=False)
+    settings_record.updated_by = guardian
+    settings_record.save()
+    _audit(guardian, None, "exchange_rate_updated", str(settings_record))
+    messages.success(request, f"Wallet exchange rate updated: {settings_record}.")
+    return redirect(f"/?child={request.POST.get('child_id', '')}")
+
+
+@login_required
+@require_POST
+def acknowledge_rule(request, model, pk):
+    child = _profile(request)
+    if child.role != Profile.Role.CHILD:
+        return redirect("dashboard")
+    if model == "house_rule":
+        rule = get_object_or_404(_current_house_rules(), pk=pk)
+        RuleAcknowledgement.objects.get_or_create(child=child, house_rule=rule)
+    elif model == "child_rule":
+        rule = get_object_or_404(_current_child_rules(child), pk=pk)
+        RuleAcknowledgement.objects.get_or_create(child=child, child_rule=rule)
+    else:
+        return redirect("dashboard")
+    messages.success(request, "Thanks for confirming that you understand this rule.")
+    return _child_destination(request)
+
+
+@login_required
+@require_POST
+def read_notifications(request):
+    child = _profile(request)
+    if child.role == Profile.Role.CHILD:
+        visible_notice_ids = list(
+            child.notifications.filter(read_at__isnull=True).values_list("pk", flat=True)[:10]
+        )
+        child.notifications.filter(pk__in=visible_notice_ids).update(read_at=timezone.now())
+    return redirect("dashboard")
 
 
 @login_required
@@ -795,8 +1123,12 @@ def guardian_lockdown(request):
             note=child.grounded_reason or "Grounded Mode was issued.",
             scheduled_lift_at=child.grounded_until,
         )
+        _notify(child, Notification.Kind.GROUNDED, "Grounded Mode activated", child.grounded_reason or "Your parent activated Grounded Mode.")
+        _audit(guardian, child, "grounded_mode_activated", child.grounded_reason or "Grounded Mode activated.")
         messages.success(request, f"{child.display_name} is now in Grounded Mode. Balances and rewards are locked.")
     else:
+        _notify(child, Notification.Kind.GROUNDED, "Grounded Mode lifted", "Your rewards and wallet are available again.")
+        _audit(guardian, child, "grounded_mode_lifted", "Grounded Mode lifted.")
         messages.success(request, f"{child.display_name}'s Grounded Mode has been lifted.")
     return redirect(f"/?child={child.pk}")
 
@@ -865,6 +1197,9 @@ def guardian_award(request):
     if child.grounded:
         messages.error(request, "Grounded Mode is active. Unlock this account before adding rewards.")
         return redirect(f"/?child={child.pk}")
+    if not form.cleaned_data["tokens"] and not form.cleaned_data["cash_amount"]:
+        messages.error(request, "Add bonus tokens, direct wallet cash, or both.")
+        return redirect(f"/?child={child.pk}")
     entry = LedgerRequest.objects.create(
         child=child,
         requested_by=guardian,
@@ -907,10 +1242,10 @@ def guardian_behavior_deduction(request):
 @login_required
 @require_POST
 def dad_balance_adjustment(request):
-    dad = _dad(request)
+    guardian = _guardian(request)
     child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
     form = BalanceAdjustmentForm(request.POST)
-    if dad is None or not form.is_valid():
+    if guardian is None or not form.is_valid():
         messages.error(request, "Please enter a valid balance adjustment.")
         return redirect(f"/?child={child.pk}")
     cents = _cents(form.cleaned_data["cash_amount"])
@@ -918,19 +1253,19 @@ def dad_balance_adjustment(request):
     account = form.cleaned_data["account"]
     entry = LedgerRequest.objects.create(
         child=child,
-        requested_by=dad,
+        requested_by=guardian,
         kind=LedgerRequest.Kind.BALANCE,
-        description=f"{account.title()} correction: {form.cleaned_data['reason']}",
+        description=f"{'Wallet cash' if account == BalanceAdjustmentForm.SAVINGS else 'Spendable cash'} adjustment: {form.cleaned_data['reason']}",
         cash_delta_cents=sign * cents if account == BalanceAdjustmentForm.SAVINGS else 0,
         spending_delta_cents=sign * cents if account == BalanceAdjustmentForm.SPENDING else 0,
     )
     try:
-        entry.approve(dad)
+        entry.approve(guardian)
     except ValidationError as error:
         entry.delete()
         messages.error(request, error.message)
         return redirect(f"/?child={child.pk}")
-    messages.success(request, f"{child.display_name}'s {account} balance has been updated.")
+    messages.success(request, f"{child.display_name}'s wallet funds have been updated.")
     return redirect(f"/?child={child.pk}")
 
 
@@ -942,7 +1277,7 @@ def review_request(request, pk, decision):
     if guardian is None:
         return redirect("dashboard")
     if entry.requires_dad_approval and guardian.user.username.lower() != "dad":
-        messages.error(request, "Only Dad can approve savings and spending requests.")
+        messages.error(request, "Only Dad can approve wallet-to-spending and spending requests.")
         return redirect(f"/?child={entry.child.pk}")
     try:
         if decision == "approve":

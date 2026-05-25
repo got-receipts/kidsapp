@@ -7,7 +7,24 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import BehaviorNote, BehaviorStar, ChildRule, Chore, DailyScheduleEvent, HouseRule, LedgerRequest, Profile, SavingsGoal, Wallet
+from .models import (
+    AuditLog,
+    BehaviorNote,
+    BehaviorStar,
+    ChildRule,
+    Chore,
+    DailyScheduleEvent,
+    FamilySettings,
+    HouseRule,
+    LedgerRequest,
+    Notification,
+    Profile,
+    Purchase,
+    RuleAcknowledgement,
+    SavingsGoal,
+    StoreItem,
+    Wallet,
+)
 from .services import ensure_today_chores
 
 
@@ -19,15 +36,14 @@ class LedgerApprovalTests(TestCase):
         self.guardian = Profile.objects.create(user=guardian_user, display_name="Dad", role=Profile.Role.GUARDIAN)
         self.wallet = Wallet.objects.create(child=self.child, tokens=20, cash_cents=500)
 
-    def test_approval_updates_shared_wallet_and_completes_chore(self):
-        chore = Chore.objects.create(child=self.child, title="Dishes", token_reward=8, cash_reward_cents=50)
+    def test_chore_approval_awards_tokens_only_and_completes_chore(self):
+        chore = Chore.objects.create(child=self.child, title="Dishes", token_reward=8)
         request = LedgerRequest.objects.create(
             child=self.child,
             requested_by=self.child,
             kind=LedgerRequest.Kind.CHORE,
             description="Completed chore: Dishes",
             token_delta=8,
-            cash_delta_cents=50,
             chore=chore,
         )
 
@@ -36,8 +52,26 @@ class LedgerApprovalTests(TestCase):
         self.wallet.refresh_from_db()
         chore.refresh_from_db()
         self.assertEqual(self.wallet.tokens, 28)
-        self.assertEqual(self.wallet.cash_cents, 550)
+        self.assertEqual(self.wallet.cash_cents, 500)
         self.assertEqual(chore.status, Chore.Status.COMPLETED)
+
+    def test_chore_approval_rejects_any_cash_delta(self):
+        chore = Chore.objects.create(child=self.child, title="Dishes", token_reward=8)
+        request = LedgerRequest.objects.create(
+            child=self.child,
+            requested_by=self.child,
+            kind=LedgerRequest.Kind.CHORE,
+            description="Invalid cash chore",
+            token_delta=8,
+            cash_delta_cents=50,
+            chore=chore,
+        )
+
+        with self.assertRaises(ValidationError):
+            request.approve(self.guardian)
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.cash_cents, 500)
 
     def test_purchase_cannot_be_approved_without_sufficient_tokens(self):
         request = LedgerRequest.objects.create(
@@ -243,53 +277,74 @@ class LedgerApprovalTests(TestCase):
         self.client.force_login(self.child.user)
         response = self.client.get(reverse("wallet_page"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tokens &amp; Money")
-        self.assertContains(response, "data-money-pad")
-        self.assertContains(response, "Send money to")
-        self.assertContains(response, "Spend")
-        self.assertContains(response, "Savings to Tokens")
-        self.assertContains(response, "Tokens to Savings")
+        self.assertContains(response, "Tokens &amp; Wallet Cash")
+        self.assertContains(response, "Convert Tokens")
+        self.assertContains(response, "Send Tokens")
+        self.assertContains(response, "Use Converted Cash")
+        self.assertContains(response, "Send Cash")
+        self.assertContains(response, "Cash cannot be turned back into tokens")
         self.assertContains(response, "Astoria")
-        self.assertContains(response, "Adventure board")
+        self.assertContains(response, "Back")
+        self.assertContains(response, "Home")
+        self.assertContains(response, "data-go-back")
 
         self.client.force_login(self.guardian.user)
         response = self.client.get(reverse("wallet_page"))
         self.assertRedirects(response, reverse("dashboard"))
 
-    def test_preset_conversion_creates_pending_ten_token_request(self):
+    def test_token_to_cash_conversion_is_immediate_and_cash_cannot_convert_back(self):
         self.client.force_login(self.child.user)
 
-        response = self.client.post(reverse("request_conversion"), {"cash_amount": "1.00"})
+        response = self.client.post(reverse("request_token_cashout"), {"tokens": "10"})
 
-        entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.CONVERT)
-        self.assertRedirects(response, reverse("wallet_page"))
-        self.assertEqual(entry.token_delta, 10)
-        self.assertEqual(entry.cash_delta_cents, -100)
-        self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
-        self.wallet.refresh_from_db()
-        self.assertEqual(self.wallet.tokens, 20)
-        self.assertEqual(self.wallet.cash_cents, 500)
-
-    def test_child_can_request_tokens_to_savings_conversion(self):
-        self.client.force_login(self.child.user)
-
-        response = self.client.post(reverse("request_tokens_to_savings"), {"cash_amount": "1.00"})
-
-        entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.CONVERT)
+        entry = LedgerRequest.objects.get(kind=LedgerRequest.Kind.CASH_OUT)
         self.assertRedirects(response, reverse("wallet_page"))
         self.assertEqual(entry.token_delta, -10)
         self.assertEqual(entry.cash_delta_cents, 100)
-        self.assertEqual(entry.status, LedgerRequest.Status.PENDING)
+        self.assertEqual(entry.status, LedgerRequest.Status.APPROVED)
         self.wallet.refresh_from_db()
-        self.assertEqual(self.wallet.tokens, 20)
-        self.assertEqual(self.wallet.cash_cents, 500)
+        self.assertEqual(self.wallet.tokens, 10)
+        self.assertEqual(self.wallet.cash_cents, 600)
 
-    def test_child_cannot_request_tokens_to_savings_above_token_balance(self):
+        self.client.post(reverse("request_conversion"), {"cash_amount": "1.00"})
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 10)
+        self.assertEqual(self.wallet.cash_cents, 600)
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.CONVERT).exists())
+
+    def test_child_can_send_tokens_directly_to_sibling(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        sibling_wallet = Wallet.objects.create(child=sibling)
         self.client.force_login(self.child.user)
 
-        self.client.post(reverse("request_tokens_to_savings"), {"cash_amount": "3.00"})
+        response = self.client.post(reverse("send_token_gift"), {"recipient_id": sibling.pk, "tokens": "5"})
 
-        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.CONVERT).exists())
+        self.assertRedirects(response, reverse("wallet_page"))
+        self.wallet.refresh_from_db()
+        sibling_wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 15)
+        self.assertEqual(sibling_wallet.tokens, 5)
+        self.assertEqual(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.GIFT).count(), 2)
+
+    def test_child_cannot_convert_more_tokens_than_available(self):
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("request_token_cashout"), {"tokens": "30"})
+
+        self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.CASH_OUT).exists())
+
+    def test_parent_rate_controls_immediate_token_conversion(self):
+        FamilySettings.objects.create(pk=1, tokens_per_dollar=20, updated_by=self.guardian)
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("request_token_cashout"), {"tokens": "20"})
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 0)
+        self.assertEqual(self.wallet.cash_cents, 600)
+        self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.WALLET).exists())
+        self.assertTrue(AuditLog.objects.filter(action="token_cashout_completed").exists())
 
     def test_child_can_send_spending_to_another_child_with_history_for_both(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
@@ -380,6 +435,32 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.spending_cents, 500)
         self.assertEqual(entry.status, LedgerRequest.Status.DECLINED)
 
+    def test_mixed_price_store_purchase_reduces_inventory_after_parent_approval(self):
+        item = StoreItem.objects.create(
+            name="Arcade trip",
+            token_cost=5,
+            cash_cost_cents=100,
+            inventory_quantity=1,
+            requires_approval=True,
+        )
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("buy_item", args=[item.pk]))
+
+        entry = LedgerRequest.objects.get(store_item=item)
+        self.assertTrue(Purchase.objects.filter(ledger=entry, token_cost=5, cash_cost_cents=100).exists())
+        item.refresh_from_db()
+        self.assertEqual(item.inventory_quantity, 1)
+
+        self.client.force_login(self.guardian.user)
+        self.client.post(reverse("review_request", args=[entry.pk, "approve"]))
+
+        self.wallet.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 15)
+        self.assertEqual(self.wallet.cash_cents, 400)
+        self.assertEqual(item.inventory_quantity, 0)
+
     def test_child_cannot_send_more_than_available_spending(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
@@ -418,17 +499,60 @@ class LedgerApprovalTests(TestCase):
         self.child.refresh_from_db()
         self.assertEqual(self.child.last_recap_day, timezone.localdate())
 
+    def test_unread_child_notification_appears_on_login_and_recap_dismiss_marks_read(self):
+        notice = Notification.objects.create(
+            recipient=self.child,
+            kind=Notification.Kind.RULE,
+            title="House rule updated",
+            message="Use kind words.",
+        )
+        self.client.force_login(self.child.user)
+
+        response = self.client.get(reverse("dashboard"))
+        self.assertContains(response, "House rule updated")
+
+        self.client.post(reverse("dismiss_recap"))
+        notice.refresh_from_db()
+        self.assertIsNotNone(notice.read_at)
+
     def test_child_quest_progress_separates_submitted_from_verified(self):
         Chore.objects.create(child=self.child, title="Submitted", status=Chore.Status.SUBMITTED, due_date=timezone.localdate())
         Chore.objects.create(child=self.child, title="Verified", status=Chore.Status.COMPLETED, due_date=timezone.localdate())
         self.client.force_login(self.child.user)
 
-        response = self.client.get(reverse("dashboard"))
+        response = self.client.get(reverse("child_section", args=["chores"]))
 
         self.assertEqual(response.context["chore_completed"], 2)
         self.assertEqual(response.context["chore_verified"], 1)
         self.assertContains(response, "guardian verified")
         self.assertContains(response, "data-quest-deadline")
+
+    def test_child_home_keeps_icon_launcher_and_opens_native_app_pages(self):
+        self.client.force_login(self.child.user)
+
+        home = self.client.get(reverse("dashboard"))
+        quests_url = reverse("child_section", args=["chores"])
+        self.assertContains(home, "Home Screen")
+        self.assertContains(home, quests_url)
+        self.assertNotContains(home, 'data-open-dialog="child-chores"')
+        self.assertNotContains(home, 'id="child-chores"')
+
+        quests = self.client.get(quests_url)
+        self.assertContains(quests, "Today's Quests")
+        self.assertContains(quests, "data-go-back")
+        self.assertContains(quests, "Home")
+        self.assertNotContains(quests, "<dialog")
+
+    def test_child_chore_action_returns_to_open_native_app(self):
+        chore = Chore.objects.create(child=self.child, title="Read a chapter", due_date=timezone.localdate())
+        self.client.force_login(self.child.user)
+
+        response = self.client.post(
+            reverse("start_chore", args=[chore.pk]),
+            {"return_section": "chores"},
+        )
+
+        self.assertRedirects(response, reverse("child_section", args=["chores"]))
 
     def test_guardian_daily_plan_and_rules_appear_in_child_morning_message(self):
         self.client.force_login(self.guardian.user)
@@ -478,14 +602,42 @@ class LedgerApprovalTests(TestCase):
         response = self.client.get(reverse("dashboard"))
         self.assertContains(response, "Dance practice")
 
-    def test_guardian_can_hide_a_personal_rule(self):
+    def test_guardian_can_delete_a_personal_rule(self):
         rule = ChildRule.objects.create(child=self.child, title="Temporary reminder")
         self.client.force_login(self.guardian.user)
 
         self.client.post(reverse("guardian_remove", args=["child_rule", rule.pk]))
 
-        rule.refresh_from_db()
-        self.assertFalse(rule.active)
+        self.assertFalse(ChildRule.objects.filter(pk=rule.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(action="child_rule_deleted", child=self.child).exists())
+
+    def test_child_acknowledges_rules_and_parent_edit_requires_fresh_acknowledgement(self):
+        rule = HouseRule.objects.create(title="Use kind words", created_by=self.guardian)
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("acknowledge_rule", args=["house_rule", rule.pk]))
+
+        self.assertTrue(RuleAcknowledgement.objects.filter(child=self.child, house_rule=rule).exists())
+        self.client.force_login(self.guardian.user)
+        self.client.post(
+            reverse("guardian_edit", args=["house_rule", rule.pk]),
+            {"child_id": self.child.pk, "title": "Use kind words", "details": "At home and outside.", "consequence": "Pause game time."},
+        )
+        self.assertFalse(RuleAcknowledgement.objects.filter(child=self.child, house_rule=rule).exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.RULE).exists())
+
+    def test_expired_individual_rule_is_hidden_from_child(self):
+        ChildRule.objects.create(
+            child=self.child,
+            title="Temporary bedtime",
+            expires_on=timezone.localdate() - timedelta(days=1),
+            created_by=self.guardian,
+        )
+        self.client.force_login(self.child.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertNotContains(response, "Temporary bedtime")
 
     def test_grounded_mode_hides_child_wallet_and_verifies_chores_without_rewards(self):
         chore = Chore.objects.create(child=self.child, title="Put away backpack", token_reward=4)
@@ -706,3 +858,11 @@ class DailyChoreRotationTests(TestCase):
             self.assertEqual(bonuses.count(), 2)
             self.assertSetEqual(set(bonuses.values_list("title", flat=True)), {"Make your bed", "Dress yourself"})
             self.assertTrue(all(bonus.credit_deadline == time(10, 0) for bonus in bonuses))
+
+    @patch("rewards.services.timezone.localdate", return_value=date(2026, 5, 24))
+    def test_daily_chores_create_one_login_notification_per_child(self, mocked_date):
+        ensure_today_chores()
+        ensure_today_chores()
+
+        for child in Profile.objects.filter(role=Profile.Role.CHILD):
+            self.assertEqual(child.notifications.filter(kind=Notification.Kind.CHORE).count(), 1)

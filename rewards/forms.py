@@ -4,7 +4,18 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from .models import ChildRule, Chore, DailyScheduleEvent, Grade, GrowthGoal, HouseRule, Profile, SavingsGoal, StoreItem
+from .models import (
+    ChildRule,
+    Chore,
+    DailyScheduleEvent,
+    FamilySettings,
+    Grade,
+    GrowthGoal,
+    HouseRule,
+    Profile,
+    SavingsGoal,
+    StoreItem,
+)
 
 
 class GradeForm(forms.ModelForm):
@@ -13,12 +24,19 @@ class GradeForm(forms.ModelForm):
         fields = ["subject", "assignment", "score", "maximum_score"]
 
 
-class ChoreForm(forms.ModelForm):
-    cash_reward = forms.DecimalField(label="Cash reward ($)", min_value=0, decimal_places=2, initial=0)
+class ChildProfileForm(forms.ModelForm):
+    class Meta:
+        model = Profile
+        fields = ["birth_date"]
+        labels = {"birth_date": "Birth date for age-restricted store items (optional)"}
+        widgets = {"birth_date": forms.DateInput(attrs={"type": "date"})}
 
+
+class ChoreForm(forms.ModelForm):
     class Meta:
         model = Chore
         fields = ["title", "instructions", "token_reward"]
+        labels = {"token_reward": "Token reward"}
 
 
 class GoalForm(forms.ModelForm):
@@ -28,9 +46,49 @@ class GoalForm(forms.ModelForm):
 
 
 class StoreItemForm(forms.ModelForm):
+    cash_price = forms.DecimalField(label="Cash price ($)", min_value=0, decimal_places=2, initial=0, required=False)
+
     class Meta:
         model = StoreItem
-        fields = ["name", "description", "token_cost", "category"]
+        fields = [
+            "name",
+            "description",
+            "token_cost",
+            "category",
+            "inventory_quantity",
+            "hidden",
+            "token_unlock_threshold",
+            "minimum_age",
+            "requires_approval",
+        ]
+        labels = {
+            "token_cost": "Token price",
+            "inventory_quantity": "Inventory quantity (blank means unlimited)",
+            "hidden": "Hidden until enabled",
+            "token_unlock_threshold": "Unlock after child has this many tokens",
+            "minimum_age": "Minimum age (optional)",
+            "requires_approval": "Require parent approval",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial.setdefault("cash_price", self.instance.cash_cost_cents / 100)
+
+    def clean(self):
+        cleaned = super().clean()
+        token_cost = cleaned.get("token_cost") or 0
+        cash_price = cleaned.get("cash_price") or 0
+        if not token_cost and not cash_price:
+            raise forms.ValidationError("Set a token price, a cash price, or both.")
+        return cleaned
+
+    def save(self, commit=True):
+        item = super().save(commit=False)
+        item.cash_cost_cents = int((self.cleaned_data.get("cash_price") or 0) * 100)
+        if commit:
+            item.save()
+        return item
 
 
 class DailyScheduleEventForm(forms.ModelForm):
@@ -58,15 +116,38 @@ class DailyScheduleEventForm(forms.ModelForm):
 class ChildRuleForm(forms.ModelForm):
     class Meta:
         model = ChildRule
-        fields = ["title", "details"]
-        labels = {"title": "Rule", "details": "Why or reminder (optional)"}
+        fields = ["title", "details", "consequence", "expires_on", "scheduled_remove_at"]
+        labels = {
+            "title": "Rule",
+            "details": "Details (optional)",
+            "consequence": "Consequence (optional)",
+            "expires_on": "Expiration date (optional)",
+            "scheduled_remove_at": "Scheduled removal time (optional)",
+        }
+        widgets = {
+            "expires_on": forms.DateInput(attrs={"type": "date"}),
+            "scheduled_remove_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+    def clean_scheduled_remove_at(self):
+        removal = self.cleaned_data.get("scheduled_remove_at")
+        if removal and removal <= timezone.now():
+            raise forms.ValidationError("Scheduled removal time must be in the future.")
+        return removal
 
 
 class HouseRuleForm(forms.ModelForm):
     class Meta:
         model = HouseRule
-        fields = ["title", "details"]
-        labels = {"title": "House rule", "details": "Why or reminder (optional)"}
+        fields = ["title", "details", "consequence"]
+        labels = {"title": "House rule", "details": "Details (optional)", "consequence": "Consequence (optional)"}
+
+
+class FamilySettingsForm(forms.ModelForm):
+    class Meta:
+        model = FamilySettings
+        fields = ["tokens_per_dollar"]
+        labels = {"tokens_per_dollar": "Tokens equal to $1.00"}
 
 
 class GroundingForm(forms.Form):
@@ -84,32 +165,25 @@ class GroundingForm(forms.Form):
         return lift_at
 
 
-class ConvertForm(forms.Form):
-    cash_amount = forms.DecimalField(label="Amount to convert ($)", min_value=0.10, decimal_places=2)
-
-    def clean_cash_amount(self):
-        amount = self.cleaned_data["cash_amount"]
-        if (amount * 100) % 10:
-            raise forms.ValidationError("Enter an amount in 10 cent increments.")
-        return amount
+class TokenCashoutForm(forms.Form):
+    tokens = forms.IntegerField(label="Tokens to exchange", min_value=1)
+    note = forms.CharField(label="Note for parent (optional)", max_length=100, required=False)
 
 
-class TokensToSavingsForm(forms.Form):
-    cash_amount = forms.DecimalField(label="Savings amount to receive ($)", min_value=0.10, decimal_places=2)
+class TokenGiftForm(forms.Form):
+    recipient_id = forms.ModelChoiceField(queryset=Profile.objects.none(), label="Send tokens to")
+    tokens = forms.IntegerField(label="Tokens to send", min_value=1)
 
-    def clean_cash_amount(self):
-        amount = self.cleaned_data["cash_amount"]
-        if (amount * 100) % 10:
-            raise forms.ValidationError("Enter an amount in 10 cent increments.")
-        return amount
-
-
-class CashOutForm(forms.Form):
-    cash_amount = forms.DecimalField(label="Request from savings ($)", min_value=0.01, decimal_places=2)
+    def __init__(self, *args, sender=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        queryset = Profile.objects.filter(role=Profile.Role.CHILD)
+        if sender is not None:
+            queryset = queryset.exclude(pk=sender.pk)
+        self.fields["recipient_id"].queryset = queryset.order_by("display_name")
 
 
 class SpendingTransferForm(forms.Form):
-    cash_amount = forms.DecimalField(label="Move to spending ($)", min_value=0.01, decimal_places=2)
+    cash_amount = forms.DecimalField(label="Move to spendable cash ($)", min_value=0.01, decimal_places=2)
 
 
 class FamilyTransferForm(forms.Form):
@@ -139,9 +213,9 @@ class SavingsGoalForm(forms.ModelForm):
 
 
 class AwardForm(forms.Form):
-    reason = forms.CharField(max_length=100)
-    tokens = forms.IntegerField(min_value=0, initial=0)
-    cash_amount = forms.DecimalField(label="Cash ($)", min_value=0, decimal_places=2, initial=0)
+    reason = forms.CharField(max_length=100, label="Reward note")
+    tokens = forms.IntegerField(min_value=0, initial=0, label="Bonus tokens")
+    cash_amount = forms.DecimalField(label="Direct wallet cash ($)", min_value=0, decimal_places=2, initial=0)
 
 
 class BehaviorDeductionForm(forms.Form):
@@ -155,7 +229,7 @@ class BalanceAdjustmentForm(forms.Form):
     ADD = "add"
     REMOVE = "remove"
 
-    account = forms.ChoiceField(choices=[(SAVINGS, "Savings"), (SPENDING, "Spending")])
+    account = forms.ChoiceField(choices=[(SAVINGS, "Wallet cash"), (SPENDING, "Spendable cash")])
     direction = forms.ChoiceField(choices=[(ADD, "Add money"), (REMOVE, "Remove money")])
     cash_amount = forms.DecimalField(label="Amount ($)", min_value=0.01, decimal_places=2)
     reason = forms.CharField(max_length=100, label="Reason")

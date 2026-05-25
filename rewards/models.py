@@ -3,7 +3,7 @@ from datetime import time
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 
@@ -16,6 +16,7 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     display_name = models.CharField(max_length=40)
     role = models.CharField(max_length=10, choices=Role.choices)
+    birth_date = models.DateField(null=True, blank=True)
     last_recap_at = models.DateTimeField(null=True, blank=True)
     last_recap_day = models.DateField(null=True, blank=True)
     grounded = models.BooleanField(default=False)
@@ -54,6 +55,30 @@ class Wallet(models.Model):
 
     def __str__(self):
         return f"{self.child.display_name}'s wallet"
+
+
+class FamilySettings(models.Model):
+    tokens_per_dollar = models.PositiveIntegerField(default=10)
+    updated_by = models.ForeignKey(
+        Profile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="family_settings_updates",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        if self.tokens_per_dollar < 1:
+            raise ValidationError("Token exchange rate must be at least 1 token per dollar.")
+
+    @classmethod
+    def load(cls):
+        settings, _ = cls.objects.get_or_create(pk=1)
+        return settings
+
+    def __str__(self):
+        return f"{self.tokens_per_dollar} tokens = $1.00"
 
 
 class SavingsGoal(models.Model):
@@ -107,9 +132,13 @@ class ChildRule(models.Model):
     child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="specific_rules")
     title = models.CharField(max_length=100)
     details = models.CharField(max_length=240, blank=True)
+    consequence = models.CharField(max_length=240, blank=True)
     active = models.BooleanField(default=True)
+    expires_on = models.DateField(null=True, blank=True)
+    scheduled_remove_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="child_rules_created")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["created_at"]
@@ -117,19 +146,72 @@ class ChildRule(models.Model):
     def __str__(self):
         return f"{self.child.display_name}: {self.title}"
 
+    @property
+    def is_current(self):
+        if not self.active:
+            return False
+        if self.expires_on and self.expires_on < timezone.localdate():
+            return False
+        return not self.scheduled_remove_at or self.scheduled_remove_at > timezone.now()
+
 
 class HouseRule(models.Model):
     title = models.CharField(max_length=100)
     details = models.CharField(max_length=240, blank=True)
+    consequence = models.CharField(max_length=240, blank=True)
     active = models.BooleanField(default=True)
     created_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="house_rules_created")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["created_at"]
 
     def __str__(self):
         return self.title
+
+
+class RuleAcknowledgement(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="rule_acknowledgements")
+    house_rule = models.ForeignKey(
+        HouseRule,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="acknowledgements",
+    )
+    child_rule = models.ForeignKey(
+        ChildRule,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="acknowledgements",
+    )
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(house_rule__isnull=False, child_rule__isnull=True) | Q(house_rule__isnull=True, child_rule__isnull=False)),
+                name="acknowledges_one_rule_type",
+            ),
+            models.UniqueConstraint(
+                fields=["child", "house_rule"],
+                condition=Q(house_rule__isnull=False),
+                name="one_house_rule_ack_per_child",
+            ),
+            models.UniqueConstraint(
+                fields=["child", "child_rule"],
+                condition=Q(child_rule__isnull=False),
+                name="one_child_rule_ack_per_child",
+            ),
+        ]
+
+    def clean(self):
+        if self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Only child profiles acknowledge rules.")
+        if self.child_rule and self.child_rule.child_id != self.child_id:
+            raise ValidationError("A child may only acknowledge their own individual rule.")
 
 
 class BehaviorNote(models.Model):
@@ -185,7 +267,8 @@ class Chore(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["child", "title", "due_date"], name="one_daily_chore_assignment")
+            models.UniqueConstraint(fields=["child", "title", "due_date"], name="one_daily_chore_assignment"),
+            models.CheckConstraint(condition=Q(cash_reward_cents=0), name="chore_rewards_tokens_only"),
         ]
 
 
@@ -211,12 +294,35 @@ class StoreItem(models.Model):
 
     name = models.CharField(max_length=100)
     description = models.CharField(max_length=180, blank=True)
-    token_cost = models.PositiveIntegerField()
+    token_cost = models.PositiveIntegerField(default=0)
+    cash_cost_cents = models.PositiveIntegerField(default=0)
     category = models.CharField(max_length=12, choices=Category.choices, default=Category.TREAT)
     active = models.BooleanField(default=True)
+    hidden = models.BooleanField(default=False)
+    token_unlock_threshold = models.PositiveIntegerField(default=0)
+    inventory_quantity = models.PositiveIntegerField(null=True, blank=True)
+    minimum_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    requires_approval = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        if not self.token_cost and not self.cash_cost_cents:
+            raise ValidationError("Store items must cost tokens, cash, or both.")
+
+    def available_to(self, child):
+        if not self.active or self.hidden:
+            return False
+        if self.inventory_quantity is not None and self.inventory_quantity < 1:
+            return False
+        if child.wallet.tokens < self.token_unlock_threshold:
+            return False
+        if self.minimum_age and child.birth_date:
+            today = timezone.localdate()
+            age = today.year - child.birth_date.year - ((today.month, today.day) < (child.birth_date.month, child.birth_date.day))
+            return age >= self.minimum_age
+        return not self.minimum_age
 
 
 class BehaviorStar(models.Model):
@@ -239,7 +345,7 @@ class LedgerRequest(models.Model):
         GOAL = "goal", "Growth goal reward"
         STORE = "store", "Store purchase"
         SPEND = "spend", "Spend money"
-        CONVERT = "convert", "Cash to tokens"
+        CONVERT = "convert", "Legacy conversion (disabled)"
         CASH_OUT = "cash_out", "Cash out"
         AWARD = "award", "Guardian award"
         STAR = "star", "Good behavior star"
@@ -276,23 +382,32 @@ class LedgerRequest(models.Model):
 
     @property
     def requires_dad_approval(self):
-        return self.kind in [self.Kind.TRANSFER, self.Kind.CASH_OUT, self.Kind.CONVERT, self.Kind.SPEND]
+        # These are retained for the spendable-cash flow. New token cash-outs
+        # post immediately and never enter the approval queue.
+        return self.kind in [self.Kind.TRANSFER, self.Kind.CONVERT, self.Kind.SPEND]
 
     @property
     def reserves_spending_immediately(self):
         return self.kind == self.Kind.SPEND and self.spending_delta_cents < 0
 
-    def approve(self, guardian):
+    def approve(self, guardian=None):
         from django.utils import timezone
 
-        if not guardian.is_guardian:
+        instant_store_purchase = self.kind == self.Kind.STORE and self.store_item and not self.store_item.requires_approval
+        if guardian is None and not instant_store_purchase:
             raise ValidationError("Only guardians can approve requests.")
-        if self.requires_dad_approval and guardian.user.username.lower() != "dad":
-            raise ValidationError("Only Dad can approve savings and spending requests.")
+        if guardian is not None and not guardian.is_guardian:
+            raise ValidationError("Only guardians can approve requests.")
+        if guardian is not None and self.requires_dad_approval and guardian.user.username.lower() != "dad":
+            raise ValidationError("Only Dad can approve wallet-to-spending and spending requests.")
         with transaction.atomic():
             request = LedgerRequest.objects.select_for_update().get(pk=self.pk)
             if request.status != self.Status.PENDING:
                 return
+            if request.kind == self.Kind.CHORE and request.cash_delta_cents:
+                raise ValidationError("Chores award tokens only; they cannot create cash.")
+            if request.kind == self.Kind.CONVERT and (request.token_delta > 0 or request.cash_delta_cents < 0):
+                raise ValidationError("Wallet cash cannot be converted back into tokens.")
             request.child.refresh_grounding()
             changes_balance = bool(request.token_delta or request.cash_delta_cents or request.spending_delta_cents)
             if request.child.grounded and changes_balance and request.kind != self.Kind.BALANCE:
@@ -312,6 +427,12 @@ class LedgerRequest(models.Model):
                     cash_cents=F("cash_cents") + request.cash_delta_cents,
                     spending_cents=F("spending_cents") + request.spending_delta_cents,
                 )
+            if request.kind == self.Kind.STORE and request.store_item_id:
+                item = StoreItem.objects.select_for_update().get(pk=request.store_item_id)
+                if item.inventory_quantity is not None:
+                    if item.inventory_quantity < 1:
+                        raise ValidationError("This item is out of stock.")
+                    StoreItem.objects.filter(pk=item.pk).update(inventory_quantity=F("inventory_quantity") - 1)
             request.status = self.Status.APPROVED
             request.reviewed_by = guardian
             request.reviewed_at = timezone.now()
@@ -322,6 +443,36 @@ class LedgerRequest(models.Model):
             if request.goal:
                 request.goal.status = GrowthGoal.Status.COMPLETED
                 request.goal.save(update_fields=["status"])
+            Purchase.objects.filter(ledger=request).update(fulfilled_at=request.reviewed_at)
+            notification_kind = {
+                self.Kind.STORE: Notification.Kind.STORE,
+                self.Kind.CASH_OUT: Notification.Kind.WALLET,
+                self.Kind.TRANSFER: Notification.Kind.WALLET,
+                self.Kind.SPEND: Notification.Kind.WALLET,
+                self.Kind.BALANCE: Notification.Kind.WALLET,
+                self.Kind.CHORE: Notification.Kind.REWARD,
+            }.get(request.kind, Notification.Kind.REWARD)
+            notification_title = {
+                self.Kind.CHORE: "Chore approved - tokens earned",
+                self.Kind.CASH_OUT: "Wallet cash-out approved",
+                self.Kind.STORE: "Store purchase approved",
+                self.Kind.AWARD: "New parent reward",
+                self.Kind.BEHAVIOR: "Token balance updated",
+                self.Kind.BALANCE: "Wallet balance updated",
+            }.get(request.kind, "Reward approved")
+            Notification.objects.create(
+                recipient=request.child,
+                kind=notification_kind,
+                title=notification_title,
+                message=request.description,
+            )
+            AuditLog.objects.create(
+                actor=guardian,
+                child=request.child,
+                ledger=request,
+                action="request_approved",
+                description=request.description,
+            )
 
     def decline(self, guardian):
         from django.utils import timezone
@@ -357,6 +508,72 @@ class LedgerRequest(models.Model):
             if request.goal:
                 request.goal.status = GrowthGoal.Status.ACTIVE
                 request.goal.save(update_fields=["status"])
+            declined_kind = {
+                self.Kind.CASH_OUT: Notification.Kind.WALLET,
+                self.Kind.STORE: Notification.Kind.STORE,
+                self.Kind.TRANSFER: Notification.Kind.WALLET,
+                self.Kind.SPEND: Notification.Kind.WALLET,
+            }.get(request.kind, Notification.Kind.REWARD)
+            Notification.objects.create(
+                recipient=request.child,
+                kind=declined_kind,
+                title="Request not approved",
+                message=request.description,
+            )
+            AuditLog.objects.create(
+                actor=guardian,
+                child=request.child,
+                ledger=request,
+                action="request_declined",
+                description=request.description,
+            )
+
+
+class Purchase(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="purchases")
+    item = models.ForeignKey(StoreItem, null=True, on_delete=models.SET_NULL, related_name="purchases")
+    ledger = models.OneToOneField(LedgerRequest, on_delete=models.CASCADE, related_name="purchase")
+    token_cost = models.PositiveIntegerField(default=0)
+    cash_cost_cents = models.PositiveIntegerField(default=0)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    fulfilled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+
+class Notification(models.Model):
+    class Kind(models.TextChoices):
+        CHORE = "chore", "New chore"
+        REWARD = "reward", "Token reward"
+        RULE = "rule", "Rule update"
+        GROUNDED = "grounded", "Grounded mode"
+        WALLET = "wallet", "Wallet update"
+        STORE = "store", "Store purchase"
+
+    recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=12, choices=Kind.choices)
+    title = models.CharField(max_length=80)
+    message = models.CharField(max_length=240)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class AuditLog(models.Model):
+    actor = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_actions")
+    child = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_entries")
+    ledger = models.ForeignKey(LedgerRequest, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_entries")
+    house_rule = models.ForeignKey(HouseRule, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_entries")
+    child_rule = models.ForeignKey(ChildRule, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_entries")
+    action = models.CharField(max_length=40)
+    description = models.CharField(max_length=240)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class PushSubscription(models.Model):
