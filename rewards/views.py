@@ -61,15 +61,19 @@ def health(request):
     return HttpResponse("ok", content_type="text/plain")
 
 
+def csrf_failure(request, reason=""):
+    return render(request, "rewards/csrf_failure.html", status=403)
+
+
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v2';
-const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg'];
+    source = """const CACHE = 'family-circle-v3';
+const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('push', event => {
   const data = event.data ? event.data.json() : {title: 'Family Circle', body: 'Open Family Circle for an update.'};
   event.waitUntil(Promise.all([
-    self.registration.showNotification(data.title, {body: data.body, icon: '/static/rewards/icon.svg', badge: '/static/rewards/icon.svg', data: {url: data.url || '/'}}),
+    self.registration.showNotification(data.title, {body: data.body, icon: '/static/rewards/icon-192.png', badge: '/static/rewards/icon-192.png', data: {url: data.url || '/'}}),
     self.navigator.setAppBadge ? self.navigator.setAppBadge(1) : Promise.resolve()
   ]));
 });
@@ -142,12 +146,6 @@ def _wallet_context(profile):
     }
 
 
-def _wallet_return(request):
-    if request.POST.get("wallet_surface") == "dashboard":
-        return redirect("/?wallet=1")
-    return redirect("wallet_page")
-
-
 def _star_calendar(child, requested_month):
     today = timezone.localdate()
     try:
@@ -205,6 +203,12 @@ def dashboard(request):
             .order_by("day", "start_time", "child__display_name")[:120]
             if can_manage else []
         )
+        upcoming_event_queue = (
+            DailyScheduleEvent.objects.filter(day__gt=today)
+            .select_related("child", "approved_by")
+            .order_by("day", "start_time", "child__display_name")[:16]
+            if can_manage else []
+        )
         history = selected.ledger_requests.select_related("store_item", "reviewed_by").all()[:30] if selected else []
         if selected and not can_manage:
             history = selected.ledger_requests.filter(
@@ -230,6 +234,7 @@ def dashboard(request):
                 if selected else []
             ),
             "family_calendar_events": family_calendar_events,
+            "upcoming_event_queue": upcoming_event_queue,
             "selected_rules": selected.specific_rules.filter(active=True) if selected else [],
             "selected_grades": selected.grades.order_by("-created_at")[:8] if selected else [],
             "selected_goals": selected.goals.order_by("-created_at")[:8] if selected else [],
@@ -313,10 +318,7 @@ def dashboard(request):
         "recap_tasks_left": today_chores.filter(status__in=[Chore.Status.OPEN, Chore.Status.IN_PROGRESS]).count(),
         "next_prize": next_prize,
         "tokens_to_next_prize": next_prize.token_cost - profile.wallet.tokens if next_prize else 0,
-        "wallet_embedded": True,
-        "open_wallet": request.GET.get("wallet") == "1",
     }
-    context.update(_wallet_context(profile))
     return render(request, "rewards/child_dashboard.html", context)
 
 
@@ -327,7 +329,7 @@ def wallet_page(request):
         return redirect("dashboard")
     if _block_grounded_child(request, profile):
         return redirect("dashboard")
-    context = {"profile": profile, "wallet_embedded": False}
+    context = {"profile": profile}
     context.update(_wallet_context(profile))
     return render(request, "rewards/wallet_page.html", context)
 
@@ -341,10 +343,11 @@ def start_chore(request, pk):
     chore = get_object_or_404(Chore, pk=pk, child=profile, status=Chore.Status.OPEN)
     chore.status = Chore.Status.IN_PROGRESS
     chore.save(update_fields=["status"])
+    cutoff = "10 AM" if chore.optional else "7 PM"
     if profile.grounded:
         messages.info(request, "You started it. Tap finished before the deadline so a guardian can verify your work.")
     else:
-        messages.info(request, "You started it. Tap finished before 7 PM to earn your tokens!")
+        messages.info(request, f"You started it. Tap finished before {cutoff} to earn your tokens!")
     return redirect("dashboard")
 
 
@@ -362,7 +365,8 @@ def submit_chore(request, pk):
     if late:
         chore.status = Chore.Status.LATE
         chore.save(update_fields=["status"])
-        messages.info(request, "Marked finished. It was after 7 PM, so this chore does not earn tokens today.")
+        cutoff = "10 AM" if chore.optional else "7 PM"
+        messages.info(request, f"Marked finished. It was after {cutoff}, so this chore does not earn tokens today.")
         return redirect("dashboard")
     earns_rewards = not profile.grounded
     LedgerRequest.objects.create(
@@ -441,11 +445,11 @@ def request_conversion(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Conversions must be in 10 cent increments.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your available cash balance.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     tokens = cents // 10
     LedgerRequest.objects.create(
         child=profile,
@@ -456,7 +460,7 @@ def request_conversion(request):
         cash_delta_cents=-cents,
     )
     messages.success(request, "Savings-to-Tokens request sent to Dad. The rate is $1 for 10 tokens.")
-    return _wallet_return(request)
+    return redirect("wallet_page")
 
 
 @login_required
@@ -470,12 +474,12 @@ def request_tokens_to_savings(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Conversions must be in 10 cent increments.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     tokens = cents // 10
     if tokens > profile.wallet.tokens:
         messages.error(request, "You do not have enough Tokens for that Savings conversion.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -485,7 +489,7 @@ def request_tokens_to_savings(request):
         cash_delta_cents=cents,
     )
     messages.success(request, "Tokens-to-Savings request sent to Dad. The rate is 10 tokens for $1.")
-    return _wallet_return(request)
+    return redirect("wallet_page")
 
 
 @login_required
@@ -499,11 +503,11 @@ def request_cashout(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Please choose or enter an amount to request.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your available cash balance.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -512,7 +516,7 @@ def request_cashout(request):
         cash_delta_cents=-cents,
     )
     messages.success(request, "Cash-out request sent to Dad for review.")
-    return _wallet_return(request)
+    return redirect("wallet_page")
 
 
 @login_required
@@ -526,11 +530,11 @@ def request_spending_transfer(request):
         return redirect("dashboard")
     if not form.is_valid():
         messages.error(request, "Please choose or enter an amount to move.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     if cents > profile.wallet.cash_cents:
         messages.error(request, "That is more than your savings balance.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     LedgerRequest.objects.create(
         child=profile,
         requested_by=profile,
@@ -540,7 +544,7 @@ def request_spending_transfer(request):
         spending_delta_cents=cents,
     )
     messages.success(request, "Your request to move money to spending was sent to Dad.")
-    return _wallet_return(request)
+    return redirect("wallet_page")
 
 
 @login_required
@@ -554,13 +558,13 @@ def send_family_transfer(request):
     form = FamilyTransferForm(request.POST, sender=profile)
     if not form.is_valid():
         messages.error(request, "Choose a family member and enter an amount to send.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     recipient = form.cleaned_data["recipient_id"]
     cents = _cents(form.cleaned_data["cash_amount"])
     recipient.refresh_grounding()
     if recipient.grounded:
         messages.error(request, "That family member is in Grounded Mode and cannot receive money right now.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     with transaction.atomic():
         wallets = {
             wallet.child_id: wallet
@@ -572,7 +576,7 @@ def send_family_transfer(request):
         recipient_wallet = wallets[recipient.pk]
         if cents > sender_wallet.spending_cents:
             messages.error(request, "You do not have enough in Spending to send that amount.")
-            return _wallet_return(request)
+            return redirect("wallet_page")
         Wallet.objects.filter(pk=sender_wallet.pk).update(spending_cents=F("spending_cents") - cents)
         Wallet.objects.filter(pk=recipient_wallet.pk).update(spending_cents=F("spending_cents") + cents)
         timestamp = timezone.now()
@@ -597,7 +601,7 @@ def send_family_transfer(request):
             reviewed_at=timestamp,
         )
     messages.success(request, f"${cents / 100:.2f} sent to {recipient.display_name}.", extra_tags="payment-success sent")
-    return _wallet_return(request)
+    return redirect("wallet_page")
 
 
 @login_required
@@ -611,13 +615,13 @@ def request_store_spend(request):
     form = SpendingTransferForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Enter a valid amount for your store purchase.")
-        return _wallet_return(request)
+        return redirect("wallet_page")
     cents = _cents(form.cleaned_data["cash_amount"])
     with transaction.atomic():
         wallet = Wallet.objects.select_for_update().get(child=profile)
         if cents > wallet.spending_cents:
             messages.error(request, "You do not have enough in Spending to cover that purchase.")
-            return _wallet_return(request)
+            return redirect("wallet_page")
         Wallet.objects.filter(pk=wallet.pk).update(spending_cents=F("spending_cents") - cents)
         LedgerRequest.objects.create(
             child=profile,
@@ -627,7 +631,7 @@ def request_store_spend(request):
             spending_delta_cents=-cents,
         )
     messages.success(request, f"${cents / 100:.2f} reserved for spending. Dad will verify it.", extra_tags="payment-success spent")
-    return _wallet_return(request)
+    return redirect("wallet_page")
 
 
 @login_required
@@ -713,7 +717,7 @@ def guardian_create(request, model):
         record.save()
     labels = {"schedule": "Schedule event", "child_rule": "Personal rule"}
     if model == "schedule":
-        messages.success(request, f"Schedule draft added for {child.display_name}. Dad must approve that date before it appears for the child.")
+        messages.success(request, f"Event queued for {child.display_name}. Dad must approve that date before it appears for the child.")
     else:
         messages.success(request, f"{labels.get(model, model.title())} added for {child.display_name}.")
     return redirect(f"/?child={child.pk}")

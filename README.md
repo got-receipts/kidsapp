@@ -11,10 +11,10 @@ This is private family software. All rights reserved; it is not intended for red
 - Guardian approval for chore rewards, goal rewards, store spending, token conversion, and cash-out requests.
 - Twelve rotating daily chores divided among the three children, with token credit available only before 7:00 PM Eastern.
 - A live child-facing 7:00 PM quest countdown plus separate checked and guardian-verified progress bars.
-- An optional daily Make your bed bonus quest worth tokens only when completed before 10:00 AM.
+- Optional daily Make your bed and Dress yourself bonus quests worth tokens only when completed before 10:00 AM.
 - A daily good-behavior star calendar; each awarded star adds 2 tokens.
 - Dad/GG behavior deductions with a confirmation popup, recorded reason, and token debt support.
-- Opt-in Dad/GG push reminders to award stars after 7:30 PM and an account ledger showing spending and rewards.
+- Opt-in Dad/GG push reminders for 7:30 PM stars and 9:00 PM next-day schedule planning, plus an account ledger showing spending and rewards.
 - A daily animated child check-in summarizing newly earned stars/tokens, open quests, and the next reward target.
 - A native guardian-only Family Calendar where Dad drafts and approves dated schedules before children receive them.
 - Guardian-managed personal rules and house rules shown in each child's morning briefing and daily dashboard.
@@ -28,9 +28,18 @@ This is private family software. All rights reserved; it is not intended for red
 - Atomic ledger-backed balance updates so approvals from multiple devices remain consistent.
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
-- A futuristic vector identity, role-aware connection animation, and modal command-center layout designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.0.0`).
+- A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.1.1`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
+
+## Versioning
+
+The footer version is controlled by `APP_VERSION`. Update it for every deployed change, including fixes:
+
+- Patch bump for fixes and small polish changes, such as `2.1.0` to `2.1.1`.
+- Minor bump for new app features or meaningful user-interface upgrades, such as `2.1.0` to `2.2.0`.
+
+Keep `family_circle/settings.py`, `.env.example`, and the Railway `APP_VERSION` value aligned for each release.
 
 ## Run Locally
 
@@ -52,7 +61,7 @@ For `--dev`, all six accounts initially use `password123`; change passwords befo
 
 1. Push this folder to a Git repository and create a Railway project from it.
 2. Add a Railway PostgreSQL database service and connect it to this app so `DATABASE_URL` is injected.
-3. Set the variables shown in `.env.example`, especially a strong `SECRET_KEY` and `CSRF_TRUSTED_ORIGINS`. Set `INITIAL_CHILD_PASSWORD` and `INITIAL_GUARDIAN_PASSWORD` before the first deploy for secure starter logins.
+3. Set the variables shown in `.env.example`, especially a strong `SECRET_KEY`. Railway-generated `*.up.railway.app` domains are trusted automatically for secure form submissions; set `CSRF_TRUSTED_ORIGINS` only when using a custom domain. Set `INITIAL_CHILD_PASSWORD` and `INITIAL_GUARDIAN_PASSWORD` before the first deploy for secure starter logins.
 4. Deploy. The container migrates the database, seeds the six accounts and starter store entries, then starts Gunicorn. If the two initial password variables were omitted on the first deploy, the app boots using the temporary password `password123` for all six seeded accounts so deployment does not fail.
 5. Provide per-account password variables instead of the shared initial variables before the first account creation when each family member should begin with a different password. A future account-settings screen can support self-service password changes.
 
@@ -70,9 +79,9 @@ Do not leave accounts using the fallback password on an online app. Replace the 
 
 An Apple Wallet display pass or a real funded card can be considered later only through an appropriate pass-signing setup or regulated card/payment provider, with stronger authentication and parental controls.
 
-## Star Reminder Notifications
+## Guardian Reminder Notifications
 
-Web push needs VAPID keys configured in Railway as `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_CLAIMS_EMAIL`. Dad or GG then opens the installed app and taps **Turn on 7:30 PM star reminders** on their dashboard.
+Web push needs VAPID keys configured in Railway as `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_CLAIMS_EMAIL`. Dad or GG receives an in-app prompt to enable reminders, or can tap **Turn on reminders** on the dashboard later.
 
 Add a second Railway service from the same repository for scheduled reminders:
 
@@ -81,13 +90,13 @@ Start command: python manage.py send_star_reminders
 Cron schedule: */30 * * * *
 ```
 
-Railway evaluates cron schedules in UTC. The command checks the configured `America/New_York` application timezone and sends once per calendar day only after 7:30 PM, so it remains correct when daylight saving time changes.
+Railway evaluates cron schedules in UTC. The command checks the configured `America/New_York` application timezone and sends the star reminder once per day after 7:30 PM and the schedule-planning reminder once per day after 9:00 PM, so it remains correct when daylight saving time changes.
 
 On iPhone, push notifications require installing the PWA from Safari using **Add to Home Screen**, then enabling notifications from inside the installed app.
 
 ## Family Calendar Publishing
 
-The family schedule is managed entirely inside Family Circle. Dad can open **Family Calendar** on the guardian dashboard, add events for future dates, and approve a child's day once the plan is ready. GG can view the large family calendar without creating or publishing events.
+The family schedule is managed entirely inside Family Circle. Dad can open **Family Calendar** on the guardian dashboard, queue events for future dates, and approve a child's day once the plan is ready. Dad and GG see the upcoming event queue; GG cannot create or publish events.
 
 The expected routine is for Dad to prepare and approve the next day's schedule around 9:00 PM. Events may be drafted and approved in advance, but a child sees only approved events assigned to that child on the current day. No external calendar link or public calendar configuration is required.
 

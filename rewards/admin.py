@@ -13,6 +13,7 @@ from .models import (
     Profile,
     PushSubscription,
     ReminderDispatch,
+    ScheduleReminderDispatch,
     SavingsGoal,
     StoreItem,
     Wallet,
@@ -35,5 +36,6 @@ admin.site.register(
         LedgerRequest,
         PushSubscription,
         ReminderDispatch,
+        ScheduleReminderDispatch,
     ]
 )

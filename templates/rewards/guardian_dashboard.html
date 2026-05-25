@@ -13,10 +13,24 @@
     <h2>{% if can_manage %}Rewards and progress{% else %}See their growth and good moments{% endif %}</h2>
     <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
     {% if can_manage %}
-    <button id="enable-notifications" class="notify-button" type="button" data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on 7:30 PM star reminders</button>
+    <button class="notify-button" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on reminders</button>
     {% if not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable push notifications.</small>{% endif %}
     {% endif %}
   </section>
+  {% if can_manage and vapid_public_key %}
+  <dialog class="review-dialog notification-permission-dialog" id="notification-permission" data-notification-prompt>
+    <form method="dialog" class="dialog-close" data-dismiss-notification-prompt><button aria-label="Close">&times;</button></form>
+    <div class="permission-pulse"><span></span></div>
+    <p class="eyebrow">Stay in sync</p>
+    <h2>Turn on family reminders?</h2>
+    <p>Receive the daily 7:30 PM star check-in and the 9:00 PM next-day schedule planning reminder.</p>
+    <p class="ios-permission-note">For iPhone or iPad: install Family Circle to the Home Screen first, then tap Allow Notifications so iOS can display its permission prompt.</p>
+    <div class="permission-actions">
+      <button class="primary" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}">Allow Notifications</button>
+      <form method="dialog" data-dismiss-notification-prompt><button class="text" type="submit">Not now</button></form>
+    </div>
+  </dialog>
+  {% endif %}
   {% if star_reminder_due %}
     <section class="reminder-callout"><strong>Star check-in time!</strong> It is after 7:30 PM. Still waiting on stars for: {% for child in unstarred %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
   {% endif %}
@@ -204,18 +218,32 @@
       {% if can_manage %}
       <article class="card command-module">
         <div class="card-head"><h2>Family calendar</h2><span class="badge">{% if dad_controls %}Dad publishes{% else %}View access{% endif %}</span></div>
-        <p class="control-note">Plan future days here. Children receive only an approved schedule on the actual day.</p>
+        <p class="control-note">Queue future days here. Children receive only an approved schedule on the actual day.</p>
         <button class="module-button" type="button" data-open-dialog="guardian-calendar">Open Family Calendar</button>
+      </article>
+      <article class="card upcoming-queue">
+        <div class="card-head"><h2>Upcoming event queue</h2><span class="badge gold">{{ upcoming_event_queue|length }} queued</span></div>
+        <p class="control-note">Dad and GG can view upcoming plans. Children receive approved events only on their scheduled day.</p>
+        <div class="queue-list">
+          {% for event in upcoming_event_queue %}
+          <div class="queue-event">
+            <time>{{ event.day|date:"M j" }}{% if event.start_time %}<small>{{ event.start_time|time:"g:i A" }}</small>{% endif %}</time>
+            <div><strong>{{ event.child.display_name }}: {{ event.title }}</strong><small>{{ event.details }}</small></div>
+            <b class="badge {% if not event.approved_at %}waiting{% endif %}">{% if event.approved_at %}Approved{% else %}Draft{% endif %}</b>
+          </div>
+          {% empty %}<p class="empty">No future events are queued right now.</p>{% endfor %}
+        </div>
+        <button class="module-button" type="button" data-open-dialog="guardian-calendar">Manage Queue</button>
       </article>
       <dialog class="review-dialog native-calendar-dialog" id="guardian-calendar">
         <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
         <p class="eyebrow">Private guardian planner</p><h2>Family Calendar</h2>
-        <p>Future dates can be planned ahead. Dad prepares the next day's plan around 9:00 PM and approves it for release; children see an approved plan only when that day arrives.</p>
+        <p>Future dates enter the guardian queue. Dad prepares the next day's plan around 9:00 PM and approves it for release; children see an approved plan only when that day arrives.</p>
         {% if dad_controls %}
         <section class="calendar-composer">
           <h3>Add event for {{ selected.display_name }}</h3>
           <form class="form" method="post" action="{% url 'guardian_create' 'schedule' %}">
-            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}<button class="primary">Save Draft Event</button>
+            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}<button class="primary">Queue Event Draft</button>
           </form>
         </section>
         {% else %}
@@ -244,7 +272,7 @@
                 </div>
               {% endfor %}
             </div>
-          {% empty %}<p class="empty">No family schedule events have been drafted yet.</p>{% endfor %}
+          {% empty %}<p class="empty">No family schedule events are queued yet.</p>{% endfor %}
         </section>
       </dialog>
       {% endif %}
@@ -284,7 +312,7 @@
         {% for chore in selected_chores %}
           <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">Today's chore rotation has not been created.</p>{% endfor %}
-        <h3 class="optional-heading">Bonus morning quest</h3>
+        <h3 class="optional-heading">Bonus morning quests</h3>
         {% for chore in selected_optional_chores %}
           <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }} &middot; before 10 AM</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
         {% empty %}<p class="empty">No optional morning quest created.</p>{% endfor %}

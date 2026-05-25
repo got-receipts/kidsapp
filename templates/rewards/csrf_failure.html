@@ -1,0 +1,16 @@
+{% extends "rewards/base.html" %}
+{% load static %}
+{% block title %}Refresh Sign In | Family Circle{% endblock %}
+{% block content %}
+<main class="login-page">
+  <section class="welcome csrf-welcome">
+    <div class="brand"><img class="brand-logo" src="{% static 'rewards/logo.svg' %}" alt="Family Circle - Connected Family Hub"></div>
+    <article class="card csrf-card">
+      <p class="eyebrow">Secure sign-in refresh</p>
+      <h1>Your connection needs a refresh.</h1>
+      <p>Family Circle protected this request because the sign-in screen or security token was out of date.</p>
+      <a class="primary csrf-retry" href="{% url 'login' %}">Return to Sign In</a>
+    </article>
+  </section>
+</main>
+{% endblock %}

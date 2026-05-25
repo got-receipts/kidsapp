@@ -250,6 +250,7 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Savings to Tokens")
         self.assertContains(response, "Tokens to Savings")
         self.assertContains(response, "Astoria")
+        self.assertContains(response, "Adventure board")
 
         self.client.force_login(self.guardian.user)
         response = self.client.get(reverse("wallet_page"))
@@ -316,7 +317,7 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(received.counterparty, self.child)
         self.assertEqual(sent.status, LedgerRequest.Status.APPROVED)
 
-    def test_embedded_wallet_transfer_returns_to_open_wallet_with_confirmation_marker(self):
+    def test_wallet_transfer_returns_to_wallet_with_confirmation_marker(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
         Wallet.objects.create(child=sibling)
@@ -326,12 +327,11 @@ class LedgerApprovalTests(TestCase):
 
         response = self.client.post(
             reverse("send_family_transfer"),
-            {"recipient_id": sibling.pk, "cash_amount": "1.50", "wallet_surface": "dashboard"},
+            {"recipient_id": sibling.pk, "cash_amount": "1.50"},
             follow=True,
         )
 
-        self.assertRedirects(response, "/?wallet=1")
-        self.assertContains(response, 'id="child-wallet" data-auto-open-dialog')
+        self.assertRedirects(response, reverse("wallet_page"))
         self.assertContains(response, "payment-success")
 
     def test_child_can_reserve_spending_for_store_purchase_pending_dad_approval(self):
@@ -587,6 +587,9 @@ class LedgerApprovalTests(TestCase):
         )
         event = DailyScheduleEvent.objects.get(title="Future plan")
         self.client.force_login(gg.user)
+        gg_dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(gg_dashboard, "Upcoming event queue")
+        self.assertContains(gg_dashboard, "Future plan")
         self.client.post(reverse("dad_approve_schedule"), {"child_id": self.child.pk, "day": day})
         event.refresh_from_db()
         self.assertIsNone(event.approved_at)
@@ -696,9 +699,10 @@ class DailyChoreRotationTests(TestCase):
     def test_twelve_daily_chores_are_divided_evenly(self, mocked_date):
         ensure_today_chores()
 
-        self.assertEqual(Chore.objects.filter(due_date=date(2026, 5, 24)).count(), 15)
+        self.assertEqual(Chore.objects.filter(due_date=date(2026, 5, 24)).count(), 18)
         for child in Profile.objects.filter(role=Profile.Role.CHILD):
             self.assertEqual(child.chores.filter(due_date=date(2026, 5, 24), optional=False).count(), 4)
-            bonus = child.chores.get(due_date=date(2026, 5, 24), optional=True)
-            self.assertEqual(bonus.title, "Make your bed")
-            self.assertEqual(bonus.credit_deadline, time(10, 0))
+            bonuses = child.chores.filter(due_date=date(2026, 5, 24), optional=True)
+            self.assertEqual(bonuses.count(), 2)
+            self.assertSetEqual(set(bonuses.values_list("title", flat=True)), {"Make your bed", "Dress yourself"})
+            self.assertTrue(all(bonus.credit_deadline == time(10, 0) for bonus in bonuses))

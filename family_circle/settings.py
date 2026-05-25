@@ -12,11 +12,30 @@ ALLOWED_HOSTS = [
     for host in os.getenv("ALLOWED_HOSTS", ".railway.app,localhost,127.0.0.1").split(",")
     if host.strip()
 ]
-CSRF_TRUSTED_ORIGINS = [
+configured_csrf_origins = [
     origin.strip()
     for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
+railway_public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+railway_public_origin = (
+    railway_public_domain
+    if railway_public_domain.startswith(("https://", "http://"))
+    else f"https://{railway_public_domain}"
+    if railway_public_domain
+    else ""
+)
+CSRF_TRUSTED_ORIGINS = list(
+    dict.fromkeys(
+        origin
+        for origin in [
+            "https://*.up.railway.app",
+            railway_public_origin,
+            *configured_csrf_origins,
+        ]
+        if origin
+    )
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -89,11 +108,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "login"
+CSRF_FAILURE_VIEW = "rewards.views.csrf_failure"
 
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:family-circle@example.com")
-APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
+APP_VERSION = os.getenv("APP_VERSION", "2.1.1")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG

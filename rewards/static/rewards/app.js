@@ -58,18 +58,28 @@ if (connectionSequence) {
     connectionSequence.remove();
   } else {
     document.body.classList.add("connecting");
+    const liveStatus = connectionSequence.querySelector(".connection-live");
+    const statusByVariant = {
+      child: ["Gathering today's quests", "Charging your star map", "Adventure board ready"],
+      guardian: ["Validating protected access", "Syncing family schedules", "Command center ready"],
+      welcome: ["Establishing private connection", "Linking the family network", "Connection ready"],
+    };
+    const statuses = statusByVariant[variant] || statusByVariant.welcome;
+    window.setTimeout(() => { if (liveStatus) liveStatus.textContent = statuses[1]; }, 700);
+    window.setTimeout(() => { if (liveStatus) liveStatus.textContent = statuses[2]; }, 1500);
+    const duration = variant === "child" ? 2700 : variant === "guardian" ? 2350 : 2200;
     window.setTimeout(() => {
       connectionSequence.classList.add("connected");
       document.body.classList.remove("connecting");
-      window.setTimeout(() => connectionSequence.remove(), 450);
-    }, variant === "child" ? 1550 : 1250);
+      window.setTimeout(() => connectionSequence.remove(), 600);
+    }, duration);
   }
 }
 
-const notificationButton = document.querySelector("#enable-notifications");
-if (notificationButton) {
+const notificationButtons = document.querySelectorAll("[data-enable-notifications]");
+notificationButtons.forEach((notificationButton) => {
   notificationButton.addEventListener("click", async () => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       toast("Push notifications are not available on this device.");
       return;
     }
@@ -95,13 +105,38 @@ if (notificationButton) {
         body: JSON.stringify(subscription),
       });
       if (!response.ok) throw new Error("subscription rejected");
-      notificationButton.textContent = "Star reminders are on";
-      notificationButton.disabled = true;
-      toast("You will receive the 7:30 PM good behavior star reminder.");
+      notificationButtons.forEach((button) => {
+        button.textContent = "Reminders are on";
+        button.disabled = true;
+      });
+      const notificationPrompt = document.querySelector("[data-notification-prompt]");
+      if (notificationPrompt && notificationPrompt.open) notificationPrompt.close();
+      toast("Star check-ins and schedule planning reminders are enabled.");
     } catch (error) {
       toast("Could not enable notifications on this device.");
     }
   });
+});
+
+const notificationPrompt = document.querySelector("[data-notification-prompt]");
+if (notificationPrompt && (!("Notification" in window) || Notification.permission === "default")) {
+  let alreadyPrompted = false;
+  try {
+    alreadyPrompted = window.localStorage.getItem("family-circle-notification-prompted") === "yes";
+  } catch (error) {
+    // The prompt can still appear when storage is restricted.
+  }
+  if (!alreadyPrompted) {
+    window.setTimeout(() => {
+      if ("Notification" in window && Notification.permission !== "default") return;
+      if (!notificationPrompt.open) notificationPrompt.showModal();
+      try {
+        window.localStorage.setItem("family-circle-notification-prompted", "yes");
+      } catch (error) {
+        // No persistence is needed for permission to work.
+      }
+    }, 900);
+  }
 }
 
 const paymentSuccess = document.querySelector(".toast.payment-success");
@@ -110,12 +145,16 @@ if (paymentSuccess) {
   const spent = paymentSuccess.classList.contains("spent");
   paymentOverlay.className = "payment-confirmation";
   paymentOverlay.setAttribute("role", "status");
-  paymentOverlay.innerHTML = `
-    <div class="payment-check"><span></span></div>
-    <p>${spent ? "Spend requested" : "Sent successfully"}</p>
-    <strong>${paymentSuccess.textContent}</strong>
-    <small>${spent ? "Reserved until Dad verifies the purchase" : "Your family payment is complete"}</small>
-  `;
+  const paymentCheck = document.createElement("div");
+  paymentCheck.className = "payment-check";
+  paymentCheck.appendChild(document.createElement("span"));
+  const paymentHeading = document.createElement("p");
+  paymentHeading.textContent = spent ? "Spend requested" : "Sent successfully";
+  const paymentMessage = document.createElement("strong");
+  paymentMessage.textContent = paymentSuccess.textContent;
+  const paymentDetail = document.createElement("small");
+  paymentDetail.textContent = spent ? "Reserved until Dad verifies the purchase" : "Your family payment is complete";
+  paymentOverlay.append(paymentCheck, paymentHeading, paymentMessage, paymentDetail);
   paymentSuccess.remove();
   document.body.appendChild(paymentOverlay);
   window.setTimeout(() => paymentOverlay.classList.add("fade-out"), 2100);

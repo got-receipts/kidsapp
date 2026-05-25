@@ -20,17 +20,25 @@
       }
     </script>
     <link rel="manifest" href="{% static 'rewards/manifest.webmanifest' %}">
-    <link rel="apple-touch-icon" href="{% static 'rewards/icon.svg' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'rewards/apple-touch-icon.png' %}">
     <link rel="stylesheet" href="{% static 'rewards/styles.css' %}">
     <script defer src="{% static 'rewards/app.js' %}"></script>
   </head>
   <body>
     <div class="connection-sequence" data-connection-sequence data-variant="{% if request.user.is_authenticated and request.user.profile.role == 'child' %}child{% elif request.user.is_authenticated %}guardian{% else %}welcome{% endif %}" aria-hidden="true">
+      <div class="connection-aurora"></div>
       <div class="connection-grid"></div>
-      <img class="connection-emblem" src="{% static 'rewards/icon.svg' %}" alt="">
-      <div class="connection-nodes"><i></i><i></i><i></i><i></i></div>
-      <strong>{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Welcome to your adventure board{% elif request.user.is_authenticated %}Secure family command link{% else %}Connecting Family Circle{% endif %}</strong>
-      <small>Synchronizing your family network</small>
+      <div class="connection-scan"></div>
+      <div class="connection-network">
+        <div class="connection-nodes"><i></i><i></i><i></i><i></i></div>
+        <div class="connection-nodes secondary"><i></i><i></i><i></i></div>
+        <img class="connection-emblem" src="{% static 'rewards/icon.svg' %}" alt="">
+      </div>
+      <p class="connection-mode">{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Adventure Link{% elif request.user.is_authenticated %}Guardian Secure Link{% else %}Family Circle Network{% endif %}</p>
+      <strong>{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Welcome back, explorer{% elif request.user.is_authenticated %}Command center secured{% else %}Connecting your family{% endif %}</strong>
+      <small class="connection-live">{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Gathering today's quests{% elif request.user.is_authenticated %}Validating protected access{% else %}Establishing private connection{% endif %}</small>
+      <div class="connection-progress"><span></span></div>
+      <div class="connection-packets"><i></i><i></i><i></i></div>
     </div>
     {% if messages %}
       <div class="messages">

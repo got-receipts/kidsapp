@@ -90,7 +90,7 @@
     <button class="map-store" type="button" data-open-dialog="child-store"><b>&#127873;</b><strong>Store</strong><small>Rewards</small></button>
     <button class="map-savings" type="button" data-open-dialog="child-savings"><b>$</b><strong>My Goal</strong><small>{% if savings_goal %}{{ savings_goal.percent }}% saved{% else %}Set a goal{% endif %}</small></button>
     <button class="map-growth" type="button" data-open-dialog="child-goals"><b>&uarr;</b><strong>Grow</strong><small>My progress</small></button>
-    <button class="map-wallet" type="button" data-open-dialog="child-wallet"><b>&#8644;</b><strong>Wallet</strong><small>Tokens & money</small></button>
+    <a class="map-wallet" href="{% url 'wallet_page' %}"><b>&#8644;</b><strong>Wallet</strong><small>Tokens & money</small></a>
     {% endif %}
     <button class="map-plan" type="button" data-open-dialog="child-plan"><b>&#9788;</b><strong>Today</strong><small>Plan & rules</small></button>
   </nav>
@@ -145,8 +145,8 @@
       </div>
     {% empty %}<p class="empty">No chores due right now.</p>{% endfor %}
     <section class="bonus-quest-board">
-      <div class="card-head"><h3>Bonus Morning Quest</h3><span class="badge gold">{% if profile.grounded %}Optional chore{% else %}Optional +4 tokens{% endif %}</span></div>
-      <p class="deadline morning-deadline"><span>Make your bed before <strong>10:00 AM</strong>{% if profile.grounded %} for verification.{% else %} for bonus tokens.{% endif %}</span><strong class="quest-countdown" data-quest-deadline="{{ morning_deadline|date:'c' }}" data-expired-message="Morning bonus expired" data-disable-quest-buttons="true">Counting down...</strong></p>
+      <div class="card-head"><h3>Bonus Morning Quests</h3><span class="badge gold">{% if profile.grounded %}Optional chores{% else %}Optional +4 each{% endif %}</span></div>
+      <p class="deadline morning-deadline"><span>Finish morning bonuses before <strong>10:00 AM</strong>{% if profile.grounded %} for verification.{% else %} for bonus tokens.{% endif %}</span><strong class="quest-countdown" data-quest-deadline="{{ morning_deadline|date:'c' }}" data-expired-message="Morning bonuses expired" data-disable-quest-buttons="true">Counting down...</strong></p>
       {% for chore in optional_chores %}
         <div class="task quest {% if chore.status == 'completed' %}done{% elif chore.status == 'submitted' %}pending{% elif chore.status == 'in_progress' %}started{% elif chore.status == 'late' or chore.status == 'not_verified' %}late{% endif %}">
           <div class="quest-copy"><span class="quest-icon">{% if chore.status == "completed" or chore.status == "submitted" %}&#10003;{% elif chore.status == "in_progress" %}&#9654;{% elif chore.status == "late" or chore.status == "not_verified" %}!{% else %}&#9733;{% endif %}</span><div><strong>{{ chore.title }}</strong><small>{{ chore.instructions }} &middot; {% if profile.grounded %}Verification only{% else %}+{{ chore.token_reward }} tokens{% endif %}</small></div></div>
@@ -221,18 +221,13 @@
       {% empty %}<p class="empty">The family store is being stocked.</p>{% endfor %}
     </div>
   </section></dialog>
-  <dialog class="review-dialog wallet-dialog" id="child-wallet" {% if open_wallet %}data-auto-open-dialog{% endif %}>
-    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-    <p class="eyebrow">My money</p><h2>Wallet</h2>
-    {% include "rewards/_wallet_console.html" %}
-  </dialog>
   {% endif %}
   <nav class="kid-dock" aria-label="Quick navigation">
     <button type="button" data-open-dialog="child-plan"><span>&#9788;</span>Today</button>
     {% if not profile.grounded %}
     <button type="button" data-open-dialog="child-stars"><span>&#9733;</span>Stars</button>
     <button type="button" data-open-dialog="child-store"><span>&#127873;</span>Store</button>
-    <button type="button" data-open-dialog="child-wallet"><span>&#8644;</span>Wallet</button>
+    <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
     {% else %}
     <button type="button" data-open-dialog="child-chores"><span>&#10003;</span>Quests</button>
     {% endif %}

@@ -372,3 +372,9 @@ class ReminderDispatch(models.Model):
     day = models.DateField(unique=True)
     sent_at = models.DateTimeField(auto_now_add=True)
     recipient_count = models.PositiveIntegerField(default=0)
+
+
+class ScheduleReminderDispatch(models.Model):
+    day = models.DateField(unique=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
+    recipient_count = models.PositiveIntegerField(default=0)

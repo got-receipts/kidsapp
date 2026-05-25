@@ -1,5 +1,5 @@
 {% load rewards_tags %}
-<section class="pay-screen {% if wallet_embedded %}pay-screen-embedded{% endif %}">
+<section class="pay-screen">
   <header class="payment-header">
     <div>
       <p class="pay-label">Available Spending</p>
@@ -14,7 +14,6 @@
   </div>
   <form class="cashpad" method="post" data-money-pad>
     {% csrf_token %}
-    {% if wallet_embedded %}<input type="hidden" name="wallet_surface" value="dashboard">{% endif %}
     <input type="hidden" name="cash_amount" value="0.00" data-money-input>
     <p class="pay-label amount-label">Enter amount</p>
     <div class="pay-amount" aria-live="polite"><span>$</span><output data-money-display>0.00</output></div>

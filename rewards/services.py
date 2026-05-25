@@ -20,6 +20,11 @@ CHORE_LIBRARY = [
     ("Bedtime reset", "Put away the items you used today."),
 ]
 
+MORNING_OPTIONAL_LIBRARY = [
+    ("Make your bed", "Straighten blankets and pillows before 10:00 AM."),
+    ("Dress yourself", "Pick out clothes and get dressed before 10:00 AM."),
+]
+
 
 def ensure_today_chores():
     children = list(Profile.objects.filter(role=Profile.Role.CHILD).order_by("display_name"))
@@ -39,14 +44,15 @@ def ensure_today_chores():
             },
         )
     for child in children:
-        Chore.objects.get_or_create(
-            child=child,
-            title="Make your bed",
-            due_date=today,
-            defaults={
-                "instructions": "Straighten blankets and pillows before 10:00 AM.",
-                "token_reward": 4,
-                "credit_deadline": time(10, 0),
-                "optional": True,
-            },
-        )
+        for title, instructions in MORNING_OPTIONAL_LIBRARY:
+            Chore.objects.get_or_create(
+                child=child,
+                title=title,
+                due_date=today,
+                defaults={
+                    "instructions": instructions,
+                    "token_reward": 4,
+                    "credit_deadline": time(10, 0),
+                    "optional": True,
+                },
+            )
