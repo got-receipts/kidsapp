@@ -6,6 +6,8 @@ from . import views
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("apps/<str:section>/", views.child_section, name="child_section"),
+    path("messages/", views.messages_inbox, name="messages_inbox"),
+    path("messages/<int:recipient_pk>/", views.message_thread, name="message_thread"),
     path("login/", views.FamilyLoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("health/", views.health, name="health"),

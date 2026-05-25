@@ -15,6 +15,7 @@ from .models import (
     Chore,
     DailyScheduleEvent,
     FamilySettings,
+    FamilyMessage,
     HouseRule,
     LedgerRequest,
     Notification,
@@ -559,6 +560,55 @@ class LedgerApprovalTests(TestCase):
         )
 
         self.assertRedirects(response, reverse("child_section", args=["chores"]))
+
+    def test_messages_icon_shows_unread_and_opening_thread_marks_message_read(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        message = FamilyMessage.objects.create(sender=mom, recipient=self.child, body="Dinner is at six.")
+        self.client.force_login(self.child.user)
+
+        home = self.client.get(reverse("dashboard"))
+        self.assertContains(home, reverse("messages_inbox"))
+        self.assertContains(home, "1 new")
+
+        inbox = self.client.get(reverse("messages_inbox"))
+        self.assertContains(inbox, "Mom")
+        self.assertContains(inbox, "Dinner is at six.")
+
+        thread = self.client.get(reverse("message_thread", args=[mom.pk]))
+        self.assertContains(thread, "Dinner is at six.")
+        message.refresh_from_db()
+        self.assertIsNotNone(message.read_at)
+
+    def test_child_can_message_family_members_and_mom_can_reply(self):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        self.client.force_login(self.child.user)
+
+        for recipient in (sibling, self.guardian, mom):
+            self.client.post(reverse("message_thread", args=[recipient.pk]), {"body": f"Hi {recipient.display_name}"})
+
+        self.assertEqual(FamilyMessage.objects.filter(sender=self.child).count(), 3)
+        self.assertTrue(FamilyMessage.objects.filter(sender=self.child, recipient=mom, body="Hi Mom").exists())
+
+        self.client.force_login(mom.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, reverse("messages_inbox"))
+        self.assertContains(dashboard, "Messages")
+        self.client.post(reverse("message_thread", args=[self.child.pk]), {"body": "Hi back!"})
+        self.assertTrue(FamilyMessage.objects.filter(sender=mom, recipient=self.child, body="Hi back!").exists())
+
+    def test_messages_reject_self_recipient(self):
+        with self.assertRaises(ValidationError):
+            FamilyMessage.objects.create(sender=self.child, recipient=self.child, body="Note to self")
+
+        self.client.force_login(self.child.user)
+        response = self.client.post(reverse("message_thread", args=[self.child.pk]), {"body": "Still no"})
+        self.assertRedirects(response, reverse("messages_inbox"))
+        self.assertFalse(FamilyMessage.objects.exists())
 
     def test_guardian_daily_plan_and_rules_appear_in_child_morning_message(self):
         self.client.force_login(self.guardian.user)

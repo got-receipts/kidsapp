@@ -13,7 +13,7 @@ from django.db.models import Case, F, IntegerField, Q, Sum, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
 from .forms import (
     AwardForm,
@@ -23,6 +23,7 @@ from .forms import (
     ChildRuleForm,
     ChoreForm,
     DailyScheduleEventForm,
+    FamilyMessageForm,
     FamilySettingsForm,
     GoalForm,
     GradeForm,
@@ -42,6 +43,7 @@ from .models import (
     ChildRule,
     Chore,
     DailyScheduleEvent,
+    FamilyMessage,
     FamilySettings,
     GrowthGoal,
     HouseRule,
@@ -167,6 +169,27 @@ def _notify(child, kind, title, message):
 
 def _audit(actor, child, action, description, **related):
     AuditLog.objects.create(actor=actor, child=child, action=action, description=description[:240], **related)
+
+
+def _message_query(profile, contact):
+    return Q(sender=profile, recipient=contact) | Q(sender=contact, recipient=profile)
+
+
+def _unread_message_count(profile):
+    return profile.received_family_messages.filter(read_at__isnull=True).count()
+
+
+def _message_contacts(profile):
+    contacts = list(Profile.objects.exclude(pk=profile.pk).order_by("display_name"))
+    for contact in contacts:
+        contact.last_message = (
+            FamilyMessage.objects.filter(_message_query(profile, contact))
+            .select_related("sender")
+            .order_by("-created_at")
+            .first()
+        )
+        contact.unread_count = profile.received_family_messages.filter(sender=contact, read_at__isnull=True).count()
+    return contacts
 
 
 def _expire_rules():
@@ -318,6 +341,7 @@ def _child_context(profile, family_settings, include_welcome=True):
         "specific_rules": specific_rules,
         "house_rules": house_rules,
         "unread_notifications": profile.notifications.filter(read_at__isnull=True)[:10],
+        "unread_message_count": _unread_message_count(profile),
         "show_recap": include_welcome and profile.last_recap_day != today,
         "recap_first_visit": since is None,
         "recap_star_count": recap_stars.count(),
@@ -429,9 +453,58 @@ def dashboard(request):
             "balance_form": BalanceAdjustmentForm(),
             "grounding_form": GroundingForm(),
             "dad_controls": dad_controls,
+            "unread_message_count": _unread_message_count(profile),
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
+
+
+@login_required
+@require_http_methods(["GET"])
+def messages_inbox(request):
+    profile = _profile(request)
+    return render(
+        request,
+        "rewards/messages_inbox.html",
+        {
+            "profile": profile,
+            "contacts": _message_contacts(profile),
+            "unread_message_count": _unread_message_count(profile),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def message_thread(request, recipient_pk):
+    profile = _profile(request)
+    recipient = get_object_or_404(Profile, pk=recipient_pk)
+    if recipient.pk == profile.pk:
+        messages.error(request, "Choose another family member to send a message.")
+        return redirect("messages_inbox")
+    profile.received_family_messages.filter(sender=recipient, read_at__isnull=True).update(read_at=timezone.now())
+    if request.method == "POST":
+        form = FamilyMessageForm(request.POST)
+        if form.is_valid():
+            message = form.save(commit=False)
+            message.sender = profile
+            message.recipient = recipient
+            message.save()
+            return redirect("message_thread", recipient_pk=recipient.pk)
+        messages.error(request, "Write a message before sending.")
+    else:
+        form = FamilyMessageForm()
+    return render(
+        request,
+        "rewards/message_thread.html",
+        {
+            "profile": profile,
+            "recipient": recipient,
+            "thread_messages": FamilyMessage.objects.filter(_message_query(profile, recipient)).select_related("sender"),
+            "message_form": form,
+            "unread_message_count": _unread_message_count(profile),
+        },
+    )
 
 
 @login_required

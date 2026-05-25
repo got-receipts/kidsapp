@@ -24,6 +24,7 @@ This is private family software. All rights reserved; it is not intended for red
 - Cash App-style available cash, parent-recorded real-world spending, and sibling cash transfers.
 - Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
+- Private in-app Messages with child, sibling, guardian, and Mom conversations in a phone-style bubble interface.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
 - A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights without editing or financial controls.
 - Inventory-aware Family Store items with token prices, cash prices, mixed prices, hidden/unlocked state, age limits, and optional redemption approval.

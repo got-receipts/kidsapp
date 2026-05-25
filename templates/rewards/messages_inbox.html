@@ -1,0 +1,36 @@
+{% extends "rewards/base.html" %}
+{% block title %}Messages | Family Circle{% endblock %}
+{% block content %}
+<main class="shell ios-messages-shell {% if profile.role == 'child' %}kid-shell{% endif %}">
+  <header class="ios-messages-nav">
+    <a class="ios-back" href="{% url 'dashboard' %}"><span>&lsaquo;</span> Home</a>
+    <strong>Messages</strong>
+    <span class="ios-nav-spacer"></span>
+  </header>
+  <section class="ios-inbox-heading">
+    <h1>Messages</h1>
+    {% if unread_message_count %}<span>{{ unread_message_count }} unread</span>{% endif %}
+  </section>
+  <section class="ios-conversation-list" aria-label="Family conversations">
+    {% for contact in contacts %}
+      <a class="ios-conversation {% if contact.unread_count %}unread{% endif %}" href="{% url 'message_thread' contact.pk %}">
+        <span class="ios-avatar">{{ contact.display_name|first }}</span>
+        <div>
+          <strong>{{ contact.display_name }}</strong>
+          <small>{{ contact.get_role_display }}</small>
+          {% if contact.last_message %}
+            <p>{% if contact.last_message.sender_id == profile.pk %}You: {% endif %}{{ contact.last_message.body|truncatechars:52 }}</p>
+          {% else %}
+            <p>Start a conversation</p>
+          {% endif %}
+        </div>
+        {% if contact.last_message %}<time>{{ contact.last_message.created_at|date:"g:i A" }}</time>{% endif %}
+        {% if contact.unread_count %}<b class="ios-unread">{{ contact.unread_count }}</b>{% else %}<b class="ios-chevron">&rsaquo;</b>{% endif %}
+      </a>
+    {% empty %}
+      <p class="ios-empty">No other family profiles are available to message yet.</p>
+    {% endfor %}
+  </section>
+  <p class="ios-message-safety">Messages stay inside your family's private app.</p>
+</main>
+{% endblock %}

@@ -110,12 +110,13 @@
     <a class="map-growth" href="{% url 'child_section' 'goals' %}"><b>&uarr;</b><strong>Grow</strong><small>My progress</small></a>
     <a class="map-wallet" href="{% url 'wallet_page' %}"><b>&#8644;</b><strong>Wallet</strong><small>Cash out tokens</small></a>
     {% endif %}
+    <a class="map-messages" href="{% url 'messages_inbox' %}"><b>&#9993;</b><strong>Messages</strong><small>{% if unread_message_count %}{{ unread_message_count }} new{% else %}Family chat{% endif %}</small></a>
     <a class="map-plan" href="{% url 'child_section' 'today' %}"><b>&#9788;</b><strong>Today</strong><small>Plan &amp; rules</small></a>
   </nav>
   <nav class="kid-dock" aria-label="Quick navigation">
     <a href="{% url 'child_section' 'today' %}"><span>&#9788;</span>Today</a>
+    <a class="dock-messages" href="{% url 'messages_inbox' %}"><span>&#9993;</span>Messages{% if unread_message_count %}<b class="dock-count">{{ unread_message_count }}</b>{% endif %}</a>
     {% if not profile.grounded %}
-    <a href="{% url 'child_section' 'badges' %}"><span>&#9733;</span>Badges</a>
     <a href="{% url 'child_section' 'store' %}"><span>&#127873;</span>Store</a>
     <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
     {% else %}

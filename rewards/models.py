@@ -573,6 +573,35 @@ class Notification(models.Model):
         ordering = ["-created_at"]
 
 
+class FamilyMessage(models.Model):
+    sender = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="sent_family_messages")
+    recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="received_family_messages")
+    body = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    def clean(self):
+        if self.sender_id and self.sender_id == self.recipient_id:
+            raise ValidationError("You cannot send a message to yourself.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(sender=F("recipient")),
+                name="family_message_recipient_differs_from_sender",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["recipient", "read_at"], name="message_unread_idx"),
+            models.Index(fields=["sender", "recipient", "created_at"], name="message_thread_idx"),
+        ]
+
+
 class AuditLog(models.Model):
     actor = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_actions")
     child = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_entries")

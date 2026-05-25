@@ -245,6 +245,17 @@ document.querySelectorAll("[data-go-back]").forEach((button) => {
   });
 });
 
+const messageThread = document.querySelector("[data-message-thread]");
+if (messageThread) {
+  messageThread.scrollTop = messageThread.scrollHeight;
+}
+document.querySelectorAll(".ios-composer textarea").forEach((field) => {
+  field.addEventListener("input", () => {
+    field.style.height = "auto";
+    field.style.height = `${Math.min(field.scrollHeight, 104)}px`;
+  });
+});
+
 const guardianGrid = document.querySelector(".guardian .grid");
 if (guardianGrid) {
   const modules = Array.from(guardianGrid.querySelectorAll("[data-dashboard-module]"));

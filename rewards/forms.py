@@ -9,6 +9,7 @@ from .models import (
     Chore,
     DailyScheduleEvent,
     FamilySettings,
+    FamilyMessage,
     Grade,
     GrowthGoal,
     HouseRule,
@@ -163,6 +164,28 @@ class GroundingForm(forms.Form):
         if lift_at and lift_at <= timezone.now():
             raise forms.ValidationError("Scheduled lift time must be in the future.")
         return lift_at
+
+
+class FamilyMessageForm(forms.ModelForm):
+    class Meta:
+        model = FamilyMessage
+        fields = ["body"]
+        widgets = {
+            "body": forms.Textarea(
+                attrs={
+                    "rows": 1,
+                    "maxlength": 1000,
+                    "placeholder": "iMessage",
+                    "aria-label": "Message",
+                }
+            )
+        }
+
+    def clean_body(self):
+        body = self.cleaned_data["body"].strip()
+        if not body:
+            raise forms.ValidationError("Write a message before sending.")
+        return body
 
 
 class TokenCashoutForm(forms.Form):

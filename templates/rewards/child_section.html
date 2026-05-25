@@ -15,6 +15,7 @@
   <nav class="child-app-switcher" aria-label="Switch apps">
     <a class="{% if active_section == 'today' %}active{% endif %}" href="{% url 'child_section' 'today' %}">Today</a>
     <a class="{% if active_section == 'chores' %}active{% endif %}" href="{% url 'child_section' 'chores' %}">Quests</a>
+    <a href="{% url 'messages_inbox' %}">Messages{% if unread_message_count %} ({{ unread_message_count }}){% endif %}</a>
     {% if not profile.grounded %}
     <a class="{% if active_section == 'badges' %}active{% endif %}" href="{% url 'child_section' 'badges' %}">Badges</a>
     <a class="{% if active_section == 'store' %}active{% endif %}" href="{% url 'child_section' 'store' %}">Store</a>
@@ -157,6 +158,7 @@
   {% endif %}
   <nav class="kid-dock child-app-dock" aria-label="App navigation">
     <a href="{% url 'dashboard' %}"><span>&#8962;</span>Home</a>
+    <a class="dock-messages" href="{% url 'messages_inbox' %}"><span>&#9993;</span>Messages</a>
     <a href="{% url 'child_section' 'today' %}"><span>&#9788;</span>Today</a>
     <a href="{% url 'child_section' 'chores' %}"><span>&#10003;</span>Quests</a>
     {% if not profile.grounded %}<a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>{% endif %}

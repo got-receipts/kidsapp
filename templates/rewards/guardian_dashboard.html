@@ -6,7 +6,7 @@
 <main class="shell guardian">
   <header class="topbar">
     <div class="identity"><img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt=""><div><small>{% if can_manage %}Guardian{% else %}Family Viewer{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
-    <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
+    <div class="top-actions"><a class="top-message-link" href="{% url 'messages_inbox' %}">Messages{% if unread_message_count %}<b>{{ unread_message_count }}</b>{% endif %}</a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
   <section class="wallet-card guardian-card">
     <p class="eyebrow">{% if can_manage %}Family control center{% else %}Family progress view{% endif %}</p>
