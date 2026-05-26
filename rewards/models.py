@@ -478,24 +478,6 @@ class VideoClip(models.Model):
         return self.title
 
 
-class VideoPlaylistAssignment(models.Model):
-    playlist = models.ForeignKey(VideoPlaylist, on_delete=models.CASCADE, related_name="assignments")
-    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="video_playlist_assignments")
-    enabled = models.BooleanField(default=True)
-    assigned_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="video_playlist_assignments_created")
-    assigned_at = models.DateTimeField(auto_now_add=True)
-
-    def clean(self):
-        if self.child_id and self.child.role != Profile.Role.CHILD:
-            raise ValidationError("Discover playlists may only be assigned to child accounts.")
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=["playlist", "child"], name="one_video_playlist_assignment_per_child")
-        ]
-        ordering = ["playlist__title"]
-
-
 class VideoFavorite(models.Model):
     child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="video_favorites")
     clip = models.ForeignKey(VideoClip, on_delete=models.CASCADE, related_name="favorites")

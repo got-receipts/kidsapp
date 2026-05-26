@@ -290,7 +290,7 @@ class VideoPlaylistForm(forms.ModelForm):
         labels = {
             "title": "Playlist name",
             "description": "Description (optional)",
-            "active": "Available when assigned",
+            "active": "Available to every child",
         }
 
     def clean_youtube_playlist_id(self):

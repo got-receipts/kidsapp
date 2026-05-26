@@ -25,9 +25,9 @@ This is private family software. All rights reserved; it is not intended for red
 - Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
 - A native child Shopping app with an editable 50-product starter catalog, built-in category illustrations, retail-price snapshots, cash-only carts, and parent fulfillment.
-- A native child Discover app with a vertical parent-approved video feed, optional approved YouTube playlist sources, in-app likes, activity summaries, Grounded Mode blocking, and independent viewing-hour lock schedules.
+- A native child Discover app with a family-wide parent-approved video feed, optional approved YouTube playlist sources, translucent next/previous controls, in-app likes, activity summaries, Grounded Mode blocking, and independent viewing-hour lock schedules.
 - Private in-app Messages with child, sibling, guardian, and Mom conversations in a phone-style bubble interface.
-- LiveKit Cloud-powered one-to-one family audio/video calling from Messages, with parent-managed child lock schedules, six daily free child calls, one-token additional calls, and a five-minute reconnect window.
+- LiveKit Cloud-powered one-to-one family audio/video calling among children, Mom, Dad, and GG from Messages, with parent-managed child lock schedules, six daily free child calls, one-token additional calls, and a five-minute reconnect window.
 - Parent OS home screen with native Controls, Wallet, Approvals, Calendar, Rules, Limits, Store, Fulfillment, Video Library, Progress, Audit, and Ledger apps.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
 - A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights, with access limited to Shopping fulfillment and Discover video curation actions.
@@ -36,7 +36,7 @@ This is private family software. All rights reserved; it is not intended for red
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.8.0`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.9.1`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -117,15 +117,15 @@ On iPhone, push notifications require installing the PWA from Safari using **Add
 
 ## Discover Video Library
 
-Discover is a separate native child OS app modeled on the parent-curated short-video concept in KidVid. It does not replace the home-screen launcher, wallet, shopping, messages, or calling features. Children swipe through only active videos in active playlists assigned to their profile; favorites and watch summaries stay inside Family Circle.
+Discover is a separate native child OS app modeled on the parent-curated short-video concept in KidVid. It does not replace the home-screen launcher, wallet, shopping, messages, or calling features. All children can watch active content in the family Video Library; individual Grounded Mode and viewing schedules can still block access for a specific child. Children swipe through hand-picked videos or use the translucent controls to advance linked playlist videos; favorites and watch summaries stay inside Family Circle.
 
-Dad, GG, and Mom can open **Video Library** on the parent home screen to create playlists, paste a reviewed public YouTube playlist link for playback as a complete source, add individual reviewed YouTube video or Shorts links, reorder or hide individual clips, assign playlists to the selected child, and add regular Discover lock hours. Grounded Mode blocks Discover automatically in addition to those schedules.
+Dad, GG, and Mom can open **Video Library** on the parent home screen to publish playlists to every child, paste a reviewed public YouTube playlist link for playback as a complete source, add individual reviewed YouTube video or Shorts links, reorder or hide individual clips, and add per-child Discover lock hours. Grounded Mode blocks Discover automatically in addition to those schedules.
 
 YouTube videos are played through YouTube's embedded player with the app origin and referrer identity required by YouTube's embed policy. The Family Circle interface provides no child-facing open search, comments, or direct video links, but an embedded YouTube player and a linked public playlist remain subject to YouTube's playback behavior, playlist contents, and policies.
 
 ## Family Calling
 
-Audio and video calls stay inside Messages and connect through LiveKit Cloud. Configure the following Railway environment variables; `LIVEKIT_API_SECRET` must remain server-side and is used only by Django to issue short-lived participant tokens:
+Audio and video calls stay inside Messages and connect through LiveKit Cloud. Children, Mom, Dad, and GG can call one another; incoming call alerts appear throughout the authenticated app so a user does not need to remain on the Messages screen. Configure the following Railway environment variables; `LIVEKIT_API_SECRET` must remain server-side and is used only by Django to issue short-lived participant tokens:
 
 ```text
 LIVEKIT_WS_URL=wss://your-project.livekit.cloud

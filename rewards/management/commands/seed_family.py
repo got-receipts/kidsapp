@@ -3,7 +3,7 @@ import os
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
-from rewards.models import GrowthGoal, HouseRule, Profile, StoreItem, Wallet
+from rewards.models import GrowthGoal, HouseRule, Profile, StoreItem, VideoPlaylist, Wallet
 from rewards.services import ensure_today_chores
 
 
@@ -84,6 +84,20 @@ class Command(BaseCommand):
             StoreItem.objects.get_or_create(
                 name=name,
                 defaults={"description": description, "token_cost": cost, "category": category},
+            )
+        discover_playlists = [
+            ("Family Discover Mix 1", "PLcpk5TCg3vzfFoNIsmxY92jQjTZN7Vlw3"),
+            ("Family Discover Mix 2", "PLasCX3wfxLR12dNqE3QqYSY4AXyV8qRD8"),
+            ("Family Discover Mix 3", "PLEPQby6_o7m34KVQslk3BJV-nWgBhD-mk"),
+        ]
+        for title, youtube_playlist_id in discover_playlists:
+            VideoPlaylist.objects.get_or_create(
+                youtube_playlist_id=youtube_playlist_id,
+                defaults={
+                    "title": title,
+                    "description": "Parent-approved YouTube playlist.",
+                    "active": True,
+                },
             )
         for child in children:
             GrowthGoal.objects.get_or_create(

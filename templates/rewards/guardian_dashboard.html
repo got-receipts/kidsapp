@@ -648,7 +648,7 @@
         <dialog class="review-dialog action-dialog" id="action-video-playlist">
           <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
           <p class="eyebrow">Discover</p><h2>Create playlist</h2>
-          <p>Children only watch active videos from playlists assigned to their account.</p>
+          <p>Active playlists appear for every child in the family Discover app.</p>
           <form class="form" method="post" action="{% url 'guardian_video_playlist_create' %}">
             {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ video_playlist_form.as_p }}
             <button class="primary" type="submit">Create playlist</button>
@@ -656,7 +656,7 @@
         </dialog>
         <article class="card video-library">
           <div class="card-head"><h2>Discover playlists</h2><span class="badge">Approved only</span></div>
-          <p class="control-note">Add individual approved videos or paste an approved public YouTube playlist link, then choose what appears in {{ selected.display_name }}'s native Discover app. Children have no open video search or comments.</p>
+          <p class="control-note">Add individual approved videos or paste an approved public YouTube playlist link. Active library content appears for every child, while individual screen-time locks still apply. Children have no open video search or comments.</p>
           {% for playlist in video_playlists %}
           <section class="video-playlist-card">
             <div class="video-playlist-head">
@@ -664,10 +664,6 @@
               <span class="badge {% if not playlist.active %}waiting{% endif %}">{% if playlist.active %}Active{% else %}Paused{% endif %}</span>
             </div>
             <div class="video-playlist-actions">
-              <form method="post" action="{% url 'guardian_video_assignment_toggle' playlist.pk %}">
-                {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-                <button class="{% if playlist.pk in selected_video_playlist_ids %}action{% else %}primary{% endif %}" type="submit">{% if playlist.pk in selected_video_playlist_ids %}Remove from {{ selected.display_name }}{% else %}Assign to {{ selected.display_name }}{% endif %}</button>
-              </form>
               <button class="remove-button" type="button" data-open-dialog="video-add-{{ playlist.pk }}">Add video</button>
               <button class="remove-button" type="button" data-open-dialog="video-edit-{{ playlist.pk }}">Edit</button>
               <form method="post" action="{% url 'guardian_video_playlist_toggle' playlist.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if playlist.active %}Pause{% else %}Enable{% endif %}</button></form>
@@ -712,7 +708,7 @@
               <p><label>Playlist name<input name="title" maxlength="100" required value="{{ playlist.title }}"></label></p>
               <p><label>Description (optional)<input name="description" maxlength="240" value="{{ playlist.description }}"></label></p>
               <p><label>YouTube playlist URL or ID (optional)<input name="youtube_playlist_id" maxlength="500" value="{% if playlist.youtube_playlist_id %}https://www.youtube.com/playlist?list={{ playlist.youtube_playlist_id }}{% endif %}" placeholder="Paste a reviewed public playlist link"></label></p>
-              <p><label><input name="active" type="checkbox" {% if playlist.active %}checked{% endif %}> Available when assigned</label></p>
+              <p><label><input name="active" type="checkbox" {% if playlist.active %}checked{% endif %}> Available to every child</label></p>
               <button class="primary" type="submit">Save playlist</button>
             </form>
           </dialog>

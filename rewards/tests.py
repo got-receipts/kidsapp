@@ -33,7 +33,6 @@ from .models import (
     VideoClip,
     VideoFavorite,
     VideoPlaylist,
-    VideoPlaylistAssignment,
     VideoWatchEvent,
     Wallet,
 )
@@ -724,11 +723,11 @@ class LedgerApprovalTests(TestCase):
 
         self.assertRedirects(response, reverse("child_section", args=["chores"]))
 
-    def test_discover_is_native_child_app_and_serves_only_assigned_parent_videos(self):
-        assigned = VideoPlaylist.objects.create(title="Space Wonders", created_by=self.guardian)
-        unassigned = VideoPlaylist.objects.create(title="Not for this child", created_by=self.guardian)
+    def test_discover_is_native_child_app_and_serves_active_family_videos_to_children(self):
+        shared = VideoPlaylist.objects.create(title="Space Wonders", created_by=self.guardian)
+        paused = VideoPlaylist.objects.create(title="Paused playlist", active=False, created_by=self.guardian)
         clip = VideoClip.objects.create(
-            playlist=assigned,
+            playlist=shared,
             youtube_id="dQw4w9WgXcQ",
             title="Explore the Moon",
             subject_tag="Space",
@@ -736,13 +735,12 @@ class LedgerApprovalTests(TestCase):
             added_by=self.guardian,
         )
         VideoClip.objects.create(
-            playlist=unassigned,
+            playlist=paused,
             youtube_id="M7lc1UVf-VE",
-            title="Unassigned video",
+            title="Paused video",
             position=1,
             added_by=self.guardian,
         )
-        VideoPlaylistAssignment.objects.create(playlist=assigned, child=self.child, assigned_by=self.guardian)
         self.client.force_login(self.child.user)
 
         home = self.client.get(reverse("dashboard"))
@@ -754,9 +752,11 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "Explore the Moon")
         self.assertContains(response, "youtube.com/embed/dQw4w9WgXcQ")
         self.assertContains(response, "origin=http%3A%2F%2Ftestserver")
+        self.assertContains(response, "data-discover-prev")
+        self.assertContains(response, "data-discover-next")
         self.assertContains(response, "Back")
         self.assertContains(response, "Home")
-        self.assertNotContains(response, "Unassigned video")
+        self.assertNotContains(response, "Paused video")
         watch = self.client.post(reverse("discover_watch", args=[clip.pk]))
         favorite = self.client.post(
             reverse("discover_favorite", args=[clip.pk]),
@@ -766,6 +766,11 @@ class LedgerApprovalTests(TestCase):
         self.assertTrue(favorite.json()["favorited"])
         self.assertTrue(VideoWatchEvent.objects.filter(child=self.child, clip=clip).exists())
         self.assertTrue(VideoFavorite.objects.filter(child=self.child, clip=clip).exists())
+        sibling_user = User.objects.create_user(username="sibling", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        self.client.force_login(sibling_user)
+        self.assertContains(self.client.get(reverse("discover_page")), "Explore the Moon")
 
     def test_grounding_and_discover_schedule_each_lock_the_child_feed(self):
         playlist = VideoPlaylist.objects.create(title="Cooking Fun", created_by=self.guardian)
@@ -776,7 +781,6 @@ class LedgerApprovalTests(TestCase):
             position=1,
             added_by=self.guardian,
         )
-        VideoPlaylistAssignment.objects.create(playlist=playlist, child=self.child, assigned_by=self.guardian)
         self.child.grounded = True
         self.child.save(update_fields=["grounded"])
         self.client.force_login(self.child.user)
@@ -804,7 +808,7 @@ class LedgerApprovalTests(TestCase):
         self.assertTrue(status.json()["locked"])
         self.assertEqual(status.json()["reason"], "schedule")
 
-    def test_mom_manages_video_library_assignments_and_discover_schedules_only(self):
+    def test_mom_publishes_family_video_library_and_manages_child_discover_schedules_only(self):
         mom_user = User.objects.create_user(username="mom", password="test")
         mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
         self.client.force_login(mom.user)
@@ -831,7 +835,6 @@ class LedgerApprovalTests(TestCase):
                 "subject_tag": "Animals",
             },
         )
-        self.client.post(reverse("guardian_video_assignment_toggle", args=[playlist.pk]), {"child_id": self.child.pk})
         self.client.post(
             reverse("guardian_discover_schedule"),
             {
@@ -849,7 +852,6 @@ class LedgerApprovalTests(TestCase):
 
         self.assertTrue(VideoClip.objects.filter(playlist=playlist, title="Amazing habitats").exists())
         self.assertEqual(playlist.youtube_playlist_id, "PL1234567890animals")
-        self.assertTrue(VideoPlaylistAssignment.objects.filter(playlist=playlist, child=self.child, enabled=True).exists())
         self.assertTrue(DiscoverSchedule.objects.filter(child=self.child, created_by=mom).exists())
         self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.DISCOVER).exists())
         self.assertFalse(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.AWARD).exists())
@@ -997,6 +999,55 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(self.client.get(reverse("call_status", args=[call.pk])).status_code, 403)
         token_builder.assert_called_once()
+
+    @override_settings(LIVEKIT_WS_URL="wss://family.livekit.cloud", LIVEKIT_API_KEY="key", LIVEKIT_API_SECRET="secret")
+    @patch("rewards.views._make_livekit_token", return_value="adult-child-token")
+    def test_mom_dad_and_gg_can_call_children_and_receive_child_calls(self, token_builder):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        gg_user = User.objects.create_user(username="gg", password="test")
+        gg = Profile.objects.create(user=gg_user, display_name="GG", role=Profile.Role.GUARDIAN)
+
+        for adult in (mom, self.guardian, gg):
+            self.client.force_login(adult.user)
+            home = self.client.get(reverse("dashboard"))
+            self.assertContains(home, "data-incoming-call-url")
+            self.client.post(reverse("start_family_call", args=[self.child.pk, "video"]))
+            outgoing = FamilyCall.objects.get(caller=adult, recipient=self.child)
+            self.assertEqual(outgoing.status, FamilyCall.Status.RINGING)
+
+            self.client.force_login(self.child.user)
+            incoming = self.client.get(reverse("incoming_call_status"))
+            self.assertEqual(incoming.json()["call"]["caller"], adult.display_name)
+            self.client.post(reverse("decline_family_call", args=[outgoing.pk]))
+
+            self.client.post(reverse("start_family_call", args=[adult.pk, "audio"]))
+            child_call = FamilyCall.objects.get(caller=self.child, recipient=adult, status=FamilyCall.Status.RINGING)
+            self.client.force_login(adult.user)
+            self.client.post(reverse("accept_family_call", args=[child_call.pk]))
+            token_response = self.client.get(reverse("call_token", args=[child_call.pk]))
+            self.assertEqual(token_response.json()["token"], "adult-child-token")
+            self.client.post(reverse("end_family_call", args=[child_call.pk]))
+
+        self.assertEqual(token_builder.call_count, 3)
+
+    def test_seeded_family_discover_playlists_are_active_for_all_children(self):
+        playlist_ids = {
+            "PLcpk5TCg3vzfFoNIsmxY92jQjTZN7Vlw3",
+            "PLasCX3wfxLR12dNqE3QqYSY4AXyV8qRD8",
+            "PLEPQby6_o7m34KVQslk3BJV-nWgBhD-mk",
+        }
+        for playlist_id in playlist_ids:
+            VideoPlaylist.objects.create(title=playlist_id, youtube_playlist_id=playlist_id, active=True)
+        sibling_user = User.objects.create_user(username="discover-sibling", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+
+        for child in (self.child, sibling):
+            self.client.force_login(child.user)
+            response = self.client.get(reverse("discover_page"))
+            for playlist_id in playlist_ids:
+                self.assertContains(response, f"youtube.com/embed/videoseries?list={playlist_id}")
 
     @override_settings(
         LIVEKIT_WS_URL="wss://family.livekit.cloud",

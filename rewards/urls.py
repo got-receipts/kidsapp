@@ -62,7 +62,6 @@ urlpatterns = [
     path("guardian/discover/playlist/<int:pk>/toggle/", views.guardian_video_playlist_toggle, name="guardian_video_playlist_toggle"),
     path("guardian/discover/playlist/<int:pk>/delete/", views.guardian_video_playlist_delete, name="guardian_video_playlist_delete"),
     path("guardian/discover/playlist/<int:playlist_pk>/clip/add/", views.guardian_video_clip_add, name="guardian_video_clip_add"),
-    path("guardian/discover/playlist/<int:playlist_pk>/assign/", views.guardian_video_assignment_toggle, name="guardian_video_assignment_toggle"),
     path("guardian/discover/clip/<int:pk>/toggle/", views.guardian_video_clip_toggle, name="guardian_video_clip_toggle"),
     path("guardian/discover/clip/<int:pk>/move/<str:direction>/", views.guardian_video_clip_move, name="guardian_video_clip_move"),
     path("guardian/discover/clip/<int:pk>/delete/", views.guardian_video_clip_delete, name="guardian_video_clip_delete"),

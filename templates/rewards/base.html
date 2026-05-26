@@ -25,7 +25,7 @@
     <link rel="stylesheet" href="{% static 'rewards/styles.css' %}">
     <script defer src="{% static 'rewards/app.js' %}"></script>
   </head>
-  <body>
+  <body{% if request.user.is_authenticated %} data-incoming-call-url="{% url 'incoming_call_status' %}"{% endif %}>
     <div class="connection-sequence" data-connection-sequence data-variant="{% if request.user.is_authenticated and request.user.profile.role == 'child' %}child{% elif request.user.is_authenticated %}guardian{% else %}welcome{% endif %}" aria-hidden="true">
       <div class="connection-aurora"></div>
       <div class="connection-grid"></div>
@@ -44,6 +44,11 @@
     {% if messages %}
       <div class="messages">
         {% for message in messages %}<div class="toast {{ message.tags }}">{{ message }}</div>{% endfor %}
+      </div>
+    {% endif %}
+    {% if request.user.is_authenticated %}
+      <div class="global-incoming-call">
+        <section class="incoming-call-banner hidden" data-incoming-call-banner></section>
       </div>
     {% endif %}
     {% block content %}{% endblock %}

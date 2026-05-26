@@ -786,6 +786,19 @@ a { color: inherit; text-decoration: none; }
   background: #e6f8ed;
   color: #173e26;
 }
+.global-incoming-call {
+  position: fixed;
+  z-index: 90;
+  top: max(12px, calc(env(safe-area-inset-top) + 8px));
+  right: 12px;
+  left: 12px;
+  width: min(calc(100% - 24px), 460px);
+  margin: 0 auto;
+}
+.global-incoming-call .incoming-call-banner {
+  margin: 0;
+  box-shadow: 0 12px 32px rgb(20 38 61 / 21%);
+}
 .incoming-call-banner.hidden { display: none; }
 .incoming-call-banner div { flex: 1; }
 .incoming-call-banner strong,
@@ -2595,6 +2608,33 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(8px);
 }
 .discover-favorite.liked b { background: #fd466d; color: #fff; }
+.discover-step-controls {
+  position: fixed;
+  z-index: 4;
+  top: 50%;
+  right: 14px;
+  display: grid;
+  gap: 10px;
+  transform: translateY(-50%);
+}
+.discover-step-controls button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 50%;
+  background: rgb(4 8 18 / 24%);
+  color: rgb(255 255 255 / 84%);
+  backdrop-filter: blur(7px);
+  transition: background .18s ease, transform .18s ease;
+}
+.discover-step-controls button:hover,
+.discover-step-controls button:focus-visible {
+  background: rgb(4 8 18 / 57%);
+  transform: scale(1.06);
+}
+.discover-step-controls span { font-size: 25px; line-height: 1; }
 .discover-swipe-hint {
   position: absolute;
   z-index: 2;

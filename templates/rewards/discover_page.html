@@ -19,7 +19,7 @@
   {% elif source_playlists or clips %}
     <div class="discover-reels" aria-label="Parent approved videos">
       {% for playlist in source_playlists %}
-      <article class="discover-reel" data-discover-slide>
+      <article class="discover-reel" data-discover-slide data-discover-playlist>
         <div class="discover-player">
           <iframe
             title="{{ playlist.title }}"
@@ -35,7 +35,7 @@
           <h1>{{ playlist.title }}</h1>
           <p>{{ playlist.description|default:"Approved by your family" }}</p>
         </div>
-        <div class="discover-swipe-hint">Use the player controls or swipe for more</div>
+        <div class="discover-swipe-hint">Tap arrows for previous or next video</div>
       </article>
       {% endfor %}
       {% for clip in clips %}
@@ -65,6 +65,10 @@
       </article>
       {% endfor %}
     </div>
+    <nav class="discover-step-controls" aria-label="Video navigation">
+      <button type="button" data-discover-prev aria-label="Previous video"><span>&uarr;</span></button>
+      <button type="button" data-discover-next aria-label="Next video"><span>&darr;</span></button>
+    </nav>
   {% else %}
     <section class="discover-unavailable empty-feed">
       <div class="discover-moon">&#9654;</div>

@@ -74,7 +74,6 @@ from .models import (
     VideoClip,
     VideoFavorite,
     VideoPlaylist,
-    VideoPlaylistAssignment,
     VideoWatchEvent,
     Wallet,
 )
@@ -98,7 +97,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v7';
+    source = """const CACHE = 'family-circle-v9';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -204,6 +203,11 @@ def _notify(child, kind, title, message):
         Notification.objects.create(recipient=child, kind=kind, title=title, message=message[:240])
 
 
+def _notify_all_children(kind, title, message):
+    for child in Profile.objects.filter(role=Profile.Role.CHILD):
+        _notify(child, kind, title, message)
+
+
 def _audit(actor, child, action, description, **related):
     AuditLog.objects.create(actor=actor, child=child, action=action, description=description[:240], **related)
 
@@ -253,29 +257,23 @@ def _discover_lock(profile):
     return None
 
 
-def _assigned_discover_clips(profile):
+def _active_discover_clips():
     return (
         VideoClip.objects.filter(
             active=True,
             playlist__active=True,
-            playlist__assignments__child=profile,
-            playlist__assignments__enabled=True,
         )
         .select_related("playlist")
-        .distinct()
         .order_by("playlist__title", "position", "created_at")
     )
 
 
-def _assigned_discover_playlists(profile):
+def _active_discover_playlists():
     return (
         VideoPlaylist.objects.filter(
             active=True,
-            assignments__child=profile,
-            assignments__enabled=True,
         )
         .exclude(youtube_playlist_id="")
-        .distinct()
         .order_by("title")
     )
 
@@ -667,14 +665,8 @@ def dashboard(request):
             "shopping_catalog": ShoppingProduct.objects.all() if dad_controls else [],
             "shopping_product_form": ShoppingProductForm() if dad_controls else None,
             "video_playlists": (
-                VideoPlaylist.objects.prefetch_related("clips", "assignments").all()
+                VideoPlaylist.objects.prefetch_related("clips").all()
                 if can_manage_video else []
-            ),
-            "selected_video_playlist_ids": (
-                list(
-                    selected.video_playlist_assignments.filter(enabled=True).values_list("playlist_id", flat=True)
-                )
-                if selected and can_manage_video else []
             ),
             "selected_discover_schedules": selected.discover_schedules.all() if selected and can_manage_video else [],
             "selected_video_favorites": (
@@ -1053,8 +1045,8 @@ def discover_page(request):
         messages.info(request, "Discover is locked while Grounded Mode is active.")
         return redirect("dashboard")
     schedule_lock = _discover_lock(profile)
-    clips = [] if schedule_lock else list(_assigned_discover_clips(profile))
-    source_playlists = [] if schedule_lock else list(_assigned_discover_playlists(profile))
+    clips = [] if schedule_lock else list(_active_discover_clips())
+    source_playlists = [] if schedule_lock else list(_active_discover_playlists())
     favorites = set(profile.video_favorites.filter(clip__in=clips).values_list("clip_id", flat=True))
     for clip in clips:
         clip.favorited = clip.pk in favorites
@@ -1091,7 +1083,7 @@ def discover_favorite(request, pk):
     profile = _profile(request)
     if profile.role != Profile.Role.CHILD or profile.grounded or _discover_lock(profile):
         return JsonResponse({"error": "Discover is not available right now."}, status=403)
-    clip = get_object_or_404(_assigned_discover_clips(profile), pk=pk)
+    clip = get_object_or_404(_active_discover_clips(), pk=pk)
     favorite, created = VideoFavorite.objects.get_or_create(child=profile, clip=clip)
     if not created:
         favorite.delete()
@@ -1107,7 +1099,7 @@ def discover_watch(request, pk):
     profile = _profile(request)
     if profile.role != Profile.Role.CHILD or profile.grounded or _discover_lock(profile):
         return JsonResponse({"error": "Discover is not available right now."}, status=403)
-    clip = get_object_or_404(_assigned_discover_clips(profile), pk=pk)
+    clip = get_object_or_404(_active_discover_clips(), pk=pk)
     with transaction.atomic():
         event, created = VideoWatchEvent.objects.select_for_update().get_or_create(child=profile, clip=clip)
         if not created:
@@ -1916,7 +1908,11 @@ def guardian_video_playlist_create(request):
     playlist.created_by = manager
     playlist.save()
     _audit(manager, None, "video_playlist_created", playlist.title)
-    messages.success(request, f"{playlist.title} created in Video Library.")
+    if playlist.active:
+        _notify_all_children(Notification.Kind.DISCOVER, "New Discover playlist", f"{playlist.title} is now available in Discover.")
+        messages.success(request, f"{playlist.title} published to every child's Discover app.")
+    else:
+        messages.success(request, f"{playlist.title} saved as a paused Discover playlist.")
     return redirect(f"/?child={selected_id}#parent-video-library")
 
 
@@ -1934,7 +1930,11 @@ def guardian_video_playlist_edit(request, pk):
         return redirect(f"/?child={selected_id}#parent-video-library")
     form.save()
     _audit(manager, None, "video_playlist_updated", playlist.title)
-    messages.success(request, "Discover playlist updated.")
+    if playlist.active:
+        _notify_all_children(Notification.Kind.DISCOVER, "Discover playlist updated", f"{playlist.title} was updated in Discover.")
+        messages.success(request, "Discover playlist updated for every child.")
+    else:
+        messages.success(request, "Paused Discover playlist updated.")
     return redirect(f"/?child={selected_id}#parent-video-library")
 
 
@@ -1950,7 +1950,9 @@ def guardian_video_playlist_toggle(request, pk):
     playlist.save(update_fields=["active", "updated_at"])
     status = "available" if playlist.active else "paused"
     _audit(manager, None, "video_playlist_visibility_changed", f"{playlist.title}: {status}")
-    messages.info(request, f"{playlist.title} is now {status} in Discover.")
+    if playlist.active:
+        _notify_all_children(Notification.Kind.DISCOVER, "Discover playlist available", f"{playlist.title} is now available in Discover.")
+    messages.info(request, f"{playlist.title} is now {status} for every child's Discover app.")
     return redirect(f"/?child={selected_id}#parent-video-library")
 
 
@@ -1995,7 +1997,11 @@ def guardian_video_clip_add(request, playlist_pk):
         added_by=manager,
     )
     _audit(manager, None, "video_clip_added", f"{form.cleaned_data['title']} added to {playlist.title}.")
-    messages.success(request, f"Video added to {playlist.title}.")
+    if playlist.active:
+        _notify_all_children(Notification.Kind.DISCOVER, "New Discover video", f"{form.cleaned_data['title']} was added to {playlist.title}.")
+        messages.success(request, f"Video added to {playlist.title} for every child.")
+    else:
+        messages.success(request, f"Video added to paused playlist {playlist.title}.")
     return redirect(f"/?child={selected_id}#parent-video-library")
 
 
@@ -2050,34 +2056,6 @@ def guardian_video_clip_delete(request, pk):
     _audit(manager, None, "video_clip_deleted", description)
     messages.info(request, description)
     return redirect(f"/?child={selected_id}#parent-video-library")
-
-
-@login_required
-@require_POST
-def guardian_video_assignment_toggle(request, playlist_pk):
-    manager = _video_manager(request)
-    if manager is None:
-        return redirect("dashboard")
-    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
-    playlist = get_object_or_404(VideoPlaylist, pk=playlist_pk)
-    assignment, created = VideoPlaylistAssignment.objects.get_or_create(
-        playlist=playlist,
-        child=child,
-        defaults={"assigned_by": manager},
-    )
-    if created:
-        enabled = True
-    else:
-        assignment.enabled = not assignment.enabled
-        assignment.assigned_by = manager
-        assignment.save(update_fields=["enabled", "assigned_by"])
-        enabled = assignment.enabled
-    status = "assigned" if enabled else "removed"
-    if enabled:
-        _notify(child, Notification.Kind.DISCOVER, "Discover playlist assigned", f"{playlist.title} has been added to your Discover library.")
-    _audit(manager, child, f"video_playlist_{status}", playlist.title)
-    messages.info(request, f"{playlist.title} {status} for {child.display_name}.")
-    return redirect(f"/?child={child.pk}#parent-video-library")
 
 
 @login_required

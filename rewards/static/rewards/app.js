@@ -276,6 +276,21 @@ if (discoverFeed) {
     }
   }
 
+  function moveDiscover(direction) {
+    if (!activeSlide) return;
+    const frame = activeSlide.querySelector("[data-discover-player]");
+    if (activeSlide.hasAttribute("data-discover-playlist")) {
+      commandPlayer(frame, direction === "next" ? "nextVideo" : "previousVideo");
+      return;
+    }
+    const activeIndex = slides.indexOf(activeSlide);
+    const target = slides[activeIndex + (direction === "next" ? 1 : -1)];
+    if (target) target.scrollIntoView({behavior: "smooth", block: "start"});
+  }
+
+  discoverFeed.querySelector("[data-discover-prev]")?.addEventListener("click", () => moveDiscover("previous"));
+  discoverFeed.querySelector("[data-discover-next]")?.addEventListener("click", () => moveDiscover("next"));
+
   slides.forEach((slide) => {
     const frame = slide.querySelector("[data-discover-player]");
     if (frame) frame.addEventListener("load", () => {
@@ -350,7 +365,7 @@ if (conversationRefresh) {
 }
 
 const messagingApp = document.querySelector("[data-incoming-call-url]");
-if (messagingApp) {
+if (messagingApp && !document.querySelector("[data-livekit-call]")) {
   const banner = messagingApp.querySelector("[data-incoming-call-banner]");
   async function pollIncomingCall() {
     try {
