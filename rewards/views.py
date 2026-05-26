@@ -3,7 +3,7 @@ import json
 import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from django.conf import settings
 from django.contrib import messages
@@ -98,7 +98,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v6';
+    source = """const CACHE = 'family-circle-v7';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -264,6 +264,19 @@ def _assigned_discover_clips(profile):
         .select_related("playlist")
         .distinct()
         .order_by("playlist__title", "position", "created_at")
+    )
+
+
+def _assigned_discover_playlists(profile):
+    return (
+        VideoPlaylist.objects.filter(
+            active=True,
+            assignments__child=profile,
+            assignments__enabled=True,
+        )
+        .exclude(youtube_playlist_id="")
+        .distinct()
+        .order_by("title")
     )
 
 
@@ -1041,13 +1054,20 @@ def discover_page(request):
         return redirect("dashboard")
     schedule_lock = _discover_lock(profile)
     clips = [] if schedule_lock else list(_assigned_discover_clips(profile))
+    source_playlists = [] if schedule_lock else list(_assigned_discover_playlists(profile))
     favorites = set(profile.video_favorites.filter(clip__in=clips).values_list("clip_id", flat=True))
     for clip in clips:
         clip.favorited = clip.pk in favorites
     return render(
         request,
         "rewards/discover_page.html",
-        {"profile": profile, "clips": clips, "discover_lock": schedule_lock},
+        {
+            "profile": profile,
+            "clips": clips,
+            "source_playlists": source_playlists,
+            "discover_lock": schedule_lock,
+            "youtube_embed_origin": quote(f"{request.scheme}://{request.get_host()}", safe=""),
+        },
     )
 
 

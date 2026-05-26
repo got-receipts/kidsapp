@@ -752,7 +752,8 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(home, "Discover")
         self.assertContains(response, "data-discover-slide")
         self.assertContains(response, "Explore the Moon")
-        self.assertContains(response, "youtube-nocookie.com/embed/dQw4w9WgXcQ")
+        self.assertContains(response, "youtube.com/embed/dQw4w9WgXcQ")
+        self.assertContains(response, "origin=http%3A%2F%2Ftestserver")
         self.assertContains(response, "Back")
         self.assertContains(response, "Home")
         self.assertNotContains(response, "Unassigned video")
@@ -799,7 +800,7 @@ class LedgerApprovalTests(TestCase):
 
         self.assertContains(scheduled, "Discover is resting right now")
         self.assertNotContains(scheduled, "Make a snack")
-        self.assertNotContains(scheduled, "youtube-nocookie.com/embed")
+        self.assertNotContains(scheduled, "youtube.com/embed")
         self.assertTrue(status.json()["locked"])
         self.assertEqual(status.json()["reason"], "schedule")
 
@@ -812,7 +813,13 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(dashboard, "Video Library")
         self.client.post(
             reverse("guardian_video_playlist_create"),
-            {"child_id": self.child.pk, "title": "Animal Adventures", "description": "Approved videos", "active": "on"},
+            {
+                "child_id": self.child.pk,
+                "title": "Animal Adventures",
+                "description": "Approved videos",
+                "youtube_playlist_id": "https://www.youtube.com/playlist?list=PL1234567890animals",
+                "active": "on",
+            },
         )
         playlist = VideoPlaylist.objects.get(title="Animal Adventures")
         self.client.post(
@@ -841,10 +848,15 @@ class LedgerApprovalTests(TestCase):
         )
 
         self.assertTrue(VideoClip.objects.filter(playlist=playlist, title="Amazing habitats").exists())
+        self.assertEqual(playlist.youtube_playlist_id, "PL1234567890animals")
         self.assertTrue(VideoPlaylistAssignment.objects.filter(playlist=playlist, child=self.child, enabled=True).exists())
         self.assertTrue(DiscoverSchedule.objects.filter(child=self.child, created_by=mom).exists())
         self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.DISCOVER).exists())
         self.assertFalse(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.AWARD).exists())
+        self.client.force_login(self.child.user)
+        discover = self.client.get(reverse("discover_page"))
+        self.assertContains(discover, "youtube.com/embed/videoseries?list=PL1234567890animals")
+        self.assertContains(discover, "origin=http%3A%2F%2Ftestserver")
 
     def test_messages_icon_shows_unread_and_opening_thread_marks_message_read(self):
         mom_user = User.objects.create_user(username="mom", password="test")

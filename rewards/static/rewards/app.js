@@ -252,7 +252,8 @@ if (discoverFeed) {
 
   function commandPlayer(frame, command) {
     if (!frame || !frame.contentWindow || !frame.src) return;
-    frame.contentWindow.postMessage(JSON.stringify({event: "command", func: command, args: []}), "https://www.youtube-nocookie.com");
+    const playerOrigin = new URL(frame.src).origin;
+    frame.contentWindow.postMessage(JSON.stringify({event: "command", func: command, args: []}), playerOrigin);
   }
 
   function activateDiscoverSlide(slide) {
@@ -266,7 +267,7 @@ if (discoverFeed) {
     const frame = slide.querySelector("[data-discover-player]");
     if (frame && !frame.src) frame.src = frame.dataset.src;
     commandPlayer(frame, "playVideo");
-    if (!slide.dataset.viewRecorded) {
+    if (!slide.dataset.viewRecorded && slide.dataset.watchUrl) {
       slide.dataset.viewRecorded = "yes";
       fetch(slide.dataset.watchUrl, {
         method: "POST",

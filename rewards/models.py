@@ -445,6 +445,7 @@ class ShoppingOrderItem(models.Model):
 class VideoPlaylist(models.Model):
     title = models.CharField(max_length=100)
     description = models.CharField(max_length=240, blank=True)
+    youtube_playlist_id = models.CharField(max_length=100, blank=True)
     active = models.BooleanField(default=True)
     created_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="video_playlists_created")
     created_at = models.DateTimeField(auto_now_add=True)

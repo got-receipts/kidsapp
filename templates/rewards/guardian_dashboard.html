@@ -656,11 +656,11 @@
         </dialog>
         <article class="card video-library">
           <div class="card-head"><h2>Discover playlists</h2><span class="badge">Approved only</span></div>
-          <p class="control-note">Add YouTube videos you approve, then choose which playlists appear in {{ selected.display_name }}'s native Discover app. Children have no open video search or comments.</p>
+          <p class="control-note">Add individual approved videos or paste an approved public YouTube playlist link, then choose what appears in {{ selected.display_name }}'s native Discover app. Children have no open video search or comments.</p>
           {% for playlist in video_playlists %}
           <section class="video-playlist-card">
             <div class="video-playlist-head">
-              <div><strong>{{ playlist.title }}</strong><small>{{ playlist.description|default:"Parent-curated videos" }} &middot; {{ playlist.clips.count }} video{{ playlist.clips.count|pluralize }}</small></div>
+              <div><strong>{{ playlist.title }}</strong><small>{{ playlist.description|default:"Parent-curated videos" }} &middot; {{ playlist.clips.count }} hand-picked video{{ playlist.clips.count|pluralize }}{% if playlist.youtube_playlist_id %} &middot; linked playlist{% endif %}</small></div>
               <span class="badge {% if not playlist.active %}waiting{% endif %}">{% if playlist.active %}Active{% else %}Paused{% endif %}</span>
             </div>
             <div class="video-playlist-actions">
@@ -673,6 +673,9 @@
               <form method="post" action="{% url 'guardian_video_playlist_toggle' playlist.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if playlist.active %}Pause{% else %}Enable{% endif %}</button></form>
               <form method="post" action="{% url 'guardian_video_playlist_delete' playlist.pk %}" data-confirm-video-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
             </div>
+            {% if playlist.youtube_playlist_id %}
+            <p class="playlist-source-note">Linked public YouTube playlist is available in Discover. It plays the current playlist contents, so review changes made on YouTube. <a href="https://www.youtube.com/playlist?list={{ playlist.youtube_playlist_id }}" target="_blank" rel="noopener noreferrer">Review playlist</a></p>
+            {% endif %}
             <div class="video-clip-list">
               {% for clip in playlist.clips.all %}
               <article class="video-clip-row {% if not clip.active %}disabled{% endif %}">
@@ -686,7 +689,7 @@
                   <form method="post" action="{% url 'guardian_video_clip_delete' clip.pk %}" data-confirm-video-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
                 </div>
               </article>
-              {% empty %}<p class="empty">No approved videos in this playlist yet.</p>{% endfor %}
+              {% empty %}<p class="empty">{% if playlist.youtube_playlist_id %}No extra hand-picked videos. The linked playlist is ready in Discover.{% else %}No approved videos in this playlist yet.{% endif %}</p>{% endfor %}
             </div>
           </section>
           <dialog class="review-dialog action-dialog" id="video-add-{{ playlist.pk }}">
@@ -708,6 +711,7 @@
               {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
               <p><label>Playlist name<input name="title" maxlength="100" required value="{{ playlist.title }}"></label></p>
               <p><label>Description (optional)<input name="description" maxlength="240" value="{{ playlist.description }}"></label></p>
+              <p><label>YouTube playlist URL or ID (optional)<input name="youtube_playlist_id" maxlength="500" value="{% if playlist.youtube_playlist_id %}https://www.youtube.com/playlist?list={{ playlist.youtube_playlist_id }}{% endif %}" placeholder="Paste a reviewed public playlist link"></label></p>
               <p><label><input name="active" type="checkbox" {% if playlist.active %}checked{% endif %}> Available when assigned</label></p>
               <button class="primary" type="submit">Save playlist</button>
             </form>

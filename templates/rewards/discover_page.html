@@ -16,15 +16,35 @@
       <p>Your family schedule closes videos during this time. Come back when viewing hours open again.</p>
       <a href="{% url 'dashboard' %}">Return Home</a>
     </section>
-  {% elif clips %}
+  {% elif source_playlists or clips %}
     <div class="discover-reels" aria-label="Parent approved videos">
+      {% for playlist in source_playlists %}
+      <article class="discover-reel" data-discover-slide>
+        <div class="discover-player">
+          <iframe
+            title="{{ playlist.title }}"
+            data-discover-player
+            data-src="https://www.youtube.com/embed/videoseries?list={{ playlist.youtube_playlist_id }}&amp;enablejsapi=1&amp;origin={{ youtube_embed_origin }}&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;autoplay=1&amp;mute=1"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen></iframe>
+        </div>
+        <div class="discover-shade"></div>
+        <div class="discover-video-copy">
+          <span>Playlist</span>
+          <h1>{{ playlist.title }}</h1>
+          <p>{{ playlist.description|default:"Approved by your family" }}</p>
+        </div>
+        <div class="discover-swipe-hint">Use the player controls or swipe for more</div>
+      </article>
+      {% endfor %}
       {% for clip in clips %}
       <article class="discover-reel" data-discover-slide data-watch-url="{% url 'discover_watch' clip.pk %}">
         <div class="discover-player">
           <iframe
             title="{{ clip.title }}"
             data-discover-player
-            data-src="https://www.youtube-nocookie.com/embed/{{ clip.youtube_id }}?enablejsapi=1&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;iv_load_policy=3&amp;autoplay=1&amp;mute=1"
+            data-src="https://www.youtube.com/embed/{{ clip.youtube_id }}?enablejsapi=1&amp;origin={{ youtube_embed_origin }}&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;iv_load_policy=3&amp;autoplay=1&amp;mute=1"
             allow="autoplay; encrypted-media; picture-in-picture"
             referrerpolicy="strict-origin-when-cross-origin"
             allowfullscreen></iframe>

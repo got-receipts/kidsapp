@@ -1,7 +1,8 @@
-from django import forms
-
+import re
 from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
 
+from django import forms
 from django.utils import timezone
 
 from .models import (
@@ -277,14 +278,35 @@ class CommunicationScheduleForm(forms.ModelForm):
 
 
 class VideoPlaylistForm(forms.ModelForm):
+    youtube_playlist_id = forms.CharField(
+        label="YouTube playlist URL or ID (optional)",
+        max_length=500,
+        required=False,
+    )
+
     class Meta:
         model = VideoPlaylist
-        fields = ["title", "description", "active"]
+        fields = ["title", "description", "youtube_playlist_id", "active"]
         labels = {
             "title": "Playlist name",
             "description": "Description (optional)",
             "active": "Available when assigned",
         }
+
+    def clean_youtube_playlist_id(self):
+        source = (self.cleaned_data.get("youtube_playlist_id") or "").strip()
+        if not source:
+            return ""
+        candidate = source
+        if "://" in source:
+            parsed = urlparse(source)
+            host = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+            if host not in {"youtube.com", "music.youtube.com", "youtube-nocookie.com"}:
+                raise forms.ValidationError("Paste a public YouTube playlist link or playlist ID.")
+            candidate = parse_qs(parsed.query).get("list", [""])[0]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{10,100}", candidate or ""):
+            raise forms.ValidationError("Paste a public YouTube playlist link or playlist ID.")
+        return candidate
 
 
 class VideoClipForm(forms.Form):
