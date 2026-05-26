@@ -16,6 +16,7 @@ from .models import (
     HouseRule,
     Profile,
     SavingsGoal,
+    ShoppingProduct,
     StoreItem,
 )
 
@@ -91,6 +92,50 @@ class StoreItemForm(forms.ModelForm):
         if commit:
             item.save()
         return item
+
+
+class ShoppingProductForm(forms.ModelForm):
+    retail_price = forms.DecimalField(label="Displayed retail price ($)", min_value=0.01, decimal_places=2)
+
+    class Meta:
+        model = ShoppingProduct
+        fields = [
+            "name",
+            "description",
+            "retailer",
+            "retailer_url",
+            "image_url",
+            "category",
+            "minimum_age",
+            "featured",
+            "in_stock",
+            "active",
+        ]
+        labels = {
+            "retailer_url": "Purchase or Google Shopping link",
+            "image_url": "Product photo URL",
+            "minimum_age": "Minimum age (optional)",
+            "featured": "Featured for children",
+            "in_stock": "Available to request",
+            "active": "Visible in Shopping",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial.setdefault("retail_price", self.instance.retail_price_cents / 100)
+
+    def save(self, commit=True):
+        product = super().save(commit=False)
+        product.retail_price_cents = int(self.cleaned_data["retail_price"] * 100)
+        if commit:
+            product.save()
+        return product
+
+
+class ShoppingFulfillmentForm(forms.Form):
+    final_amount = forms.DecimalField(label="Confirmed purchase total ($)", min_value=0.01, decimal_places=2)
+    parent_note = forms.CharField(label="Update for child (optional)", max_length=240, required=False)
 
 
 class DailyScheduleEventForm(forms.ModelForm):

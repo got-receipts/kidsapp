@@ -1,0 +1,107 @@
+{% extends "rewards/base.html" %}
+{% load static %}
+{% load rewards_tags %}
+{% block title %}Shopping | Family Circle{% endblock %}
+{% block content %}
+<main class="shell kid-shell child-app-screen shopping-shell">
+  <header class="child-app-topbar">
+    <button class="child-nav-control" type="button" data-go-back data-fallback-url="{% url 'dashboard' %}" aria-label="Go back"><span>&#8249;</span> Back</button>
+    <div class="child-app-identity">
+      <img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt="">
+      <small>{{ profile.display_name }}'s apps</small>
+    </div>
+    <a class="child-nav-control home" href="{% url 'dashboard' %}" aria-label="Go home"><span>&#8962;</span> Home</a>
+  </header>
+  <nav class="child-app-switcher" aria-label="Switch apps">
+    <a href="{% url 'child_section' 'today' %}">Today</a>
+    <a href="{% url 'child_section' 'store' %}">Reward Store</a>
+    <a href="{% url 'wallet_page' %}">Wallet</a>
+    <a class="active" href="{% url 'shopping_page' %}">Shopping</a>
+    <a href="{% url 'messages_inbox' %}">Messages</a>
+  </nav>
+  <section class="shopping-hero">
+    <div>
+      <p class="eyebrow">Shopping</p>
+      <h1>Build your cart</h1>
+      <p>Choose toys with your Cash App balance. Tokens stay tokens unless you convert them in Wallet.</p>
+    </div>
+    <div class="shopping-balance">
+      <small>Spendable cash</small>
+      <strong>{{ wallet.available_cash_cents|dollars }}</strong>
+      <span>Parent confirms the current price before purchasing.</span>
+    </div>
+  </section>
+  <section class="shopping-layout">
+    <div class="shopping-catalog">
+      <form class="shopping-filters" method="get" action="{% url 'shopping_page' %}">
+        <label class="shopping-search"><span class="sr-only">Search products</span><input name="q" value="{{ search }}" placeholder="Search toys and electronics"></label>
+        <select name="category" aria-label="Filter category">
+          <option value="">All categories</option>
+          {% for value, label in categories %}<option value="{{ value }}" {% if value == selected_category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <button class="action" type="submit">Find</button>
+      </form>
+      <p class="shopping-disclosure">These are starter retail-price snapshots with photos. Your parent checks current retailer price and availability before purchase.</p>
+      <div class="shopping-product-grid">
+      {% for product in products %}
+        <article class="shopping-product {% if product.featured %}featured{% endif %}">
+          {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}">{% endif %}
+          <div class="shopping-product-body">
+            <small>{{ product.get_category_display }}{% if product.minimum_age %} &middot; Age {{ product.minimum_age }}+{% endif %}{% if product.featured %} &middot; Featured{% endif %}</small>
+            <strong>{{ product.name }}</strong>
+            <p>{{ product.description }}</p>
+            <div class="shopping-product-footer">
+              <b>{{ product.retail_price_cents|dollars }}</b>
+              <form method="post" action="{% url 'shopping_cart_add' product.pk %}">{% csrf_token %}<button class="primary" type="submit">Add</button></form>
+            </div>
+          </div>
+        </article>
+      {% empty %}
+        <p class="empty">No available products match your search right now.</p>
+      {% endfor %}
+      </div>
+    </div>
+    <aside class="shopping-cart card">
+      <div class="card-head"><h2>My Cart</h2><span class="badge gold">{{ cart_items|length }} item{{ cart_items|length|pluralize }}</span></div>
+      {% for item in cart_items %}
+        <div class="shopping-cart-item">
+          {% if item.product.image_url %}<img src="{{ item.product.image_url }}" alt="{{ item.product.name }}">{% endif %}
+          <div><strong>{{ item.product.name }}</strong><small>{{ item.subtotal_cents|dollars }}</small></div>
+          <div class="cart-quantity">
+            <form method="post" action="{% url 'shopping_cart_update' item.pk %}">{% csrf_token %}<input type="hidden" name="action" value="decrease"><button type="submit" aria-label="Decrease quantity">-</button></form>
+            <b>{{ item.quantity }}</b>
+            <form method="post" action="{% url 'shopping_cart_update' item.pk %}">{% csrf_token %}<input type="hidden" name="action" value="increase"><button type="submit" aria-label="Increase quantity">+</button></form>
+          </div>
+          <form method="post" action="{% url 'shopping_cart_update' item.pk %}">{% csrf_token %}<input type="hidden" name="action" value="remove"><button class="cart-remove" type="submit">Remove</button></form>
+        </div>
+      {% empty %}<p class="empty">Add a product to start your cart.</p>{% endfor %}
+      {% if cart_items %}
+      <div class="shopping-cart-total"><span>Total</span><strong>{{ cart_total_cents|dollars }}</strong></div>
+      <p class="cart-policy">Checkout uses cash only. Your amount is reserved until your parent purchases the order or refunds it.</p>
+      <form method="post" action="{% url 'shopping_checkout' %}">
+        {% csrf_token %}
+        <button class="shopping-checkout" type="submit" {% if cart_total_cents > wallet.available_cash_cents %}disabled{% endif %}>Send to parent for purchase</button>
+      </form>
+      {% if cart_total_cents > wallet.available_cash_cents %}<small class="cart-warning">You need more Cash App balance for this cart.</small>{% endif %}
+      {% endif %}
+    </aside>
+  </section>
+  <section class="card shopping-orders">
+    <div class="card-head"><h2>My Orders</h2><span class="badge">Updates</span></div>
+    {% for order in orders %}
+      <article class="shopping-order">
+        <header><strong>Order #{{ order.pk }}</strong><span class="badge {% if order.status == 'canceled' %}coral{% elif order.status == 'submitted' or order.status == 'claimed' %}waiting{% endif %}">{{ order.get_status_display }}</span></header>
+        <small>{{ order.submitted_at|date:"M j, g:i A" }} &middot; {% if order.final_total_cents != None %}{{ order.final_total_cents|dollars }}{% else %}{{ order.quoted_total_cents|dollars }} reserved{% endif %}</small>
+        <p>{% for item in order.items.all %}{{ item.product_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        {% if order.parent_note %}<strong class="order-parent-note">{{ order.parent_note }}</strong>{% endif %}
+      </article>
+    {% empty %}<p class="empty">Orders you send to your parent will appear here.</p>{% endfor %}
+  </section>
+  <nav class="kid-dock child-app-dock" aria-label="App navigation">
+    <a href="{% url 'dashboard' %}"><span>&#8962;</span>Home</a>
+    <a href="{% url 'messages_inbox' %}"><span>&#9993;</span>Messages</a>
+    <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
+    <a class="active" href="{% url 'shopping_page' %}"><span>&#128722;</span>Shopping</a>
+  </nav>
+</main>
+{% endblock %}

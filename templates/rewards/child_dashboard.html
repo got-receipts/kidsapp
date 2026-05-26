@@ -109,6 +109,7 @@
     <a class="map-savings" href="{% url 'child_section' 'savings' %}"><b>$</b><strong>My Goal</strong><small>{% if savings_goal %}{{ savings_goal.percent }}% saved{% else %}Set a goal{% endif %}</small></a>
     <a class="map-growth" href="{% url 'child_section' 'goals' %}"><b>&uarr;</b><strong>Grow</strong><small>My progress</small></a>
     <a class="map-wallet" href="{% url 'wallet_page' %}"><b>&#8644;</b><strong>Wallet</strong><small>Cash out tokens</small></a>
+    <a class="map-shopping" href="{% url 'shopping_page' %}"><b>&#128722;</b><strong>Shopping</strong><small>Use my cash</small></a>
     {% endif %}
     <a class="map-messages" href="{% url 'messages_inbox' %}"><b>&#9993;</b><strong>Messages</strong><small>{% if unread_message_count %}{{ unread_message_count }} new{% else %}Family chat{% endif %}</small></a>
     <a class="map-plan" href="{% url 'child_section' 'today' %}"><b>&#9788;</b><strong>Today</strong><small>Plan &amp; rules</small></a>
@@ -119,6 +120,7 @@
     {% if not profile.grounded %}
     <a href="{% url 'child_section' 'store' %}"><span>&#127873;</span>Store</a>
     <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
+    <a href="{% url 'shopping_page' %}"><span>&#128722;</span>Shopping</a>
     {% else %}
     <a href="{% url 'child_section' 'chores' %}"><span>&#10003;</span>Quests</a>
     {% endif %}

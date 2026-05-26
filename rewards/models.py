@@ -330,6 +330,120 @@ class StoreItem(models.Model):
         return not self.minimum_age
 
 
+class ShoppingProduct(models.Model):
+    class Category(models.TextChoices):
+        BUILDING = "building", "Building sets"
+        STEM = "stem", "STEM & learning"
+        CREATIVE = "creative", "Arts & crafts"
+        GAMES = "games", "Games & puzzles"
+        OUTDOOR = "outdoor", "Outdoor play"
+        ELECTRONICS = "electronics", "Kids electronics"
+        PRETEND = "pretend", "Pretend play"
+
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=220, blank=True)
+    retailer = models.CharField(max_length=60, default="Google Shopping")
+    retailer_url = models.URLField(max_length=500)
+    image_url = models.URLField(max_length=500, blank=True)
+    retail_price_cents = models.PositiveIntegerField()
+    category = models.CharField(max_length=14, choices=Category.choices)
+    active = models.BooleanField(default=True)
+    in_stock = models.BooleanField(default=True)
+    featured = models.BooleanField(default=False)
+    minimum_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    added_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="shopping_products_added")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category", "name"]
+
+    def __str__(self):
+        return self.name
+
+    def available_to(self, child):
+        if not self.active or not self.in_stock:
+            return False
+        if self.minimum_age and child.birth_date:
+            today = timezone.localdate()
+            age = today.year - child.birth_date.year - ((today.month, today.day) < (child.birth_date.month, child.birth_date.day))
+            return age >= self.minimum_age
+        return not self.minimum_age
+
+
+class ShoppingCartItem(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="shopping_cart_items")
+    product = models.ForeignKey(ShoppingProduct, on_delete=models.CASCADE, related_name="cart_items")
+    quantity = models.PositiveSmallIntegerField(default=1)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def subtotal_cents(self):
+        return self.product.retail_price_cents * self.quantity
+
+    class Meta:
+        ordering = ["added_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["child", "product"], name="one_product_per_child_shopping_cart"),
+            models.CheckConstraint(condition=Q(quantity__gte=1), name="shopping_cart_quantity_at_least_one"),
+        ]
+
+
+class ShoppingOrder(models.Model):
+    class Status(models.TextChoices):
+        SUBMITTED = "submitted", "Sent to parent"
+        CLAIMED = "claimed", "Being purchased"
+        PURCHASED = "purchased", "Purchased"
+        CANCELED = "canceled", "Canceled"
+        DELIVERED = "delivered", "Delivered"
+
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="shopping_orders")
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.SUBMITTED)
+    assigned_to = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="shopping_orders_assigned")
+    reservation_ledger = models.OneToOneField(
+        "LedgerRequest",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="shopping_order",
+    )
+    quoted_total_cents = models.PositiveIntegerField()
+    held_cash_cents = models.PositiveIntegerField(default=0)
+    held_spending_cents = models.PositiveIntegerField(default=0)
+    final_total_cents = models.PositiveIntegerField(null=True, blank=True)
+    parent_note = models.CharField(max_length=240, blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    purchased_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    canceled_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def reserved_total_cents(self):
+        return self.held_cash_cents + self.held_spending_cents
+
+    class Meta:
+        ordering = ["-submitted_at"]
+
+
+class ShoppingOrderItem(models.Model):
+    order = models.ForeignKey(ShoppingOrder, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(ShoppingProduct, null=True, blank=True, on_delete=models.SET_NULL, related_name="order_items")
+    product_name = models.CharField(max_length=120)
+    retailer = models.CharField(max_length=60)
+    retailer_url = models.URLField(max_length=500)
+    image_url = models.URLField(max_length=500, blank=True)
+    unit_price_cents = models.PositiveIntegerField()
+    quantity = models.PositiveSmallIntegerField(default=1)
+
+    @property
+    def subtotal_cents(self):
+        return self.unit_price_cents * self.quantity
+
+    class Meta:
+        ordering = ["pk"]
+
+
 class BehaviorStar(models.Model):
     child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="behavior_stars")
     awarded_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="stars_awarded")
@@ -361,6 +475,7 @@ class LedgerRequest(models.Model):
         GIFT = "gift", "Family transfer"
         CALL = "call", "Family call"
         REVERSAL = "reversal", "Punishment removed"
+        SHOPPING = "shopping", "Shopping order"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Waiting"
@@ -402,7 +517,9 @@ class LedgerRequest(models.Model):
 
     @property
     def reserves_spending_immediately(self):
-        return self.kind == self.Kind.SPEND and (self.cash_delta_cents < 0 or self.spending_delta_cents < 0)
+        return self.kind in [self.Kind.SPEND, self.Kind.SHOPPING] and (
+            self.cash_delta_cents < 0 or self.spending_delta_cents < 0
+        )
 
     @property
     def money_delta_cents(self):
@@ -585,6 +702,7 @@ class Notification(models.Model):
         STORE = "store", "Store purchase"
         MESSAGE = "message", "Message"
         CALL = "call", "Call"
+        SHOPPING = "shopping", "Shopping order"
 
     recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=12, choices=Kind.choices)

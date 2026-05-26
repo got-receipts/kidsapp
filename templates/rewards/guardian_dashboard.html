@@ -5,14 +5,14 @@
 {% block content %}
 <main class="shell guardian guardian-os" data-guardian-os data-selected-child="{% if selected %}{{ selected.pk }}{% endif %}">
   <header class="topbar">
-    <div class="identity"><img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt=""><div><small>{% if can_manage %}Parent Home Screen{% else %}Family Home Screen{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
+    <div class="identity"><img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt=""><div><small>{% if can_manage %}Parent Home Screen{% else %}Family Viewer Home Screen{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
     <div class="top-actions"><a class="top-message-link" href="{% url 'messages_inbox' %}">Messages{% if unread_message_count %}<b>{{ unread_message_count }}</b>{% endif %}</a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
   <section class="guardian-home-screen" data-guardian-home>
   <section class="wallet-card guardian-card">
     <p class="eyebrow">{% if can_manage %}Family control center{% else %}Family progress view{% endif %}</p>
     <h2>{% if can_manage %}Rewards and progress{% else %}See their growth and good moments{% endif %}</h2>
-    <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
+    <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% elif can_fulfill %}You can follow family progress and complete children's Shopping orders sent for purchase.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
     {% if can_manage %}
     <button class="notify-button" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on reminders</button>
     {% if not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable push notifications.</small>{% endif %}
@@ -75,6 +75,9 @@
       <button class="parent-app app-rules" type="button" data-parent-open="rules"><b>&#167;</b><strong>Rules</strong><small>House &amp; personal</small></button>
       <button class="parent-app app-store" type="button" data-parent-open="store"><b>&#127873;</b><strong>Store</strong><small>Inventory</small></button>
       <button class="parent-app app-limits" type="button" data-parent-open="limits"><b>&#128274;</b><strong>Limits</strong><small>Messages &amp; calls</small></button>
+      {% endif %}
+      {% if can_fulfill %}
+      <button class="parent-app app-fulfillment" type="button" data-parent-open="fulfillment"><b>&#128722;</b><strong>Fulfillment</strong><small>{{ open_shopping_order_count }} waiting</small></button>
       {% endif %}
       {% if not can_manage %}
       <button class="parent-app app-routine" type="button" data-parent-open="routine"><b>&#9788;</b><strong>Routine</strong><small>Chores &amp; schedule</small></button>
@@ -547,6 +550,96 @@
       </article>
       </section>
       {% endif %}
+      {% if can_fulfill %}
+      <section class="guardian-native-app" data-parent-app="fulfillment" aria-label="Shopping fulfillment">
+        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Cash App shopping</small><h1>Fulfillment</h1></div>{% if can_manage_catalog %}<button class="app-add" type="button" data-open-dialog="action-shopping-product">Add</button>{% endif %}</header>
+        <article class="card fulfillment-orders">
+          <div class="card-head"><h2>Children's orders</h2><span class="badge gold">Cash only</span></div>
+          <p class="control-note">Money is reserved from the child's Cash App balance at checkout. Confirm the current retailer price before marking an order purchased.</p>
+          {% for order in shopping_orders %}
+          <section class="fulfillment-order">
+            <header><div><strong>{{ order.child.display_name }}'s cart</strong><small>Sent {{ order.submitted_at|date:"M j, g:i A" }}{% if order.assigned_to %} &middot; handled by {{ order.assigned_to.display_name }}{% endif %}</small></div><span class="badge {% if order.status == 'canceled' %}coral{% elif order.status == 'submitted' or order.status == 'claimed' %}waiting{% endif %}">{{ order.get_status_display }}</span></header>
+            <div class="fulfillment-items">
+              {% for item in order.items.all %}
+              <div class="fulfillment-item">
+                {% if item.image_url %}<img src="{{ item.image_url }}" alt="{{ item.product_name }}">{% endif %}
+                <div><strong>{{ item.product_name }}</strong><small>{{ item.quantity }} x {{ item.unit_price_cents|dollars }} &middot; {{ item.retailer }}</small><a href="{{ item.retailer_url }}" target="_blank" rel="noopener noreferrer">Check price / purchase</a></div>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="fulfillment-total"><span>Reserved from wallet</span><strong>{{ order.reserved_total_cents|dollars }}</strong></div>
+            {% if order.final_total_cents != None %}<div class="fulfillment-total final"><span>Purchased total</span><strong>{{ order.final_total_cents|dollars }}</strong></div>{% endif %}
+            {% if order.parent_note %}<p class="fulfillment-note">{{ order.parent_note }}</p>{% endif %}
+            {% if order.status == 'submitted' or order.status == 'claimed' %}
+            <div class="fulfillment-actions">
+              <form method="post" action="{% url 'fulfillment_claim' order.pk %}">{% csrf_token %}<button class="action" type="submit">I will purchase</button></form>
+              <form class="form fulfillment-purchase" method="post" action="{% url 'fulfillment_purchase' order.pk %}">
+                {% csrf_token %}
+                <label>Confirmed total ($)<input type="number" name="final_amount" step="0.01" min="0.01" value="{{ order.reserved_total_cents|amount }}" required></label>
+                <label>Child update<input type="text" name="parent_note" maxlength="240" placeholder="Purchased and on the way"></label>
+                <button class="primary" type="submit">Mark Purchased</button>
+              </form>
+              <form class="form fulfillment-cancel" method="post" action="{% url 'fulfillment_cancel' order.pk %}">
+                {% csrf_token %}<input type="text" name="parent_note" maxlength="240" placeholder="Reason for cancellation (optional)">
+                <button class="remove-button" type="submit">Cancel &amp; refund</button>
+              </form>
+            </div>
+            {% elif order.status == 'purchased' %}
+              <form method="post" action="{% url 'fulfillment_delivered' order.pk %}">{% csrf_token %}<button class="primary" type="submit">Mark Delivered</button></form>
+            {% endif %}
+          </section>
+          {% empty %}<p class="empty">No Shopping orders have been sent yet.</p>{% endfor %}
+        </article>
+        {% if can_manage_catalog %}
+        <dialog class="review-dialog action-dialog" id="action-shopping-product">
+          <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+          <p class="eyebrow">Shopping catalog</p><h2>Add product</h2>
+          <p class="control-note">Use a retailer or Google Shopping link and a product photo URL. Prices are displayed snapshots for parent confirmation at checkout.</p>
+          <form class="form" method="post" action="{% url 'dad_shopping_product_create' %}">
+            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ shopping_product_form.as_p }}
+            <button class="primary" type="submit">Add product</button>
+          </form>
+        </dialog>
+        <article class="card fulfillment-catalog">
+          <div class="card-head"><h2>Shopping catalog</h2><span class="badge">Dad manages</span></div>
+          <p class="control-note">Starter listings are editable retail snapshots. Set unavailable products out of stock or delete them entirely.</p>
+          <div class="catalog-admin-grid">
+          {% for product in shopping_catalog %}
+            <article class="catalog-admin-product">
+              {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}">{% endif %}
+              <div><strong>{{ product.name }}</strong><small>{{ product.retail_price_cents|dollars }} &middot; {{ product.get_category_display }}</small><span class="badge {% if not product.in_stock or not product.active %}waiting{% endif %}">{% if not product.active %}Hidden{% elif product.in_stock %}In stock{% else %}Out of stock{% endif %}</span></div>
+              <div class="catalog-actions">
+                <button class="remove-button" type="button" data-open-dialog="shopping-product-edit-{{ product.pk }}">Edit</button>
+                <form method="post" action="{% url 'dad_shopping_product_stock' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.in_stock %}Out of stock{% else %}Restock{% endif %}</button></form>
+                <form method="post" action="{% url 'dad_shopping_product_toggle' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.active %}Hide{% else %}Show{% endif %}</button></form>
+                <form method="post" action="{% url 'dad_shopping_product_delete' product.pk %}" data-confirm-shopping-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
+              </div>
+            </article>
+            <dialog class="review-dialog action-dialog" id="shopping-product-edit-{{ product.pk }}">
+              <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+              <p class="eyebrow">Shopping catalog</p><h2>Edit product</h2>
+              <form class="form" method="post" action="{% url 'dad_shopping_product_edit' product.pk %}">
+                {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+                <p><label>Name<input name="name" maxlength="120" required value="{{ product.name }}"></label></p>
+                <p><label>Description<input name="description" maxlength="220" value="{{ product.description }}"></label></p>
+                <p><label>Displayed retail price ($)<input name="retail_price" type="number" min="0.01" step="0.01" required value="{{ product.retail_price_cents|amount }}"></label></p>
+                <p><label>Retailer<input name="retailer" maxlength="60" required value="{{ product.retailer }}"></label></p>
+                <p><label>Purchase or Google Shopping link<input name="retailer_url" type="url" required value="{{ product.retailer_url }}"></label></p>
+                <p><label>Product photo URL<input name="image_url" type="url" value="{{ product.image_url }}"></label></p>
+                <p><label>Category<select name="category"><option value="building" {% if product.category == 'building' %}selected{% endif %}>Building sets</option><option value="stem" {% if product.category == 'stem' %}selected{% endif %}>STEM &amp; learning</option><option value="creative" {% if product.category == 'creative' %}selected{% endif %}>Arts &amp; crafts</option><option value="games" {% if product.category == 'games' %}selected{% endif %}>Games &amp; puzzles</option><option value="outdoor" {% if product.category == 'outdoor' %}selected{% endif %}>Outdoor play</option><option value="electronics" {% if product.category == 'electronics' %}selected{% endif %}>Kids electronics</option><option value="pretend" {% if product.category == 'pretend' %}selected{% endif %}>Pretend play</option></select></label></p>
+                <p><label>Minimum age (optional)<input name="minimum_age" type="number" min="0" value="{{ product.minimum_age|default_if_none:'' }}"></label></p>
+                <p><label><input name="featured" type="checkbox" {% if product.featured %}checked{% endif %}> Featured for children</label></p>
+                <p><label><input name="in_stock" type="checkbox" {% if product.in_stock %}checked{% endif %}> Available to request</label></p>
+                <p><label><input name="active" type="checkbox" {% if product.active %}checked{% endif %}> Visible in Shopping</label></p>
+                <button class="primary" type="submit">Save product</button>
+              </form>
+            </dialog>
+          {% empty %}<p class="empty">Add a product to begin the Shopping catalog.</p>{% endfor %}
+          </div>
+        </article>
+        {% endif %}
+      </section>
+      {% endif %}
       <section class="guardian-native-app" data-parent-app="progress" aria-label="Progress">
         <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Progress</h1></div></header>
       <article class="card" data-dashboard-module="School Grades">
@@ -580,6 +673,9 @@
       {% if can_manage %}
       <button type="button" data-parent-open="approvals"><span>&#10003;</span>Reviews</button>
       <button type="button" data-parent-open="wallet"><span>$</span>Wallet</button>
+      {% elif can_fulfill %}
+      <button type="button" data-parent-open="fulfillment"><span>&#128722;</span>Orders</button>
+      <button type="button" data-parent-open="progress"><span>A+</span>Progress</button>
       {% else %}
       <button type="button" data-parent-open="progress"><span>A+</span>Progress</button>
       <button type="button" data-parent-open="behavior"><span>&#9733;</span>Behavior</button>

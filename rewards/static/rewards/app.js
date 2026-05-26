@@ -463,6 +463,11 @@ document.querySelectorAll("[data-confirm-punishment-removal]").forEach((form) =>
     if (!window.confirm("Remove this punishment and record the correction?")) event.preventDefault();
   });
 });
+document.querySelectorAll("[data-confirm-shopping-delete]").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    if (!window.confirm("Delete this shopping product permanently?")) event.preventDefault();
+  });
+});
 
 document.querySelectorAll("[data-money-pad]").forEach((pad) => {
   const field = pad.querySelector("[data-money-input]");

@@ -31,6 +31,8 @@ from .forms import (
     GroundingForm,
     HouseRuleForm,
     SavingsGoalForm,
+    ShoppingFulfillmentForm,
+    ShoppingProductForm,
     SpendingTransferForm,
     StoreItemForm,
     TokenCashoutForm,
@@ -57,6 +59,10 @@ from .models import (
     PushSubscription,
     RuleAcknowledgement,
     SavingsGoal,
+    ShoppingCartItem,
+    ShoppingOrder,
+    ShoppingOrderItem,
+    ShoppingProduct,
     StoreItem,
     Wallet,
 )
@@ -133,6 +139,14 @@ def _dad(request):
         messages.error(request, "Only Dad can complete this action.")
         return None
     return guardian
+
+
+def _fulfiller(request):
+    profile = _profile(request)
+    if profile.is_guardian or (profile.role == Profile.Role.VIEWER and profile.user.username.lower() == "mom"):
+        return profile
+    messages.error(request, "Only Mom, Dad, or GG can manage shopping fulfillment.")
+    return None
 
 
 def _block_grounded_child(request, profile):
@@ -464,6 +478,7 @@ def dashboard(request):
     if profile.can_view_family:
         can_manage = profile.is_guardian
         dad_controls = can_manage and profile.user.username.lower() == "dad"
+        can_fulfill = can_manage or (profile.role == Profile.Role.VIEWER and profile.user.username.lower() == "mom")
         children = Profile.objects.filter(role=Profile.Role.CHILD).select_related("wallet")
         selected = children.filter(pk=request.GET.get("child")).first() or children.first()
         star_weeks, star_month, previous_month, next_month = _star_calendar(selected, request.GET.get("month")) if selected else ([], "", "", "")
@@ -497,10 +512,12 @@ def dashboard(request):
         context = {
             "profile": profile,
             "can_manage": can_manage,
+            "can_fulfill": can_fulfill,
+            "can_manage_catalog": dad_controls,
             "children": children,
             "selected": selected,
             "store_items": store_items,
-            "pending": pending.exclude(kind=LedgerRequest.Kind.CHORE),
+            "pending": pending.exclude(kind__in=[LedgerRequest.Kind.CHORE, LedgerRequest.Kind.SHOPPING]),
             "pending_chore_reviews": pending.filter(child=selected, kind=LedgerRequest.Kind.CHORE) if selected else [],
             "selected_chores": selected.chores.filter(due_date=today, optional=False).order_by("title") if selected else [],
             "selected_optional_chores": selected.chores.filter(due_date=today, optional=True).order_by("title") if selected else [],
@@ -558,6 +575,18 @@ def dashboard(request):
             "selected_communication_schedules": selected.communication_schedules.all() if selected and can_manage else [],
             "communication_schedule_form": CommunicationScheduleForm(),
             "livekit_configured": _livekit_configured(),
+            "shopping_orders": (
+                ShoppingOrder.objects.select_related("child", "assigned_to", "reservation_ledger")
+                .prefetch_related("items")
+                .all()[:40]
+                if can_fulfill else []
+            ),
+            "open_shopping_order_count": (
+                ShoppingOrder.objects.filter(status__in=[ShoppingOrder.Status.SUBMITTED, ShoppingOrder.Status.CLAIMED]).count()
+                if can_fulfill else 0
+            ),
+            "shopping_catalog": ShoppingProduct.objects.all() if dad_controls else [],
+            "shopping_product_form": ShoppingProductForm() if dad_controls else None,
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
@@ -883,6 +912,149 @@ def wallet_page(request):
     context = {"profile": profile}
     context.update(_wallet_context(profile))
     return render(request, "rewards/wallet_page.html", context)
+
+
+@login_required
+def shopping_page(request):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    products = ShoppingProduct.objects.filter(active=True, in_stock=True)
+    category = request.GET.get("category", "")
+    search = request.GET.get("q", "").strip()
+    if category in ShoppingProduct.Category.values:
+        products = products.filter(category=category)
+    if search:
+        products = products.filter(Q(name__icontains=search) | Q(description__icontains=search))
+    products = [product for product in products if product.available_to(profile)]
+    cart_items = list(profile.shopping_cart_items.select_related("product"))
+    context = {
+        "profile": profile,
+        "wallet": profile.wallet,
+        "products": products,
+        "categories": ShoppingProduct.Category.choices,
+        "selected_category": category,
+        "search": search,
+        "cart_items": cart_items,
+        "cart_total_cents": sum(item.subtotal_cents for item in cart_items),
+        "orders": profile.shopping_orders.prefetch_related("items")[:12],
+    }
+    return render(request, "rewards/shopping_page.html", context)
+
+
+@login_required
+@require_POST
+def shopping_cart_add(request, pk):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    if not product.available_to(profile):
+        messages.error(request, "That product is not currently available to request.")
+        return redirect("shopping_page")
+    item, created = ShoppingCartItem.objects.get_or_create(child=profile, product=product)
+    if not created:
+        if item.quantity >= 10:
+            messages.info(request, "Your cart can hold up to 10 of one item.")
+            return redirect("shopping_page")
+        item.quantity += 1
+        item.save(update_fields=["quantity"])
+    messages.success(request, f"{product.name} added to your cart.")
+    return redirect("shopping_page")
+
+
+@login_required
+@require_POST
+def shopping_cart_update(request, pk):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    item = get_object_or_404(ShoppingCartItem.objects.select_related("product"), pk=pk, child=profile)
+    action = request.POST.get("action")
+    if action == "remove" or (action == "decrease" and item.quantity == 1):
+        item.delete()
+        messages.info(request, "Removed from your cart.")
+    elif action == "decrease":
+        item.quantity -= 1
+        item.save(update_fields=["quantity"])
+    elif action == "increase" and item.product.available_to(profile) and item.quantity < 10:
+        item.quantity += 1
+        item.save(update_fields=["quantity"])
+    return redirect("shopping_page")
+
+
+@login_required
+@require_POST
+def shopping_checkout(request):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if _block_grounded_child(request, profile):
+        return redirect("dashboard")
+    with transaction.atomic():
+        cart_items = list(
+            ShoppingCartItem.objects.select_for_update()
+            .filter(child=profile)
+            .select_related("product")
+        )
+        if not cart_items:
+            messages.error(request, "Add something to your cart before sending an order.")
+            return redirect("shopping_page")
+        if any(not item.product.available_to(profile) for item in cart_items):
+            messages.error(request, "An item in your cart is no longer available. Please review your cart.")
+            return redirect("shopping_page")
+        total = sum(item.subtotal_cents for item in cart_items)
+        wallet = Wallet.objects.select_for_update().get(child=profile)
+        sources = _cash_sources(wallet, total)
+        if sources is None:
+            messages.error(request, "Your Cash App balance is not enough for this cart.")
+            return redirect("shopping_page")
+        wallet_cash, legacy_cash = sources
+        Wallet.objects.filter(pk=wallet.pk).update(
+            cash_cents=F("cash_cents") - wallet_cash,
+            spending_cents=F("spending_cents") - legacy_cash,
+        )
+        ledger = LedgerRequest.objects.create(
+            child=profile,
+            requested_by=profile,
+            kind=LedgerRequest.Kind.SHOPPING,
+            description=f"Shopping order reserved: ${total / 100:.2f}",
+            cash_delta_cents=-wallet_cash,
+            spending_delta_cents=-legacy_cash,
+        )
+        order = ShoppingOrder.objects.create(
+            child=profile,
+            reservation_ledger=ledger,
+            quoted_total_cents=total,
+            held_cash_cents=wallet_cash,
+            held_spending_cents=legacy_cash,
+        )
+        ShoppingOrderItem.objects.bulk_create(
+            [
+                ShoppingOrderItem(
+                    order=order,
+                    product=item.product,
+                    product_name=item.product.name,
+                    retailer=item.product.retailer,
+                    retailer_url=item.product.retailer_url,
+                    image_url=item.product.image_url,
+                    unit_price_cents=item.product.retail_price_cents,
+                    quantity=item.quantity,
+                )
+                for item in cart_items
+            ]
+        )
+        ShoppingCartItem.objects.filter(child=profile).delete()
+        _notify(profile, Notification.Kind.SHOPPING, "Order sent to your parents", f"${total / 100:.2f} is reserved while they purchase your cart.")
+        _audit(profile, profile, "shopping_order_submitted", f"Shopping order #{order.pk}: ${total / 100:.2f} reserved.", ledger=ledger)
+    messages.success(request, "Your cart was sent to your parents. The money is safely reserved until they complete or cancel it.")
+    return redirect("shopping_page")
 
 
 @login_required
@@ -1453,6 +1625,249 @@ def guardian_remove(request, model, pk):
 
 @login_required
 @require_POST
+def dad_shopping_product_create(request):
+    dad = _dad(request)
+    selected_id = request.POST.get("child_id", "")
+    if dad is None:
+        return redirect("dashboard")
+    form = ShoppingProductForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Please check the shopping product information and try again.")
+        return redirect(f"/?child={selected_id}")
+    product = form.save(commit=False)
+    product.added_by = dad
+    product.save()
+    _audit(dad, None, "shopping_product_created", product.name)
+    messages.success(request, f"{product.name} added to Shopping.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def dad_shopping_product_edit(request, pk):
+    dad = _dad(request)
+    selected_id = request.POST.get("child_id", "")
+    if dad is None:
+        return redirect("dashboard")
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    form = ShoppingProductForm(request.POST, instance=product)
+    if not form.is_valid():
+        messages.error(request, "Please check the shopping product changes and try again.")
+        return redirect(f"/?child={selected_id}")
+    form.save()
+    _audit(dad, None, "shopping_product_updated", product.name)
+    messages.success(request, "Shopping product updated.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def dad_shopping_product_stock(request, pk):
+    dad = _dad(request)
+    selected_id = request.POST.get("child_id", "")
+    if dad is None:
+        return redirect("dashboard")
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    product.in_stock = not product.in_stock
+    product.save(update_fields=["in_stock", "updated_at"])
+    status = "back in stock" if product.in_stock else "out of stock"
+    _audit(dad, None, "shopping_product_stock_changed", f"{product.name}: {status}")
+    messages.info(request, f"{product.name} is {status}.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def dad_shopping_product_toggle(request, pk):
+    dad = _dad(request)
+    selected_id = request.POST.get("child_id", "")
+    if dad is None:
+        return redirect("dashboard")
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    product.active = not product.active
+    product.save(update_fields=["active", "updated_at"])
+    status = "visible" if product.active else "hidden"
+    _audit(dad, None, "shopping_product_visibility_changed", f"{product.name}: {status}")
+    messages.info(request, f"{product.name} is now {status} in Shopping.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def dad_shopping_product_delete(request, pk):
+    dad = _dad(request)
+    selected_id = request.POST.get("child_id", "")
+    if dad is None:
+        return redirect("dashboard")
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    name = product.name
+    _audit(dad, None, "shopping_product_deleted", name)
+    product.delete()
+    messages.info(request, f"{name} removed from Shopping.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def fulfillment_claim(request, pk):
+    fulfiller = _fulfiller(request)
+    if fulfiller is None:
+        return redirect("dashboard")
+    with transaction.atomic():
+        order = get_object_or_404(ShoppingOrder.objects.select_for_update().select_related("child"), pk=pk)
+        if order.status not in [ShoppingOrder.Status.SUBMITTED, ShoppingOrder.Status.CLAIMED]:
+            messages.error(request, "That order is no longer waiting for fulfillment.")
+            return redirect(f"/?child={order.child.pk}")
+        order.status = ShoppingOrder.Status.CLAIMED
+        order.assigned_to = fulfiller
+        order.claimed_at = timezone.now()
+        order.save(update_fields=["status", "assigned_to", "claimed_at"])
+        _notify(order.child, Notification.Kind.SHOPPING, "Parent is shopping your cart", f"{fulfiller.display_name} selected order #{order.pk} to purchase.")
+        _audit(fulfiller, order.child, "shopping_order_claimed", f"Shopping order #{order.pk} claimed.")
+    messages.success(request, f"You selected {order.child.display_name}'s shopping order.")
+    return redirect(f"/?child={order.child.pk}")
+
+
+@login_required
+@require_POST
+def fulfillment_cancel(request, pk):
+    fulfiller = _fulfiller(request)
+    if fulfiller is None:
+        return redirect("dashboard")
+    with transaction.atomic():
+        order = get_object_or_404(
+            ShoppingOrder.objects.select_for_update().select_related("child", "reservation_ledger"),
+            pk=pk,
+        )
+        if order.status not in [ShoppingOrder.Status.SUBMITTED, ShoppingOrder.Status.CLAIMED]:
+            messages.error(request, "Only waiting shopping orders can be canceled.")
+            return redirect(f"/?child={order.child.pk}")
+        wallet = Wallet.objects.select_for_update().get(child=order.child)
+        Wallet.objects.filter(pk=wallet.pk).update(
+            cash_cents=F("cash_cents") + order.held_cash_cents,
+            spending_cents=F("spending_cents") + order.held_spending_cents,
+        )
+        ledger = order.reservation_ledger
+        if ledger and ledger.status == LedgerRequest.Status.PENDING:
+            ledger.status = LedgerRequest.Status.DECLINED
+            ledger.reviewed_by = fulfiller
+            ledger.reviewed_at = timezone.now()
+            ledger.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+        order.status = ShoppingOrder.Status.CANCELED
+        order.assigned_to = fulfiller
+        order.parent_note = request.POST.get("parent_note", "")[:240]
+        order.canceled_at = timezone.now()
+        order.save(update_fields=["status", "assigned_to", "parent_note", "canceled_at"])
+        _notify(order.child, Notification.Kind.SHOPPING, "Shopping order canceled", f"Order #{order.pk} was canceled and ${order.reserved_total_cents / 100:.2f} returned to your Cash App balance.")
+        _audit(fulfiller, order.child, "shopping_order_canceled", f"Shopping order #{order.pk} canceled; ${order.reserved_total_cents / 100:.2f} released.", ledger=ledger)
+    messages.info(request, "Order canceled and reserved cash returned.")
+    return redirect(f"/?child={order.child.pk}")
+
+
+@login_required
+@require_POST
+def fulfillment_purchase(request, pk):
+    fulfiller = _fulfiller(request)
+    if fulfiller is None:
+        return redirect("dashboard")
+    form = ShoppingFulfillmentForm(request.POST)
+    order = get_object_or_404(ShoppingOrder.objects.select_related("child"), pk=pk)
+    if not form.is_valid():
+        messages.error(request, "Enter the confirmed amount paid before marking the order purchased.")
+        return redirect(f"/?child={order.child.pk}")
+    final_total = _cents(form.cleaned_data["final_amount"])
+    with transaction.atomic():
+        order = ShoppingOrder.objects.select_for_update().select_related("child", "reservation_ledger").get(pk=pk)
+        if order.status not in [ShoppingOrder.Status.SUBMITTED, ShoppingOrder.Status.CLAIMED]:
+            messages.error(request, "That order is no longer waiting for purchase.")
+            return redirect(f"/?child={order.child.pk}")
+        wallet = Wallet.objects.select_for_update().get(child=order.child)
+        reserved_total = order.reserved_total_cents
+        final_cash = order.held_cash_cents
+        final_spending = order.held_spending_cents
+        if final_total > reserved_total:
+            extra = final_total - reserved_total
+            sources = _cash_sources(wallet, extra)
+            if sources is None:
+                messages.error(request, "The confirmed total is higher and the child does not have enough available cash for the difference.")
+                return redirect(f"/?child={order.child.pk}")
+            extra_cash, extra_spending = sources
+            Wallet.objects.filter(pk=wallet.pk).update(
+                cash_cents=F("cash_cents") - extra_cash,
+                spending_cents=F("spending_cents") - extra_spending,
+            )
+            final_cash += extra_cash
+            final_spending += extra_spending
+        elif final_total < reserved_total:
+            final_cash = min(order.held_cash_cents, final_total)
+            final_spending = final_total - final_cash
+            Wallet.objects.filter(pk=wallet.pk).update(
+                cash_cents=F("cash_cents") + order.held_cash_cents - final_cash,
+                spending_cents=F("spending_cents") + order.held_spending_cents - final_spending,
+            )
+        ledger = order.reservation_ledger
+        if ledger:
+            ledger.description = f"Shopping order purchased: ${final_total / 100:.2f}"
+            ledger.cash_delta_cents = -final_cash
+            ledger.spending_delta_cents = -final_spending
+            ledger.status = LedgerRequest.Status.APPROVED
+            ledger.reviewed_by = fulfiller
+            ledger.reviewed_at = timezone.now()
+            ledger.save(
+                update_fields=[
+                    "description",
+                    "cash_delta_cents",
+                    "spending_delta_cents",
+                    "status",
+                    "reviewed_by",
+                    "reviewed_at",
+                ]
+            )
+        order.status = ShoppingOrder.Status.PURCHASED
+        order.assigned_to = fulfiller
+        order.held_cash_cents = final_cash
+        order.held_spending_cents = final_spending
+        order.final_total_cents = final_total
+        order.parent_note = form.cleaned_data.get("parent_note", "")
+        order.purchased_at = timezone.now()
+        order.save(
+            update_fields=[
+                "status",
+                "assigned_to",
+                "held_cash_cents",
+                "held_spending_cents",
+                "final_total_cents",
+                "parent_note",
+                "purchased_at",
+            ]
+        )
+        _notify(order.child, Notification.Kind.SHOPPING, "Order purchased", f"Your parent purchased order #{order.pk} for ${final_total / 100:.2f}.")
+        _audit(fulfiller, order.child, "shopping_order_purchased", f"Shopping order #{order.pk} purchased for ${final_total / 100:.2f}.", ledger=ledger)
+    messages.success(request, "Purchase recorded and the child's Cash App balance finalized.")
+    return redirect(f"/?child={order.child.pk}")
+
+
+@login_required
+@require_POST
+def fulfillment_delivered(request, pk):
+    fulfiller = _fulfiller(request)
+    if fulfiller is None:
+        return redirect("dashboard")
+    order = get_object_or_404(ShoppingOrder.objects.select_related("child"), pk=pk)
+    if order.status != ShoppingOrder.Status.PURCHASED:
+        messages.error(request, "Only purchased orders can be marked delivered.")
+        return redirect(f"/?child={order.child.pk}")
+    order.status = ShoppingOrder.Status.DELIVERED
+    order.delivered_at = timezone.now()
+    order.save(update_fields=["status", "delivered_at"])
+    _notify(order.child, Notification.Kind.SHOPPING, "Shopping delivered", f"Order #{order.pk} was marked delivered. Enjoy!")
+    _audit(fulfiller, order.child, "shopping_order_delivered", f"Shopping order #{order.pk} delivered.")
+    messages.success(request, "Order marked delivered.")
+    return redirect(f"/?child={order.child.pk}")
+
+
+@login_required
+@require_POST
 def update_family_settings(request):
     guardian = _guardian(request)
     if guardian is None:
@@ -1809,6 +2224,9 @@ def review_request(request, pk, decision):
     entry = get_object_or_404(LedgerRequest, pk=pk)
     if guardian is None:
         return redirect("dashboard")
+    if entry.kind == LedgerRequest.Kind.SHOPPING:
+        messages.info(request, "Shopping orders are completed in the Fulfillment app.")
+        return redirect(f"/?child={entry.child.pk}")
     if entry.requires_dad_approval and guardian.user.username.lower() != "dad":
         messages.error(request, "Only Dad can approve wallet-to-spending and spending requests.")
         return redirect(f"/?child={entry.child.pk}")

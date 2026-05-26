@@ -1,6 +1,6 @@
 # Family Circle
 
-Family Circle is an installable iPhone-friendly family rewards PWA backed by Django and PostgreSQL. KJ, Astoria, and Saphira each have a child account. Dad and GG manage the family tools; Mom has a read-only Family Viewer account for following progress and growth.
+Family Circle is an installable iPhone-friendly family rewards PWA backed by Django and PostgreSQL. KJ, Astoria, and Saphira each have a child account. Dad and GG manage the family tools; Mom has a Family Viewer account for following progress and fulfilling child shopping orders.
 
 This is private family software. All rights reserved; it is not intended for redistribution.
 
@@ -24,17 +24,18 @@ This is private family software. All rights reserved; it is not intended for red
 - Cash App-style available cash, parent-recorded real-world spending, and sibling cash transfers.
 - Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
+- A native child Shopping app with an editable 50-product starter catalog, public product photos, retail-price snapshots, cash-only carts, and parent fulfillment.
 - Private in-app Messages with child, sibling, guardian, and Mom conversations in a phone-style bubble interface.
 - LiveKit Cloud-powered one-to-one family audio/video calling from Messages, with parent-managed child lock schedules, six daily free child calls, one-token additional calls, and a five-minute reconnect window.
-- Parent OS home screen with native Controls, Wallet, Approvals, Calendar, Rules, Limits, Store, Progress, Audit, and Ledger apps.
+- Parent OS home screen with native Controls, Wallet, Approvals, Calendar, Rules, Limits, Store, Fulfillment, Progress, Audit, and Ledger apps.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
-- A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights without editing or financial controls.
+- A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights, with fulfillment-only access for Shopping orders.
 - Inventory-aware Family Store items with token prices, cash prices, mixed prices, hidden/unlocked state, age limits, and optional redemption approval.
 - Atomic ledger-backed balance updates and audit logs for reward and rule enforcement changes.
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.5.0`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.6.0`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -80,7 +81,7 @@ python manage.py seed_family --reset-passwords
 
 The initial usernames are `kj`, `astoria`, `saphira`, `dad`, `mom`, and `gg`.
 
-Account access is deliberately different: Dad and GG are guardian accounts with family-management controls; Mom is a read-only **Family Viewer** account that can see progress but cannot approve, edit, lock accounts, change rewards, subscribe to action reminders, or access child balances.
+Account access is deliberately different: Dad and GG are guardian accounts with family-management controls; Mom is a **Family Viewer** who can see progress and fulfill Shopping orders, but cannot approve chores, edit the catalog, lock accounts, change rewards, subscribe to action reminders, or access child balances outside the cash already reserved in an order.
 
 Dad and GG use the **Guardian Actions** panel to open focused popup interfaces for rewards, behavior deductions, Grounded Mode, grades, chores, goals, schedules, rules, and store updates. Behavior deductions are audited in account history and may make a token balance negative. Grounded Mode supports a scheduled lift and records a behavior note that Mom can see in her read-only dashboard.
 
@@ -91,6 +92,12 @@ Do not leave accounts using the fallback password on an online app. Replace the 
 The Cash App balance is an internal Family Circle ledger balance. The app does not debit a parent's bank account, hold funds, create a spendable virtual card, or issue an Apple Wallet payment card. Parents define the rate for converting earned tokens into cash. That conversion is immediate and one-way: cash cannot become tokens again. Children can send tokens, send available cash to siblings, or record in-person spending with their parent; each transfer is audited.
 
 An Apple Wallet display pass or a real funded card can be considered later only through an appropriate pass-signing setup or regulated card/payment provider, with stronger authentication and parental controls.
+
+## Shopping Catalog
+
+Shopping is separate from the token Reward Store. Children build a cart using only their Cash App balance, and checkout reserves that cash until Dad, GG, or Mom records a purchase or cancels and refunds the order. Dad can add, edit, hide, mark out of stock, or delete catalog items.
+
+The starter migration supplies 50 editable listings with public illustrative photos, displayed retail-price snapshots, and Google Shopping search links for adult checkout. It is not a live Google product API or automated retailer checkout; the fulfilling adult must verify the current item, price, availability, and ordering details before purchasing.
 
 ## Guardian Reminder Notifications
 

@@ -25,6 +25,9 @@ from .models import (
     Purchase,
     RuleAcknowledgement,
     SavingsGoal,
+    ShoppingCartItem,
+    ShoppingOrder,
+    ShoppingProduct,
     StoreItem,
     Wallet,
 )
@@ -442,6 +445,113 @@ class LedgerApprovalTests(TestCase):
         entry.refresh_from_db()
         self.assertEqual(self.wallet.cash_cents, 500)
         self.assertEqual(entry.status, LedgerRequest.Status.DECLINED)
+
+    def test_child_shopping_checkout_reserves_cash_only_and_keeps_tokens(self):
+        product = ShoppingProduct.objects.create(
+            name="Starter scooter",
+            description="Outdoor ride",
+            retailer="Google Shopping search",
+            retailer_url="https://www.google.com/search?tbm=shop&q=starter+scooter",
+            retail_price_cents=225,
+            category=ShoppingProduct.Category.OUTDOOR,
+        )
+        self.client.force_login(self.child.user)
+
+        page = self.client.get(reverse("shopping_page"))
+        self.assertContains(page, "Build your cart")
+        self.assertContains(page, "Back")
+        self.client.post(reverse("shopping_cart_add", args=[product.pk]))
+        self.client.post(reverse("shopping_checkout"))
+
+        self.wallet.refresh_from_db()
+        order = ShoppingOrder.objects.get(child=self.child)
+        ledger = LedgerRequest.objects.get(kind=LedgerRequest.Kind.SHOPPING)
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertEqual(self.wallet.cash_cents, 275)
+        self.assertEqual(order.quoted_total_cents, 225)
+        self.assertEqual(ledger.cash_delta_cents, -225)
+        self.assertEqual(ledger.token_delta, 0)
+        self.assertEqual(ledger.status, LedgerRequest.Status.PENDING)
+        self.assertFalse(ShoppingCartItem.objects.filter(child=self.child).exists())
+
+        self.client.force_login(self.guardian.user)
+        self.client.post(reverse("review_request", args=[ledger.pk, "approve"]))
+        self.wallet.refresh_from_db()
+        ledger.refresh_from_db()
+        self.assertEqual(self.wallet.cash_cents, 275)
+        self.assertEqual(ledger.status, LedgerRequest.Status.PENDING)
+
+    def test_mom_can_complete_shopping_purchase_but_cannot_edit_catalog(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        product = ShoppingProduct.objects.create(
+            name="Art kit",
+            retailer="Google Shopping search",
+            retailer_url="https://www.google.com/search?tbm=shop&q=art+kit",
+            retail_price_cents=225,
+            category=ShoppingProduct.Category.CREATIVE,
+        )
+        self.client.force_login(self.child.user)
+        self.client.post(reverse("shopping_cart_add", args=[product.pk]))
+        self.client.post(reverse("shopping_checkout"))
+        order = ShoppingOrder.objects.get(child=self.child)
+        self.client.force_login(mom_user)
+
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Fulfillment")
+        self.client.post(reverse("fulfillment_purchase", args=[order.pk]), {"final_amount": "2.00", "parent_note": "Ordered"})
+        self.client.post(reverse("dad_shopping_product_stock", args=[product.pk]), {"child_id": self.child.pk})
+
+        self.wallet.refresh_from_db()
+        order.refresh_from_db()
+        product.refresh_from_db()
+        order.reservation_ledger.refresh_from_db()
+        self.assertEqual(order.status, ShoppingOrder.Status.PURCHASED)
+        self.assertEqual(order.assigned_to, mom)
+        self.assertEqual(order.reservation_ledger.status, LedgerRequest.Status.APPROVED)
+        self.assertEqual(order.reservation_ledger.cash_delta_cents, -200)
+        self.assertEqual(self.wallet.cash_cents, 300)
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertTrue(product.in_stock)
+
+    def test_dad_can_mark_shopping_product_out_of_stock_and_delete_it(self):
+        product = ShoppingProduct.objects.create(
+            name="Temporary listing",
+            retailer="Google Shopping search",
+            retailer_url="https://www.google.com/search?tbm=shop&q=temporary+listing",
+            retail_price_cents=1000,
+            category=ShoppingProduct.Category.GAMES,
+        )
+        self.client.force_login(self.guardian.user)
+
+        self.client.post(reverse("dad_shopping_product_stock", args=[product.pk]), {"child_id": self.child.pk})
+        product.refresh_from_db()
+        self.assertFalse(product.in_stock)
+        self.client.post(reverse("dad_shopping_product_delete", args=[product.pk]), {"child_id": self.child.pk})
+        self.assertFalse(ShoppingProduct.objects.filter(pk=product.pk).exists())
+
+    def test_canceling_shopping_order_releases_reserved_cash(self):
+        product = ShoppingProduct.objects.create(
+            name="Puzzle",
+            retailer="Google Shopping search",
+            retailer_url="https://www.google.com/search?tbm=shop&q=puzzle",
+            retail_price_cents=175,
+            category=ShoppingProduct.Category.GAMES,
+        )
+        self.client.force_login(self.child.user)
+        self.client.post(reverse("shopping_cart_add", args=[product.pk]))
+        self.client.post(reverse("shopping_checkout"))
+        order = ShoppingOrder.objects.get(child=self.child)
+        self.client.force_login(self.guardian.user)
+
+        self.client.post(reverse("fulfillment_cancel", args=[order.pk]), {"parent_note": "Unavailable"})
+
+        self.wallet.refresh_from_db()
+        order.refresh_from_db()
+        order.reservation_ledger.refresh_from_db()
+        self.assertEqual(self.wallet.cash_cents, 500)
+        self.assertEqual(order.status, ShoppingOrder.Status.CANCELED)
+        self.assertEqual(order.reservation_ledger.status, LedgerRequest.Status.DECLINED)
 
     def test_mixed_price_store_purchase_reduces_inventory_after_parent_approval(self):
         item = StoreItem.objects.create(

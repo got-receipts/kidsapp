@@ -20,6 +20,7 @@
     <a class="{% if active_section == 'badges' %}active{% endif %}" href="{% url 'child_section' 'badges' %}">Badges</a>
     <a class="{% if active_section == 'store' %}active{% endif %}" href="{% url 'child_section' 'store' %}">Store</a>
     <a href="{% url 'wallet_page' %}">Wallet</a>
+    <a href="{% url 'shopping_page' %}">Shopping</a>
     {% endif %}
   </nav>
   {% if active_section == "today" %}
@@ -161,7 +162,7 @@
     <a class="dock-messages" href="{% url 'messages_inbox' %}"><span>&#9993;</span>Messages</a>
     <a href="{% url 'child_section' 'today' %}"><span>&#9788;</span>Today</a>
     <a href="{% url 'child_section' 'chores' %}"><span>&#10003;</span>Quests</a>
-    {% if not profile.grounded %}<a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>{% endif %}
+    {% if not profile.grounded %}<a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a><a href="{% url 'shopping_page' %}"><span>&#128722;</span>Shopping</a>{% endif %}
   </nav>
 </main>
 {% endblock %}
