@@ -17,6 +17,7 @@
     <a href="{% url 'child_section' 'store' %}">Reward Store</a>
     <a href="{% url 'wallet_page' %}">Wallet</a>
     <a class="active" href="{% url 'shopping_page' %}">Shopping</a>
+    <a href="{% url 'discover_page' %}">Discover</a>
     <a href="{% url 'messages_inbox' %}">Messages</a>
   </nav>
   <section class="shopping-hero toy-market-hero">
@@ -49,9 +50,7 @@
       {% for product in products %}
         <article class="shopping-product {% if product.featured %}featured{% endif %}">
           <div class="toy-photo category-{{ product.category }}">
-            {% with fallback_path='rewards/catalog/'|add:product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}
-            <img src="{% url 'shopping_product_photo' product.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" loading="lazy" alt="{{ product.name }}">
-            {% endwith %}
+            {% with artwork_path='rewards/catalog/'|add:product.category|add:'.svg' %}<img src="{% static artwork_path %}" loading="lazy" alt="{{ product.get_category_display }} illustration">{% endwith %}
             {% if product.featured %}<span class="toy-favorite">&#9733; Top Pick</span>{% endif %}
           </div>
           <div class="shopping-product-body">
@@ -73,9 +72,7 @@
       <div class="toy-bag-head"><span class="toy-bag-icon">&#128717;</span><div><small>My Toy Bag</small><h2>Ready to order?</h2></div><b>{{ cart_items|length }}</b></div>
       {% for item in cart_items %}
         <div class="shopping-cart-item">
-          {% with fallback_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}
-          <img src="{% url 'shopping_product_photo' item.product.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" loading="lazy" alt="{{ item.product.name }}">
-          {% endwith %}
+          {% with artwork_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}<img src="{% static artwork_path %}" loading="lazy" alt="">{% endwith %}
           <div><strong>{{ item.product.name }}</strong><small>{{ item.subtotal_cents|dollars }}</small></div>
           <div class="cart-quantity">
             <form method="post" action="{% url 'shopping_cart_update' item.pk %}">{% csrf_token %}<input type="hidden" name="action" value="decrease"><button type="submit" aria-label="Decrease quantity">-</button></form>

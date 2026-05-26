@@ -344,7 +344,6 @@ class ShoppingProduct(models.Model):
     description = models.CharField(max_length=220, blank=True)
     retailer = models.CharField(max_length=60, default="Google Shopping")
     retailer_url = models.URLField(max_length=500)
-    image_url = models.URLField(max_length=500, blank=True)
     retail_price_cents = models.PositiveIntegerField()
     category = models.CharField(max_length=14, choices=Category.choices)
     active = models.BooleanField(default=True)
@@ -432,7 +431,6 @@ class ShoppingOrderItem(models.Model):
     product_name = models.CharField(max_length=120)
     retailer = models.CharField(max_length=60)
     retailer_url = models.URLField(max_length=500)
-    image_url = models.URLField(max_length=500, blank=True)
     unit_price_cents = models.PositiveIntegerField()
     quantity = models.PositiveSmallIntegerField(default=1)
 
@@ -442,6 +440,89 @@ class ShoppingOrderItem(models.Model):
 
     class Meta:
         ordering = ["pk"]
+
+
+class VideoPlaylist(models.Model):
+    title = models.CharField(max_length=100)
+    description = models.CharField(max_length=240, blank=True)
+    active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="video_playlists_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
+
+
+class VideoClip(models.Model):
+    playlist = models.ForeignKey(VideoPlaylist, on_delete=models.CASCADE, related_name="clips")
+    youtube_id = models.CharField(max_length=11)
+    title = models.CharField(max_length=120)
+    subject_tag = models.CharField(max_length=40, blank=True)
+    position = models.PositiveSmallIntegerField(default=0)
+    active = models.BooleanField(default=True)
+    added_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="video_clips_added")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["position", "created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["playlist", "youtube_id"], name="one_youtube_video_per_playlist")
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class VideoPlaylistAssignment(models.Model):
+    playlist = models.ForeignKey(VideoPlaylist, on_delete=models.CASCADE, related_name="assignments")
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="video_playlist_assignments")
+    enabled = models.BooleanField(default=True)
+    assigned_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="video_playlist_assignments_created")
+    assigned_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.child_id and self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Discover playlists may only be assigned to child accounts.")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["playlist", "child"], name="one_video_playlist_assignment_per_child")
+        ]
+        ordering = ["playlist__title"]
+
+
+class VideoFavorite(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="video_favorites")
+    clip = models.ForeignKey(VideoClip, on_delete=models.CASCADE, related_name="favorites")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.child_id and self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Only child accounts may favorite Discover videos.")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["child", "clip"], name="one_video_favorite_per_child")
+        ]
+        ordering = ["-created_at"]
+
+
+class VideoWatchEvent(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="video_watch_events")
+    clip = models.ForeignKey(VideoClip, on_delete=models.CASCADE, related_name="watch_events")
+    first_watched_at = models.DateTimeField(auto_now_add=True)
+    last_watched_at = models.DateTimeField(auto_now=True)
+    view_count = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["child", "clip"], name="one_video_watch_summary_per_child")
+        ]
+        ordering = ["-last_watched_at"]
 
 
 class BehaviorStar(models.Model):
@@ -703,6 +784,7 @@ class Notification(models.Model):
         MESSAGE = "message", "Message"
         CALL = "call", "Call"
         SHOPPING = "shopping", "Shopping order"
+        DISCOVER = "discover", "Discover"
 
     recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=12, choices=Kind.choices)
@@ -772,6 +854,47 @@ class CommunicationSchedule(models.Model):
     def clean(self):
         if self.child_id and self.child.role != Profile.Role.CHILD:
             raise ValidationError("Communication schedules apply only to child accounts.")
+        valid_days = {day for day, _ in self.WEEKDAYS}
+        if not set(filter(None, self.days_of_week.split(","))).issubset(valid_days):
+            raise ValidationError("Select valid schedule days.")
+
+    def applies_at(self, moment=None):
+        if not self.enabled:
+            return False
+        moment = timezone.localtime(moment or timezone.now())
+        selected_days = set(filter(None, self.days_of_week.split(",")))
+        current_day = str(moment.weekday())
+        current_time = moment.time().replace(tzinfo=None)
+        if self.start_time <= self.end_time:
+            return current_day in selected_days and self.start_time <= current_time < self.end_time
+        if current_time >= self.start_time:
+            return current_day in selected_days
+        previous_day = str((moment.weekday() - 1) % 7)
+        return current_time < self.end_time and previous_day in selected_days
+
+    @property
+    def days_display(self):
+        selected_days = set(filter(None, self.days_of_week.split(",")))
+        return ", ".join(label[:3] for value, label in self.WEEKDAYS if value in selected_days)
+
+    class Meta:
+        ordering = ["child__display_name", "start_time"]
+
+
+class DiscoverSchedule(models.Model):
+    WEEKDAYS = CommunicationSchedule.WEEKDAYS
+
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="discover_schedules")
+    days_of_week = models.CharField(max_length=20, default="0,1,2,3,4,5,6")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    enabled = models.BooleanField(default=True)
+    created_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="discover_schedules_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.child_id and self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Discover schedules apply only to child accounts.")
         valid_days = {day for day, _ in self.WEEKDAYS}
         if not set(filter(None, self.days_of_week.split(","))).issubset(valid_days):
             raise ValidationError("Select valid schedule days.")

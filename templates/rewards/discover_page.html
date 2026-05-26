@@ -1,0 +1,58 @@
+{% extends "rewards/base.html" %}
+{% load static %}
+{% block title %}Discover | Family Circle{% endblock %}
+{% block content %}
+<main class="discover-shell" data-discover-feed data-discover-status-url="{% url 'discover_status' %}">
+  <header class="discover-topbar">
+    <button class="discover-nav-control" type="button" data-go-back data-fallback-url="{% url 'dashboard' %}" aria-label="Go back"><span>&#8249;</span> Back</button>
+    <div class="discover-brand"><b>&#9654;</b><div><small>{{ profile.display_name }}'s apps</small><strong>Discover</strong></div></div>
+    <a class="discover-nav-control home" href="{% url 'dashboard' %}" aria-label="Go home"><span>&#8962;</span> Home</a>
+  </header>
+  {% if discover_lock %}
+    <section class="discover-unavailable">
+      <div class="discover-moon">&#9789;</div>
+      <p class="eyebrow">Screen-time hours</p>
+      <h1>Discover is resting right now</h1>
+      <p>Your family schedule closes videos during this time. Come back when viewing hours open again.</p>
+      <a href="{% url 'dashboard' %}">Return Home</a>
+    </section>
+  {% elif clips %}
+    <div class="discover-reels" aria-label="Parent approved videos">
+      {% for clip in clips %}
+      <article class="discover-reel" data-discover-slide data-watch-url="{% url 'discover_watch' clip.pk %}">
+        <div class="discover-player">
+          <iframe
+            title="{{ clip.title }}"
+            data-discover-player
+            data-src="https://www.youtube-nocookie.com/embed/{{ clip.youtube_id }}?enablejsapi=1&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;iv_load_policy=3&amp;autoplay=1&amp;mute=1"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen></iframe>
+        </div>
+        <div class="discover-shade"></div>
+        <div class="discover-video-copy">
+          {% if clip.subject_tag %}<span>{{ clip.subject_tag }}</span>{% endif %}
+          <h1>{{ clip.title }}</h1>
+          <p>{{ clip.playlist.title }} &middot; Approved by your family</p>
+        </div>
+        <form class="discover-favorite {% if clip.favorited %}liked{% endif %}" method="post" action="{% url 'discover_favorite' clip.pk %}" data-discover-favorite>
+          {% csrf_token %}
+          <button type="submit" aria-label="{% if clip.favorited %}Remove favorite{% else %}Favorite video{% endif %}">
+            <b>&#9829;</b><span>{% if clip.favorited %}Liked{% else %}Like{% endif %}</span>
+          </button>
+        </form>
+        <div class="discover-swipe-hint">Swipe for the next video</div>
+      </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="discover-unavailable empty-feed">
+      <div class="discover-moon">&#9654;</div>
+      <p class="eyebrow">Discover</p>
+      <h1>No videos yet</h1>
+      <p>Ask Mom, Dad, or GG to add a playlist of videos for you.</p>
+      <a href="{% url 'dashboard' %}">Return Home</a>
+    </section>
+  {% endif %}
+</main>
+{% endblock %}

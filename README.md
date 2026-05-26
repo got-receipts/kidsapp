@@ -1,6 +1,6 @@
 # Family Circle
 
-Family Circle is an installable iPhone-friendly family rewards PWA backed by Django and PostgreSQL. KJ, Astoria, and Saphira each have a child account. Dad and GG manage the family tools; Mom has a Family Viewer account for following progress and fulfilling child shopping orders.
+Family Circle is an installable iPhone-friendly family rewards PWA backed by Django and PostgreSQL. KJ, Astoria, and Saphira each have a child account. Dad and GG manage the family tools; Mom has a Family Viewer account for following progress, fulfilling child shopping orders, and curating Discover video playlists.
 
 This is private family software. All rights reserved; it is not intended for redistribution.
 
@@ -24,18 +24,19 @@ This is private family software. All rights reserved; it is not intended for red
 - Cash App-style available cash, parent-recorded real-world spending, and sibling cash transfers.
 - Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
-- A native child Shopping app with an editable 50-product starter catalog, public product photos, retail-price snapshots, cash-only carts, and parent fulfillment.
+- A native child Shopping app with an editable 50-product starter catalog, built-in category illustrations, retail-price snapshots, cash-only carts, and parent fulfillment.
+- A native child Discover app with a vertical parent-approved video feed, in-app likes, activity summaries, Grounded Mode blocking, and independent viewing-hour lock schedules.
 - Private in-app Messages with child, sibling, guardian, and Mom conversations in a phone-style bubble interface.
 - LiveKit Cloud-powered one-to-one family audio/video calling from Messages, with parent-managed child lock schedules, six daily free child calls, one-token additional calls, and a five-minute reconnect window.
-- Parent OS home screen with native Controls, Wallet, Approvals, Calendar, Rules, Limits, Store, Fulfillment, Progress, Audit, and Ledger apps.
+- Parent OS home screen with native Controls, Wallet, Approvals, Calendar, Rules, Limits, Store, Fulfillment, Video Library, Progress, Audit, and Ledger apps.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
-- A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights, with fulfillment-only access for Shopping orders.
+- A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights, with access limited to Shopping fulfillment and Discover video curation actions.
 - Inventory-aware Family Store items with token prices, cash prices, mixed prices, hidden/unlocked state, age limits, and optional redemption approval.
 - Atomic ledger-backed balance updates and audit logs for reward and rule enforcement changes.
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.6.0`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.7.1`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -81,7 +82,7 @@ python manage.py seed_family --reset-passwords
 
 The initial usernames are `kj`, `astoria`, `saphira`, `dad`, `mom`, and `gg`.
 
-Account access is deliberately different: Dad and GG are guardian accounts with family-management controls; Mom is a **Family Viewer** who can see progress and fulfill Shopping orders, but cannot approve chores, edit the catalog, lock accounts, change rewards, subscribe to action reminders, or access child balances outside the cash already reserved in an order.
+Account access is deliberately different: Dad and GG are guardian accounts with family-management controls; Mom is a **Family Viewer** who can see progress, fulfill Shopping orders, and manage parent-approved Discover playlists and viewing schedules. She cannot approve chores, edit the Shopping catalog, lock accounts, change rewards, subscribe to action reminders, or access child balances outside the cash already reserved in an order.
 
 Dad and GG use the **Guardian Actions** panel to open focused popup interfaces for rewards, behavior deductions, Grounded Mode, grades, chores, goals, schedules, rules, and store updates. Behavior deductions are audited in account history and may make a token balance negative. Grounded Mode supports a scheduled lift and records a behavior note that Mom can see in her read-only dashboard.
 
@@ -97,7 +98,7 @@ An Apple Wallet display pass or a real funded card can be considered later only 
 
 Shopping is separate from the token Reward Store. Children build a cart using only their Cash App balance, and checkout reserves that cash until Dad, GG, or Mom records a purchase or cancels and refunds the order. Dad can add, edit, hide, mark out of stock, or delete catalog items.
 
-The starter migration supplies 50 editable listings with public illustrative photos, displayed retail-price snapshots, and Google Shopping search links for adult checkout. Dad can replace a listing link with a direct public product page and use **Pull photo** to import its preview image server-side. Child screens request photos only through Family Circle endpoints, never by receiving retailer or source-image links. Import images only from sources the family has permission to display. This is not a live Google product API or automated retailer checkout; the fulfilling adult must verify the current item, price, availability, and ordering details before purchasing.
+The starter migration supplies 50 editable listings with displayed retail-price snapshots, built-in category illustrations, and Google Shopping search links for adult checkout. Product artwork remains inside Family Circle; the fulfilling adult can use the parent-only purchase link to verify the current item, price, availability, and ordering details before purchasing. This is not a live Google product API or automated retailer checkout.
 
 ## Guardian Reminder Notifications
 
@@ -113,6 +114,14 @@ Cron schedule: */30 * * * *
 Railway evaluates cron schedules in UTC. The command checks the configured `America/New_York` application timezone and sends the star reminder once per day after 7:30 PM and the schedule-planning reminder once per day after 9:00 PM, so it remains correct when daylight saving time changes.
 
 On iPhone, push notifications require installing the PWA from Safari using **Add to Home Screen**, then enabling notifications from inside the installed app.
+
+## Discover Video Library
+
+Discover is a separate native child OS app modeled on the parent-curated short-video concept in KidVid. It does not replace the home-screen launcher, wallet, shopping, messages, or calling features. Children swipe through only active videos in active playlists assigned to their profile; favorites and watch summaries stay inside Family Circle.
+
+Dad, GG, and Mom can open **Video Library** on the parent home screen to create playlists, add reviewed YouTube video or Shorts links, reorder or hide clips, assign playlists to the selected child, and add regular Discover lock hours. Grounded Mode blocks Discover automatically in addition to those schedules.
+
+YouTube videos are played through YouTube's privacy-enhanced embedded player. The Family Circle interface provides no child-facing open search, comments, or direct video links, but an embedded YouTube player remains subject to YouTube's playback behavior and policies.
 
 ## Family Calling
 

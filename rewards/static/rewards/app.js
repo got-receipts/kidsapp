@@ -245,19 +245,87 @@ document.querySelectorAll("[data-go-back]").forEach((button) => {
   });
 });
 
-function useCatalogFallback(image) {
-  const fallback = image.dataset.fallbackSrc;
-  if (!fallback) return;
-  image.dataset.fallbackLoaded = "true";
-  image.src = fallback;
-  image.classList.add("fallback-art");
-}
+const discoverFeed = document.querySelector("[data-discover-feed]");
+if (discoverFeed) {
+  const slides = Array.from(discoverFeed.querySelectorAll("[data-discover-slide]"));
+  let activeSlide = null;
 
-const catalogImages = document.querySelectorAll("[data-product-image]");
-catalogImages.forEach((image) => {
-  image.addEventListener("error", () => useCatalogFallback(image));
-  if (image.complete && image.naturalWidth === 0) useCatalogFallback(image);
-});
+  function commandPlayer(frame, command) {
+    if (!frame || !frame.contentWindow || !frame.src) return;
+    frame.contentWindow.postMessage(JSON.stringify({event: "command", func: command, args: []}), "https://www.youtube-nocookie.com");
+  }
+
+  function activateDiscoverSlide(slide) {
+    if (!slide || slide === activeSlide) return;
+    activeSlide = slide;
+    slides.forEach((candidate) => {
+      const frame = candidate.querySelector("[data-discover-player]");
+      candidate.classList.toggle("playing", candidate === slide);
+      if (candidate !== slide) commandPlayer(frame, "pauseVideo");
+    });
+    const frame = slide.querySelector("[data-discover-player]");
+    if (frame && !frame.src) frame.src = frame.dataset.src;
+    commandPlayer(frame, "playVideo");
+    if (!slide.dataset.viewRecorded) {
+      slide.dataset.viewRecorded = "yes";
+      fetch(slide.dataset.watchUrl, {
+        method: "POST",
+        headers: {"X-CSRFToken": cookieValue("csrftoken"), "Accept": "application/json"},
+      }).catch(() => {});
+    }
+  }
+
+  slides.forEach((slide) => {
+    const frame = slide.querySelector("[data-discover-player]");
+    if (frame) frame.addEventListener("load", () => {
+      if (slide === activeSlide) commandPlayer(frame, "playVideo");
+    });
+  });
+
+  if (slides.length) {
+    const observer = new IntersectionObserver((entries) => {
+      entries
+        .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.7)
+        .sort((left, right) => right.intersectionRatio - left.intersectionRatio)
+        .slice(0, 1)
+        .forEach((entry) => activateDiscoverSlide(entry.target));
+    }, {threshold: [0.7, 0.85]});
+    slides.forEach((slide) => observer.observe(slide));
+    activateDiscoverSlide(slides[0]);
+    window.setInterval(async () => {
+      try {
+        const response = await fetch(discoverFeed.dataset.discoverStatusUrl, {headers: {"Accept": "application/json"}});
+        if (!response.ok) return;
+        const status = await response.json();
+        if (!status.locked) return;
+        slides.forEach((slide) => commandPlayer(slide.querySelector("[data-discover-player]"), "pauseVideo"));
+        toast(status.reason === "grounded" ? "Discover has been locked by Grounded Mode." : "Discover viewing hours are over.");
+        window.setTimeout(() => window.location.reload(), 500);
+      } catch (error) {
+        // Continue playback when an availability check cannot reach the server.
+      }
+    }, 30000);
+  }
+
+  discoverFeed.querySelectorAll("[data-discover-favorite]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          headers: {"X-CSRFToken": cookieValue("csrftoken"), "Accept": "application/json"},
+        });
+        if (!response.ok) throw new Error("favorite rejected");
+        const result = await response.json();
+        form.classList.toggle("liked", result.favorited);
+        const label = form.querySelector("span");
+        if (label) label.textContent = result.favorited ? "Liked" : "Like";
+      } catch (error) {
+        toast("Could not update that favorite right now.");
+      }
+    });
+  });
+}
 
 const messageThread = document.querySelector("[data-message-thread]");
 if (messageThread) {
@@ -470,6 +538,12 @@ document.querySelectorAll("[data-auto-open-dialog]").forEach((dialog) => {
 document.querySelectorAll("[data-confirm-deduction]").forEach((form) => {
   form.addEventListener("submit", (event) => {
     if (!window.confirm("Remove these tokens for the recorded behavior reason?")) event.preventDefault();
+  });
+});
+
+document.querySelectorAll("[data-confirm-video-delete]").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    if (!window.confirm("Remove this from the Discover video library?")) event.preventDefault();
   });
 });
 document.querySelectorAll("[data-confirm-punishment-removal]").forEach((form) => {

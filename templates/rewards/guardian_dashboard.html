@@ -12,7 +12,7 @@
   <section class="wallet-card guardian-card">
     <p class="eyebrow">{% if can_manage %}Family control center{% else %}Family progress view{% endif %}</p>
     <h2>{% if can_manage %}Rewards and progress{% else %}See their growth and good moments{% endif %}</h2>
-    <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% elif can_fulfill %}You can follow family progress and complete children's Shopping orders sent for purchase.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
+    <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% elif can_fulfill and can_manage_video %}You can complete children's Shopping orders and manage their approved Discover video playlists.{% elif can_fulfill %}You can follow family progress and complete children's Shopping orders sent for purchase.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
     {% if can_manage %}
     <button class="notify-button" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on reminders</button>
     {% if not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable push notifications.</small>{% endif %}
@@ -78,6 +78,9 @@
       {% endif %}
       {% if can_fulfill %}
       <button class="parent-app app-fulfillment" type="button" data-parent-open="fulfillment"><b>&#128722;</b><strong>Fulfillment</strong><small>{{ open_shopping_order_count }} waiting</small></button>
+      {% endif %}
+      {% if can_manage_video %}
+      <button class="parent-app app-video-library" type="button" data-parent-open="video-library"><b>&#9654;</b><strong>Video Library</strong><small>Discover feed</small></button>
       {% endif %}
       {% if not can_manage %}
       <button class="parent-app app-routine" type="button" data-parent-open="routine"><b>&#9788;</b><strong>Routine</strong><small>Chores &amp; schedule</small></button>
@@ -562,7 +565,7 @@
             <div class="fulfillment-items">
               {% for item in order.items.all %}
               <div class="fulfillment-item">
-                {% if item.product %}{% with fallback_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}<img src="{% url 'shopping_order_item_photo' item.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" alt="{{ item.product_name }}">{% endwith %}{% else %}{% static 'rewards/catalog/gift.svg' as fallback_photo %}<img src="{% url 'shopping_order_item_photo' item.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" alt="{{ item.product_name }}">{% endif %}
+                {% if item.product %}{% with artwork_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}<img src="{% static artwork_path %}" alt="">{% endwith %}{% else %}<img src="{% static 'rewards/catalog/gift.svg' %}" alt="">{% endif %}
                 <div><strong>{{ item.product_name }}</strong><small>{{ item.quantity }} x {{ item.unit_price_cents|dollars }} &middot; {{ item.retailer }}</small><a href="{{ item.retailer_url }}" target="_blank" rel="noopener noreferrer">Check price / purchase</a></div>
               </div>
               {% endfor %}
@@ -594,7 +597,7 @@
         <dialog class="review-dialog action-dialog" id="action-shopping-product">
           <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
           <p class="eyebrow">Shopping catalog</p><h2>Add product</h2>
-          <p class="control-note">Use a direct product page link and optionally an approved photo URL. After adding a product, Dad can pull the page's preview photo; children receive only an in-app image address.</p>
+          <p class="control-note">Use a direct product page link. Children see the friendly built-in illustration for the selected category.</p>
           <form class="form" method="post" action="{% url 'dad_shopping_product_create' %}">
             {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ shopping_product_form.as_p }}
             <button class="primary" type="submit">Add product</button>
@@ -602,15 +605,14 @@
         </dialog>
         <article class="card fulfillment-catalog">
           <div class="card-head"><h2>Shopping catalog</h2><span class="badge">Dad manages</span></div>
-          <p class="control-note">Starter listings are editable retail snapshots. Import photos only from sources you are allowed to display, and verify current price before purchasing.</p>
+          <p class="control-note">Starter listings are editable retail snapshots with built-in category artwork. Verify current price before purchasing.</p>
           <div class="catalog-admin-grid">
           {% for product in shopping_catalog %}
             <article class="catalog-admin-product">
-              {% with fallback_path='rewards/catalog/'|add:product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}<img src="{% url 'shopping_product_photo' product.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" alt="{{ product.name }}">{% endwith %}
+              {% with artwork_path='rewards/catalog/'|add:product.category|add:'.svg' %}<img src="{% static artwork_path %}" alt="">{% endwith %}
               <div><strong>{{ product.name }}</strong><small>{{ product.retail_price_cents|dollars }} &middot; {{ product.get_category_display }}</small><span class="badge {% if not product.in_stock or not product.active %}waiting{% endif %}">{% if not product.active %}Hidden{% elif product.in_stock %}In stock{% else %}Out of stock{% endif %}</span></div>
               <div class="catalog-actions">
                 <button class="remove-button" type="button" data-open-dialog="shopping-product-edit-{{ product.pk }}">Edit</button>
-                <form method="post" action="{% url 'dad_shopping_product_import_photo' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">Pull photo</button></form>
                 <form method="post" action="{% url 'dad_shopping_product_stock' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.in_stock %}Out of stock{% else %}Restock{% endif %}</button></form>
                 <form method="post" action="{% url 'dad_shopping_product_toggle' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.active %}Hide{% else %}Show{% endif %}</button></form>
                 <form method="post" action="{% url 'dad_shopping_product_delete' product.pk %}" data-confirm-shopping-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
@@ -626,7 +628,6 @@
                 <p><label>Displayed retail price ($)<input name="retail_price" type="number" min="0.01" step="0.01" required value="{{ product.retail_price_cents|amount }}"></label></p>
                 <p><label>Retailer<input name="retailer" maxlength="60" required value="{{ product.retailer }}"></label></p>
                 <p><label>Purchase or Google Shopping link<input name="retailer_url" type="url" required value="{{ product.retailer_url }}"></label></p>
-                <p><label>Approved photo URL (optional if pulling from product link)<input name="image_url" type="url" value="{{ product.image_url }}"></label></p>
                 <p><label>Category<select name="category"><option value="building" {% if product.category == 'building' %}selected{% endif %}>Building sets</option><option value="stem" {% if product.category == 'stem' %}selected{% endif %}>STEM &amp; learning</option><option value="creative" {% if product.category == 'creative' %}selected{% endif %}>Arts &amp; crafts</option><option value="games" {% if product.category == 'games' %}selected{% endif %}>Games &amp; puzzles</option><option value="outdoor" {% if product.category == 'outdoor' %}selected{% endif %}>Outdoor play</option><option value="electronics" {% if product.category == 'electronics' %}selected{% endif %}>Kids electronics</option><option value="pretend" {% if product.category == 'pretend' %}selected{% endif %}>Pretend play</option></select></label></p>
                 <p><label>Minimum age (optional)<input name="minimum_age" type="number" min="0" value="{{ product.minimum_age|default_if_none:'' }}"></label></p>
                 <p><label><input name="featured" type="checkbox" {% if product.featured %}checked{% endif %}> Featured for children</label></p>
@@ -639,6 +640,111 @@
           </div>
         </article>
         {% endif %}
+      </section>
+      {% endif %}
+      {% if can_manage_video %}
+      <section class="guardian-native-app" data-parent-app="video-library" aria-label="Discover video library">
+        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Parent approved feed</small><h1>Video Library</h1></div><button class="app-add" type="button" data-open-dialog="action-video-playlist">New</button></header>
+        <dialog class="review-dialog action-dialog" id="action-video-playlist">
+          <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+          <p class="eyebrow">Discover</p><h2>Create playlist</h2>
+          <p>Children only watch active videos from playlists assigned to their account.</p>
+          <form class="form" method="post" action="{% url 'guardian_video_playlist_create' %}">
+            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ video_playlist_form.as_p }}
+            <button class="primary" type="submit">Create playlist</button>
+          </form>
+        </dialog>
+        <article class="card video-library">
+          <div class="card-head"><h2>Discover playlists</h2><span class="badge">Approved only</span></div>
+          <p class="control-note">Add YouTube videos you approve, then choose which playlists appear in {{ selected.display_name }}'s native Discover app. Children have no open video search or comments.</p>
+          {% for playlist in video_playlists %}
+          <section class="video-playlist-card">
+            <div class="video-playlist-head">
+              <div><strong>{{ playlist.title }}</strong><small>{{ playlist.description|default:"Parent-curated videos" }} &middot; {{ playlist.clips.count }} video{{ playlist.clips.count|pluralize }}</small></div>
+              <span class="badge {% if not playlist.active %}waiting{% endif %}">{% if playlist.active %}Active{% else %}Paused{% endif %}</span>
+            </div>
+            <div class="video-playlist-actions">
+              <form method="post" action="{% url 'guardian_video_assignment_toggle' playlist.pk %}">
+                {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+                <button class="{% if playlist.pk in selected_video_playlist_ids %}action{% else %}primary{% endif %}" type="submit">{% if playlist.pk in selected_video_playlist_ids %}Remove from {{ selected.display_name }}{% else %}Assign to {{ selected.display_name }}{% endif %}</button>
+              </form>
+              <button class="remove-button" type="button" data-open-dialog="video-add-{{ playlist.pk }}">Add video</button>
+              <button class="remove-button" type="button" data-open-dialog="video-edit-{{ playlist.pk }}">Edit</button>
+              <form method="post" action="{% url 'guardian_video_playlist_toggle' playlist.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if playlist.active %}Pause{% else %}Enable{% endif %}</button></form>
+              <form method="post" action="{% url 'guardian_video_playlist_delete' playlist.pk %}" data-confirm-video-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
+            </div>
+            <div class="video-clip-list">
+              {% for clip in playlist.clips.all %}
+              <article class="video-clip-row {% if not clip.active %}disabled{% endif %}">
+                <img src="https://i.ytimg.com/vi/{{ clip.youtube_id }}/mqdefault.jpg" loading="lazy" alt="">
+                <div><strong>{{ clip.title }}</strong><small>{% if clip.subject_tag %}{{ clip.subject_tag }} &middot; {% endif %}{% if clip.active %}Shown in feed{% else %}Hidden{% endif %}</small></div>
+                <div class="video-clip-actions">
+                  <a class="remove-button" href="https://www.youtube.com/watch?v={{ clip.youtube_id }}" target="_blank" rel="noopener noreferrer">Preview</a>
+                  <form method="post" action="{% url 'guardian_video_clip_move' clip.pk 'up' %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit" aria-label="Move up">&uarr;</button></form>
+                  <form method="post" action="{% url 'guardian_video_clip_move' clip.pk 'down' %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit" aria-label="Move down">&darr;</button></form>
+                  <form method="post" action="{% url 'guardian_video_clip_toggle' clip.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if clip.active %}Hide{% else %}Show{% endif %}</button></form>
+                  <form method="post" action="{% url 'guardian_video_clip_delete' clip.pk %}" data-confirm-video-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
+                </div>
+              </article>
+              {% empty %}<p class="empty">No approved videos in this playlist yet.</p>{% endfor %}
+            </div>
+          </section>
+          <dialog class="review-dialog action-dialog" id="video-add-{{ playlist.pk }}">
+            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+            <p class="eyebrow">{{ playlist.title }}</p><h2>Add approved video</h2>
+            <p>Paste a video or Shorts URL only after reviewing it for your child.</p>
+            <form class="form" method="post" action="{% url 'guardian_video_clip_add' playlist.pk %}">
+              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+              <p><label for="video-url-{{ playlist.pk }}">YouTube video or Shorts link<input id="video-url-{{ playlist.pk }}" name="youtube_url" type="url" required></label></p>
+              <p><label for="video-title-{{ playlist.pk }}">Video title<input id="video-title-{{ playlist.pk }}" name="title" maxlength="120" required></label></p>
+              <p><label for="video-tag-{{ playlist.pk }}">Learning tag (optional)<input id="video-tag-{{ playlist.pk }}" name="subject_tag" maxlength="40"></label></p>
+              <button class="primary" type="submit">Add to playlist</button>
+            </form>
+          </dialog>
+          <dialog class="review-dialog action-dialog" id="video-edit-{{ playlist.pk }}">
+            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+            <p class="eyebrow">Discover playlist</p><h2>Edit playlist</h2>
+            <form class="form" method="post" action="{% url 'guardian_video_playlist_edit' playlist.pk %}">
+              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+              <p><label>Playlist name<input name="title" maxlength="100" required value="{{ playlist.title }}"></label></p>
+              <p><label>Description (optional)<input name="description" maxlength="240" value="{{ playlist.description }}"></label></p>
+              <p><label><input name="active" type="checkbox" {% if playlist.active %}checked{% endif %}> Available when assigned</label></p>
+              <button class="primary" type="submit">Save playlist</button>
+            </form>
+          </dialog>
+          {% empty %}<p class="empty">No playlists yet. Create the first parent-approved Discover feed.</p>{% endfor %}
+        </article>
+        <article class="card discover-controls">
+          <div class="card-head"><h2>Screen-time hours</h2><button class="app-add" type="button" data-open-dialog="action-discover-hours">Add lock</button></div>
+          <p class="control-note">Grounded Mode always blocks Discover. These schedules add regular quiet hours for {{ selected.display_name }}.</p>
+          {% for schedule in selected_discover_schedules %}
+          <div class="row">
+            <div><strong>Discover videos</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} to {{ schedule.end_time|time:"g:i A" }}</small></div>
+            <b>{% if schedule.enabled %}Locked hours{% else %}Paused{% endif %}</b>
+            <form method="post" action="{% url 'guardian_toggle_discover_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">{% if schedule.enabled %}Pause{% else %}Enable{% endif %}</button></form>
+            <form method="post" action="{% url 'guardian_remove_discover_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">Delete</button></form>
+          </div>
+          {% empty %}<p class="empty">No separate Discover lock schedule has been added.</p>{% endfor %}
+          <dialog class="review-dialog action-dialog" id="action-discover-hours">
+            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+            <p class="eyebrow">Discover schedule</p><h2>Block viewing hours</h2>
+            <form class="form communication-form" method="post" action="{% url 'guardian_discover_schedule' %}">
+              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ discover_schedule_form.as_p }}
+              <button class="primary" type="submit">Save viewing lock</button>
+            </form>
+          </dialog>
+        </article>
+        <article class="card discover-insights">
+          <div class="card-head"><h2>{{ selected.display_name }}'s activity</h2><span class="badge">Private</span></div>
+          <h3>Favorites</h3>
+          {% for favorite in selected_video_favorites %}
+            <div class="row"><div><strong>{{ favorite.clip.title }}</strong><small>{{ favorite.clip.playlist.title }}</small></div><b>&#9829;</b></div>
+          {% empty %}<p class="empty">No liked videos yet.</p>{% endfor %}
+          <h3>Recently watched</h3>
+          {% for event in selected_video_watch_events %}
+            <div class="row"><div><strong>{{ event.clip.title }}</strong><small>{{ event.clip.playlist.title }} &middot; last watched {{ event.last_watched_at|date:"M j, g:i A" }}</small></div><b>{{ event.view_count }} view{{ event.view_count|pluralize }}</b></div>
+          {% empty %}<p class="empty">No watched videos recorded yet.</p>{% endfor %}
+        </article>
       </section>
       {% endif %}
       <section class="guardian-native-app" data-parent-app="progress" aria-label="Progress">

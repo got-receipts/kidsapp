@@ -110,6 +110,7 @@
     <a class="map-growth" href="{% url 'child_section' 'goals' %}"><b>&uarr;</b><strong>Grow</strong><small>My progress</small></a>
     <a class="map-wallet" href="{% url 'wallet_page' %}"><b>&#8644;</b><strong>Wallet</strong><small>Cash out tokens</small></a>
     <a class="map-shopping" href="{% url 'shopping_page' %}"><b>&#128722;</b><strong>Shopping</strong><small>Use my cash</small></a>
+    <a class="map-discover" href="{% url 'discover_page' %}"><b>&#9654;</b><strong>Discover</strong><small>{% if discover_lock %}Closed now{% else %}Watch &amp; learn{% endif %}</small></a>
     {% endif %}
     <a class="map-messages" href="{% url 'messages_inbox' %}"><b>&#9993;</b><strong>Messages</strong><small>{% if unread_message_count %}{{ unread_message_count }} new{% else %}Family chat{% endif %}</small></a>
     <a class="map-plan" href="{% url 'child_section' 'today' %}"><b>&#9788;</b><strong>Today</strong><small>Plan &amp; rules</small></a>

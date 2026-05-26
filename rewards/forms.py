@@ -9,6 +9,7 @@ from .models import (
     Chore,
     CommunicationSchedule,
     DailyScheduleEvent,
+    DiscoverSchedule,
     FamilySettings,
     FamilyMessage,
     Grade,
@@ -18,6 +19,7 @@ from .models import (
     SavingsGoal,
     ShoppingProduct,
     StoreItem,
+    VideoPlaylist,
 )
 
 
@@ -104,7 +106,6 @@ class ShoppingProductForm(forms.ModelForm):
             "description",
             "retailer",
             "retailer_url",
-            "image_url",
             "category",
             "minimum_age",
             "featured",
@@ -113,7 +114,6 @@ class ShoppingProductForm(forms.ModelForm):
         ]
         labels = {
             "retailer_url": "Purchase or Google Shopping link",
-            "image_url": "Approved photo URL (optional if pulling from product link)",
             "minimum_age": "Minimum age (optional)",
             "featured": "Featured for children",
             "in_stock": "Available to request",
@@ -273,6 +273,64 @@ class CommunicationScheduleForm(forms.ModelForm):
         cleaned = super().clean()
         if cleaned.get("start_time") and cleaned.get("end_time") and cleaned["start_time"] == cleaned["end_time"]:
             raise forms.ValidationError("Choose different start and end times for this lock schedule.")
+        return cleaned
+
+
+class VideoPlaylistForm(forms.ModelForm):
+    class Meta:
+        model = VideoPlaylist
+        fields = ["title", "description", "active"]
+        labels = {
+            "title": "Playlist name",
+            "description": "Description (optional)",
+            "active": "Available when assigned",
+        }
+
+
+class VideoClipForm(forms.Form):
+    youtube_url = forms.URLField(label="YouTube video or Shorts link")
+    title = forms.CharField(label="Video title", max_length=120)
+    subject_tag = forms.CharField(label="Learning tag (optional)", max_length=40, required=False)
+
+
+class DiscoverScheduleForm(forms.ModelForm):
+    days = forms.MultipleChoiceField(
+        choices=DiscoverSchedule.WEEKDAYS,
+        widget=forms.CheckboxSelectMultiple,
+        label="Lock Discover on these days",
+    )
+
+    class Meta:
+        model = DiscoverSchedule
+        fields = ["start_time", "end_time", "enabled"]
+        labels = {
+            "start_time": "Starts at",
+            "end_time": "Ends at",
+            "enabled": "Schedule enabled",
+        }
+        widgets = {
+            "start_time": forms.TimeInput(attrs={"type": "time"}),
+            "end_time": forms.TimeInput(attrs={"type": "time"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial["days"] = self.instance.days_of_week.split(",")
+        elif not self.is_bound:
+            self.initial["days"] = [value for value, _ in DiscoverSchedule.WEEKDAYS]
+
+    def save(self, commit=True):
+        schedule = super().save(commit=False)
+        schedule.days_of_week = ",".join(self.cleaned_data["days"])
+        if commit:
+            schedule.save()
+        return schedule
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("start_time") and cleaned.get("end_time") and cleaned["start_time"] == cleaned["end_time"]:
+            raise forms.ValidationError("Choose different start and end times for this Discover lock schedule.")
         return cleaned
 
 

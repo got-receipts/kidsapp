@@ -1,13 +1,9 @@
 import calendar
-import ipaddress
 import json
-import socket
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from html.parser import HTMLParser
-from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
 from django.contrib import messages
@@ -15,7 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, F, IntegerField, Q, Sum, When
+from django.db.models import Case, F, IntegerField, Max, Q, Sum, When
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
@@ -31,6 +27,7 @@ from .forms import (
     ChoreForm,
     CommunicationScheduleForm,
     DailyScheduleEventForm,
+    DiscoverScheduleForm,
     FamilyMessageForm,
     FamilySettingsForm,
     GoalForm,
@@ -44,6 +41,8 @@ from .forms import (
     StoreItemForm,
     TokenCashoutForm,
     TokenGiftForm,
+    VideoClipForm,
+    VideoPlaylistForm,
     FamilyTransferForm,
 )
 from .models import (
@@ -54,6 +53,7 @@ from .models import (
     Chore,
     CommunicationSchedule,
     DailyScheduleEvent,
+    DiscoverSchedule,
     FamilyMessage,
     FamilyCall,
     FamilySettings,
@@ -71,33 +71,17 @@ from .models import (
     ShoppingOrderItem,
     ShoppingProduct,
     StoreItem,
+    VideoClip,
+    VideoFavorite,
+    VideoPlaylist,
+    VideoPlaylistAssignment,
+    VideoWatchEvent,
     Wallet,
 )
 from .services import ensure_today_chores
 
 
 CHILD_SECTIONS = {"today", "chores", "badges", "school", "store", "savings", "goals"}
-REMOTE_IMAGE_LIMIT = 3 * 1024 * 1024
-REMOTE_PAGE_LIMIT = 2 * 1024 * 1024
-
-
-class _NoRedirects(HTTPRedirectHandler):
-    def redirect_request(self, request, fp, code, msg, headers, newurl):
-        return None
-
-
-class _PreviewPhotoParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.photo_url = ""
-
-    def handle_starttag(self, tag, attrs):
-        if tag.lower() != "meta" or self.photo_url:
-            return
-        values = {key.lower(): value for key, value in attrs if value}
-        marker = (values.get("property") or values.get("name") or "").lower()
-        if marker in {"og:image", "og:image:url", "twitter:image", "twitter:image:src"}:
-            self.photo_url = values.get("content", "")
 
 
 class FamilyLoginView(LoginView):
@@ -114,7 +98,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v4';
+    source = """const CACHE = 'family-circle-v6';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -177,6 +161,14 @@ def _fulfiller(request):
     return None
 
 
+def _video_manager(request):
+    profile = _profile(request)
+    if profile.is_guardian or (profile.role == Profile.Role.VIEWER and profile.user.username.lower() == "mom"):
+        return profile
+    messages.error(request, "Only Mom, Dad, or GG can manage Discover videos.")
+    return None
+
+
 def _block_grounded_child(request, profile):
     if profile.role == Profile.Role.CHILD and profile.grounded:
         messages.error(request, "Grounded Mode is active. Money, tokens, rewards, and the store are locked.")
@@ -216,75 +208,9 @@ def _audit(actor, child, action, description, **related):
     AuditLog.objects.create(actor=actor, child=child, action=action, description=description[:240], **related)
 
 
-def _public_remote_url(url):
-    parsed = urlparse(url or "")
-    if parsed.scheme != "https" or not parsed.hostname:
-        return False
-    try:
-        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
-    except OSError:
-        return False
-    for result in addresses:
-        address = ipaddress.ip_address(result[4][0])
-        if not address.is_global:
-            return False
-    return True
-
-
-def _read_remote(url, accept, limit):
-    if not _public_remote_url(url):
-        return None, ""
-    request = Request(
-        url,
-        headers={
-            "Accept": accept,
-            "User-Agent": "FamilyCircleCatalog/1.0",
-        },
-    )
-    try:
-        with build_opener(_NoRedirects).open(request, timeout=8) as response:
-            body = response.read(limit + 1)
-            if len(body) > limit:
-                return None, ""
-            return body, response.headers.get_content_type()
-    except (HTTPError, URLError, OSError, ValueError):
-        return None, ""
-
-
-def _download_product_image(url):
-    body, content_type = _read_remote(url, "image/*", REMOTE_IMAGE_LIMIT)
-    if not body or not content_type.startswith("image/"):
-        return None
-    return body, content_type
-
-
-def _find_product_photo_url(product_url):
-    body, content_type = _read_remote(product_url, "text/html", REMOTE_PAGE_LIMIT)
-    if not body or content_type not in {"text/html", "application/xhtml+xml"}:
-        return ""
-    parser = _PreviewPhotoParser()
-    try:
-        parser.feed(body.decode("utf-8", errors="ignore"))
-    except ValueError:
-        return ""
-    photo_url = urljoin(product_url, parser.photo_url)
-    return photo_url if len(photo_url) <= 500 and _public_remote_url(photo_url) else ""
-
-
 def _shopping_photo_fallback(category):
     safe_category = category if category in ShoppingProduct.Category.values else "gift"
     return redirect(static(f"rewards/catalog/{safe_category}.svg"))
-
-
-def _shopping_photo_response(url, category):
-    downloaded = _download_product_image(url)
-    if downloaded is None:
-        return _shopping_photo_fallback(category)
-    body, content_type = downloaded
-    response = HttpResponse(body, content_type=content_type)
-    response["Cache-Control"] = "private, max-age=21600"
-    response["X-Content-Type-Options"] = "nosniff"
-    return response
 
 
 def _message_query(profile, contact):
@@ -316,6 +242,44 @@ def _communication_lock(profile, feature):
         if schedule.applies_at():
             return schedule
     return None
+
+
+def _discover_lock(profile):
+    if profile.role != Profile.Role.CHILD:
+        return None
+    for schedule in profile.discover_schedules.filter(enabled=True):
+        if schedule.applies_at():
+            return schedule
+    return None
+
+
+def _assigned_discover_clips(profile):
+    return (
+        VideoClip.objects.filter(
+            active=True,
+            playlist__active=True,
+            playlist__assignments__child=profile,
+            playlist__assignments__enabled=True,
+        )
+        .select_related("playlist")
+        .distinct()
+        .order_by("playlist__title", "position", "created_at")
+    )
+
+
+def _youtube_id(url):
+    parsed = urlparse(url or "")
+    hostname = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    candidate = ""
+    if hostname == "youtu.be":
+        candidate = parsed.path.strip("/").split("/")[0]
+    elif hostname in {"youtube.com", "youtube-nocookie.com"}:
+        parts = [part for part in parsed.path.split("/") if part]
+        if parsed.path == "/watch":
+            candidate = parse_qs(parsed.query).get("v", [""])[0]
+        elif parts and parts[0] in {"shorts", "embed", "live"} and len(parts) > 1:
+            candidate = parts[1]
+    return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate or "") else ""
 
 
 def _call_schedule_lock(call):
@@ -562,6 +526,7 @@ def _child_context(profile, family_settings, include_welcome=True):
         "token_badge": profile.wallet.tokens >= 50,
         "quest_badge": verified >= 3,
         "streak_badge": streak_count >= 3,
+        "discover_lock": _discover_lock(profile),
     }
 
 
@@ -578,6 +543,7 @@ def dashboard(request):
         can_manage = profile.is_guardian
         dad_controls = can_manage and profile.user.username.lower() == "dad"
         can_fulfill = can_manage or (profile.role == Profile.Role.VIEWER and profile.user.username.lower() == "mom")
+        can_manage_video = can_manage or (profile.role == Profile.Role.VIEWER and profile.user.username.lower() == "mom")
         children = Profile.objects.filter(role=Profile.Role.CHILD).select_related("wallet")
         selected = children.filter(pk=request.GET.get("child")).first() or children.first()
         star_weeks, star_month, previous_month, next_month = _star_calendar(selected, request.GET.get("month")) if selected else ([], "", "", "")
@@ -612,6 +578,7 @@ def dashboard(request):
             "profile": profile,
             "can_manage": can_manage,
             "can_fulfill": can_fulfill,
+            "can_manage_video": can_manage_video,
             "can_manage_catalog": dad_controls,
             "children": children,
             "selected": selected,
@@ -686,6 +653,27 @@ def dashboard(request):
             ),
             "shopping_catalog": ShoppingProduct.objects.all() if dad_controls else [],
             "shopping_product_form": ShoppingProductForm() if dad_controls else None,
+            "video_playlists": (
+                VideoPlaylist.objects.prefetch_related("clips", "assignments").all()
+                if can_manage_video else []
+            ),
+            "selected_video_playlist_ids": (
+                list(
+                    selected.video_playlist_assignments.filter(enabled=True).values_list("playlist_id", flat=True)
+                )
+                if selected and can_manage_video else []
+            ),
+            "selected_discover_schedules": selected.discover_schedules.all() if selected and can_manage_video else [],
+            "selected_video_favorites": (
+                selected.video_favorites.select_related("clip", "clip__playlist")[:10]
+                if selected and can_manage_video else []
+            ),
+            "selected_video_watch_events": (
+                selected.video_watch_events.select_related("clip", "clip__playlist")[:10]
+                if selected and can_manage_video else []
+            ),
+            "video_playlist_form": VideoPlaylistForm() if can_manage_video else None,
+            "discover_schedule_form": DiscoverScheduleForm() if can_manage_video else None,
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
@@ -1044,11 +1032,77 @@ def shopping_page(request):
 
 
 @login_required
+def discover_page(request):
+    profile = _profile(request)
+    if profile.can_view_family:
+        return redirect("dashboard")
+    if profile.grounded:
+        messages.info(request, "Discover is locked while Grounded Mode is active.")
+        return redirect("dashboard")
+    schedule_lock = _discover_lock(profile)
+    clips = [] if schedule_lock else list(_assigned_discover_clips(profile))
+    favorites = set(profile.video_favorites.filter(clip__in=clips).values_list("clip_id", flat=True))
+    for clip in clips:
+        clip.favorited = clip.pk in favorites
+    return render(
+        request,
+        "rewards/discover_page.html",
+        {"profile": profile, "clips": clips, "discover_lock": schedule_lock},
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def discover_status(request):
+    profile = _profile(request)
+    if profile.role != Profile.Role.CHILD:
+        return JsonResponse({"error": "Discover status is for child accounts only."}, status=403)
+    schedule_lock = _discover_lock(profile)
+    if profile.grounded:
+        return JsonResponse({"locked": True, "reason": "grounded"})
+    if schedule_lock:
+        return JsonResponse({"locked": True, "reason": "schedule"})
+    return JsonResponse({"locked": False})
+
+
+@login_required
+@require_POST
+def discover_favorite(request, pk):
+    profile = _profile(request)
+    if profile.role != Profile.Role.CHILD or profile.grounded or _discover_lock(profile):
+        return JsonResponse({"error": "Discover is not available right now."}, status=403)
+    clip = get_object_or_404(_assigned_discover_clips(profile), pk=pk)
+    favorite, created = VideoFavorite.objects.get_or_create(child=profile, clip=clip)
+    if not created:
+        favorite.delete()
+    payload = {"favorited": created}
+    if request.headers.get("Accept") == "application/json":
+        return JsonResponse(payload)
+    return redirect("discover_page")
+
+
+@login_required
+@require_POST
+def discover_watch(request, pk):
+    profile = _profile(request)
+    if profile.role != Profile.Role.CHILD or profile.grounded or _discover_lock(profile):
+        return JsonResponse({"error": "Discover is not available right now."}, status=403)
+    clip = get_object_or_404(_assigned_discover_clips(profile), pk=pk)
+    with transaction.atomic():
+        event, created = VideoWatchEvent.objects.select_for_update().get_or_create(child=profile, clip=clip)
+        if not created:
+            event.view_count = F("view_count") + 1
+            event.save(update_fields=["view_count", "last_watched_at"])
+            event.refresh_from_db(fields=["view_count"])
+    return JsonResponse({"views": event.view_count})
+
+
+@login_required
 @require_http_methods(["GET"])
 def shopping_product_photo(request, pk):
     _profile(request)
     product = get_object_or_404(ShoppingProduct, pk=pk)
-    return _shopping_photo_response(product.image_url, product.category)
+    return _shopping_photo_fallback(product.category)
 
 
 @login_required
@@ -1062,7 +1116,7 @@ def shopping_order_item_photo(request, pk):
     if item.order.child_id != profile.pk and not can_fulfill:
         raise Http404
     category = item.product.category if item.product else "gift"
-    return _shopping_photo_response(item.image_url, category)
+    return _shopping_photo_fallback(category)
 
 
 @login_required
@@ -1164,7 +1218,6 @@ def shopping_checkout(request):
                     product_name=item.product.name,
                     retailer=item.product.retailer,
                     retailer_url=item.product.retailer_url,
-                    image_url=item.product.image_url,
                     unit_price_cents=item.product.retail_price_cents,
                     quantity=item.quantity,
                 )
@@ -1783,25 +1836,6 @@ def dad_shopping_product_edit(request, pk):
 
 @login_required
 @require_POST
-def dad_shopping_product_import_photo(request, pk):
-    dad = _dad(request)
-    selected_id = request.POST.get("child_id", "")
-    if dad is None:
-        return redirect("dashboard")
-    product = get_object_or_404(ShoppingProduct, pk=pk)
-    photo_url = _find_product_photo_url(product.retailer_url)
-    if not photo_url or _download_product_image(photo_url) is None:
-        messages.error(request, "No usable product photo was found at that link. Try a direct public product page or enter an approved photo URL.")
-        return redirect(f"/?child={selected_id}")
-    product.image_url = photo_url
-    product.save(update_fields=["image_url", "updated_at"])
-    _audit(dad, None, "shopping_product_photo_imported", product.name)
-    messages.success(request, f"Photo imported for {product.name}. Children see it inside Shopping without the source link.")
-    return redirect(f"/?child={selected_id}")
-
-
-@login_required
-@require_POST
 def dad_shopping_product_stock(request, pk):
     dad = _dad(request)
     selected_id = request.POST.get("child_id", "")
@@ -1845,6 +1879,185 @@ def dad_shopping_product_delete(request, pk):
     product.delete()
     messages.info(request, f"{name} removed from Shopping.")
     return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def guardian_video_playlist_create(request):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    form = VideoPlaylistForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Please check the playlist information and try again.")
+        return redirect(f"/?child={selected_id}#parent-video-library")
+    playlist = form.save(commit=False)
+    playlist.created_by = manager
+    playlist.save()
+    _audit(manager, None, "video_playlist_created", playlist.title)
+    messages.success(request, f"{playlist.title} created in Video Library.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_playlist_edit(request, pk):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    playlist = get_object_or_404(VideoPlaylist, pk=pk)
+    form = VideoPlaylistForm(request.POST, instance=playlist)
+    if not form.is_valid():
+        messages.error(request, "Please check the playlist changes and try again.")
+        return redirect(f"/?child={selected_id}#parent-video-library")
+    form.save()
+    _audit(manager, None, "video_playlist_updated", playlist.title)
+    messages.success(request, "Discover playlist updated.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_playlist_toggle(request, pk):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    playlist = get_object_or_404(VideoPlaylist, pk=pk)
+    playlist.active = not playlist.active
+    playlist.save(update_fields=["active", "updated_at"])
+    status = "available" if playlist.active else "paused"
+    _audit(manager, None, "video_playlist_visibility_changed", f"{playlist.title}: {status}")
+    messages.info(request, f"{playlist.title} is now {status} in Discover.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_playlist_delete(request, pk):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    playlist = get_object_or_404(VideoPlaylist, pk=pk)
+    title = playlist.title
+    _audit(manager, None, "video_playlist_deleted", title)
+    playlist.delete()
+    messages.info(request, f"{title} removed from Video Library.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_clip_add(request, playlist_pk):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    playlist = get_object_or_404(VideoPlaylist, pk=playlist_pk)
+    form = VideoClipForm(request.POST)
+    video_id = _youtube_id(request.POST.get("youtube_url", ""))
+    if not form.is_valid() or not video_id:
+        messages.error(request, "Add a valid YouTube video or Shorts link and a title.")
+        return redirect(f"/?child={selected_id}#parent-video-library")
+    if playlist.clips.filter(youtube_id=video_id).exists():
+        messages.info(request, "That video is already in this playlist.")
+        return redirect(f"/?child={selected_id}#parent-video-library")
+    position = (playlist.clips.aggregate(last=Max("position"))["last"] or 0) + 1
+    VideoClip.objects.create(
+        playlist=playlist,
+        youtube_id=video_id,
+        title=form.cleaned_data["title"].strip(),
+        subject_tag=form.cleaned_data["subject_tag"].strip(),
+        position=position,
+        added_by=manager,
+    )
+    _audit(manager, None, "video_clip_added", f"{form.cleaned_data['title']} added to {playlist.title}.")
+    messages.success(request, f"Video added to {playlist.title}.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_clip_toggle(request, pk):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    clip = get_object_or_404(VideoClip.objects.select_related("playlist"), pk=pk)
+    clip.active = not clip.active
+    clip.save(update_fields=["active"])
+    status = "shown" if clip.active else "hidden"
+    _audit(manager, None, "video_clip_visibility_changed", f"{clip.title}: {status}")
+    messages.info(request, f"{clip.title} is now {status} in Discover.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_clip_move(request, pk, direction):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    clip = get_object_or_404(VideoClip.objects.select_related("playlist"), pk=pk)
+    if direction == "up":
+        neighbor = clip.playlist.clips.filter(position__lt=clip.position).order_by("-position").first()
+    elif direction == "down":
+        neighbor = clip.playlist.clips.filter(position__gt=clip.position).order_by("position").first()
+    else:
+        return redirect(f"/?child={selected_id}#parent-video-library")
+    if neighbor:
+        clip.position, neighbor.position = neighbor.position, clip.position
+        clip.save(update_fields=["position"])
+        neighbor.save(update_fields=["position"])
+        _audit(manager, None, "video_clip_reordered", f"{clip.title} moved {direction} in {clip.playlist.title}.")
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_clip_delete(request, pk):
+    manager = _video_manager(request)
+    selected_id = request.POST.get("child_id", "")
+    if manager is None:
+        return redirect("dashboard")
+    clip = get_object_or_404(VideoClip.objects.select_related("playlist"), pk=pk)
+    description = f"{clip.title} removed from {clip.playlist.title}."
+    clip.delete()
+    _audit(manager, None, "video_clip_deleted", description)
+    messages.info(request, description)
+    return redirect(f"/?child={selected_id}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_video_assignment_toggle(request, playlist_pk):
+    manager = _video_manager(request)
+    if manager is None:
+        return redirect("dashboard")
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    playlist = get_object_or_404(VideoPlaylist, pk=playlist_pk)
+    assignment, created = VideoPlaylistAssignment.objects.get_or_create(
+        playlist=playlist,
+        child=child,
+        defaults={"assigned_by": manager},
+    )
+    if created:
+        enabled = True
+    else:
+        assignment.enabled = not assignment.enabled
+        assignment.assigned_by = manager
+        assignment.save(update_fields=["enabled", "assigned_by"])
+        enabled = assignment.enabled
+    status = "assigned" if enabled else "removed"
+    if enabled:
+        _notify(child, Notification.Kind.DISCOVER, "Discover playlist assigned", f"{playlist.title} has been added to your Discover library.")
+    _audit(manager, child, f"video_playlist_{status}", playlist.title)
+    messages.info(request, f"{playlist.title} {status} for {child.display_name}.")
+    return redirect(f"/?child={child.pk}#parent-video-library")
 
 
 @login_required
@@ -2074,6 +2287,58 @@ def guardian_remove_communication_schedule(request, pk):
     _audit(guardian, child, "communication_schedule_deleted", description)
     messages.info(request, "Communication schedule deleted.")
     return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_discover_schedule(request):
+    manager = _video_manager(request)
+    if manager is None:
+        return redirect("dashboard")
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    form = DiscoverScheduleForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Check the Discover schedule details and try again.")
+        return redirect(f"/?child={child.pk}#parent-video-library")
+    schedule = form.save(commit=False)
+    schedule.child = child
+    schedule.created_by = manager
+    schedule.save()
+    start = schedule.start_time.strftime("%I:%M %p").lstrip("0")
+    end = schedule.end_time.strftime("%I:%M %p").lstrip("0")
+    description = f"Discover locked {schedule.days_display} from {start} to {end}."
+    _audit(manager, child, "discover_schedule_created", description)
+    messages.success(request, f"Discover screen-time schedule saved for {child.display_name}.")
+    return redirect(f"/?child={child.pk}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_toggle_discover_schedule(request, pk):
+    manager = _video_manager(request)
+    if manager is None:
+        return redirect("dashboard")
+    schedule = get_object_or_404(DiscoverSchedule, pk=pk)
+    schedule.enabled = not schedule.enabled
+    schedule.save(update_fields=["enabled"])
+    action = "enabled" if schedule.enabled else "paused"
+    _audit(manager, schedule.child, f"discover_schedule_{action}", "Discover viewing hours")
+    messages.info(request, f"Discover schedule {action}.")
+    return redirect(f"/?child={schedule.child.pk}#parent-video-library")
+
+
+@login_required
+@require_POST
+def guardian_remove_discover_schedule(request, pk):
+    manager = _video_manager(request)
+    if manager is None:
+        return redirect("dashboard")
+    schedule = get_object_or_404(DiscoverSchedule, pk=pk)
+    child = schedule.child
+    schedule.delete()
+    _audit(manager, child, "discover_schedule_deleted", "Discover viewing hours")
+    messages.info(request, "Discover schedule deleted.")
+    return redirect(f"/?child={child.pk}#parent-video-library")
 
 
 @login_required

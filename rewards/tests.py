@@ -15,6 +15,7 @@ from .models import (
     Chore,
     CommunicationSchedule,
     DailyScheduleEvent,
+    DiscoverSchedule,
     FamilySettings,
     FamilyMessage,
     FamilyCall,
@@ -29,6 +30,11 @@ from .models import (
     ShoppingOrder,
     ShoppingProduct,
     StoreItem,
+    VideoClip,
+    VideoFavorite,
+    VideoPlaylist,
+    VideoPlaylistAssignment,
+    VideoWatchEvent,
     Wallet,
 )
 from .services import ensure_today_chores
@@ -452,7 +458,6 @@ class LedgerApprovalTests(TestCase):
             description="Outdoor ride",
             retailer="Google Shopping search",
             retailer_url="https://www.google.com/search?tbm=shop&q=starter+scooter",
-            image_url="https://images.example.com/starter-scooter.jpg",
             retail_price_cents=225,
             category=ShoppingProduct.Category.OUTDOOR,
         )
@@ -462,10 +467,8 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(page, "Build your cart")
         self.assertContains(page, "Back")
         self.assertContains(page, "Toy Market")
-        self.assertContains(page, "data-product-image")
         self.assertContains(page, "catalog/outdoor.svg")
-        self.assertContains(page, reverse("shopping_product_photo", args=[product.pk]))
-        self.assertNotContains(page, product.image_url)
+        self.assertNotContains(page, reverse("shopping_product_photo", args=[product.pk]))
         self.assertNotContains(page, product.retailer_url)
         self.client.post(reverse("shopping_cart_add", args=[product.pk]))
         self.client.post(reverse("shopping_checkout"))
@@ -488,13 +491,11 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.cash_cents, 275)
         self.assertEqual(ledger.status, LedgerRequest.Status.PENDING)
 
-    @patch("rewards.views._download_product_image", return_value=(b"photo-bytes", "image/jpeg"))
-    def test_child_catalog_photo_is_relayed_through_the_app(self, download_image):
+    def test_legacy_catalog_photo_endpoint_redirects_to_generic_category_art(self):
         product = ShoppingProduct.objects.create(
             name="Camera",
             retailer="Approved retailer",
             retailer_url="https://shop.example.com/camera",
-            image_url="https://cdn.example.com/camera.jpg",
             retail_price_cents=2599,
             category=ShoppingProduct.Category.ELECTRONICS,
         )
@@ -502,14 +503,9 @@ class LedgerApprovalTests(TestCase):
 
         response = self.client.get(reverse("shopping_product_photo", args=[product.pk]))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Type"], "image/jpeg")
-        self.assertEqual(response.content, b"photo-bytes")
-        download_image.assert_called_once_with(product.image_url)
+        self.assertRedirects(response, "/static/rewards/catalog/electronics.svg", fetch_redirect_response=False)
 
-    @patch("rewards.views._download_product_image", return_value=(b"photo-bytes", "image/jpeg"))
-    @patch("rewards.views._find_product_photo_url", return_value="https://cdn.example.com/imported-photo.jpg")
-    def test_dad_can_pull_catalog_photo_from_product_link(self, find_photo, download_image):
+    def test_dad_catalog_uses_generic_artwork_without_photo_import_controls(self):
         product = ShoppingProduct.objects.create(
             name="Building kit",
             retailer="Approved retailer",
@@ -519,12 +515,11 @@ class LedgerApprovalTests(TestCase):
         )
         self.client.force_login(self.guardian.user)
 
-        self.client.post(reverse("dad_shopping_product_import_photo", args=[product.pk]), {"child_id": self.child.pk})
+        response = self.client.get(reverse("dashboard"))
 
-        product.refresh_from_db()
-        self.assertEqual(product.image_url, "https://cdn.example.com/imported-photo.jpg")
-        find_photo.assert_called_once_with(product.retailer_url)
-        download_image.assert_called_once_with(product.image_url)
+        self.assertContains(response, "catalog/building.svg")
+        self.assertNotContains(response, "Pull photo")
+        self.assertNotContains(response, "Approved photo URL")
 
     def test_mom_can_complete_shopping_purchase_but_cannot_edit_catalog(self):
         mom_user = User.objects.create_user(username="mom", password="test")
@@ -728,6 +723,128 @@ class LedgerApprovalTests(TestCase):
         )
 
         self.assertRedirects(response, reverse("child_section", args=["chores"]))
+
+    def test_discover_is_native_child_app_and_serves_only_assigned_parent_videos(self):
+        assigned = VideoPlaylist.objects.create(title="Space Wonders", created_by=self.guardian)
+        unassigned = VideoPlaylist.objects.create(title="Not for this child", created_by=self.guardian)
+        clip = VideoClip.objects.create(
+            playlist=assigned,
+            youtube_id="dQw4w9WgXcQ",
+            title="Explore the Moon",
+            subject_tag="Space",
+            position=1,
+            added_by=self.guardian,
+        )
+        VideoClip.objects.create(
+            playlist=unassigned,
+            youtube_id="M7lc1UVf-VE",
+            title="Unassigned video",
+            position=1,
+            added_by=self.guardian,
+        )
+        VideoPlaylistAssignment.objects.create(playlist=assigned, child=self.child, assigned_by=self.guardian)
+        self.client.force_login(self.child.user)
+
+        home = self.client.get(reverse("dashboard"))
+        response = self.client.get(reverse("discover_page"))
+
+        self.assertContains(home, reverse("discover_page"))
+        self.assertContains(home, "Discover")
+        self.assertContains(response, "data-discover-slide")
+        self.assertContains(response, "Explore the Moon")
+        self.assertContains(response, "youtube-nocookie.com/embed/dQw4w9WgXcQ")
+        self.assertContains(response, "Back")
+        self.assertContains(response, "Home")
+        self.assertNotContains(response, "Unassigned video")
+        watch = self.client.post(reverse("discover_watch", args=[clip.pk]))
+        favorite = self.client.post(
+            reverse("discover_favorite", args=[clip.pk]),
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(watch.json()["views"], 1)
+        self.assertTrue(favorite.json()["favorited"])
+        self.assertTrue(VideoWatchEvent.objects.filter(child=self.child, clip=clip).exists())
+        self.assertTrue(VideoFavorite.objects.filter(child=self.child, clip=clip).exists())
+
+    def test_grounding_and_discover_schedule_each_lock_the_child_feed(self):
+        playlist = VideoPlaylist.objects.create(title="Cooking Fun", created_by=self.guardian)
+        VideoClip.objects.create(
+            playlist=playlist,
+            youtube_id="dQw4w9WgXcQ",
+            title="Make a snack",
+            position=1,
+            added_by=self.guardian,
+        )
+        VideoPlaylistAssignment.objects.create(playlist=playlist, child=self.child, assigned_by=self.guardian)
+        self.child.grounded = True
+        self.child.save(update_fields=["grounded"])
+        self.client.force_login(self.child.user)
+
+        grounded = self.client.get(reverse("discover_page"))
+        self.assertRedirects(grounded, reverse("dashboard"))
+
+        self.child.grounded = False
+        self.child.save(update_fields=["grounded"])
+        DiscoverSchedule.objects.create(
+            child=self.child,
+            days_of_week="0",
+            start_time=time(20, 0),
+            end_time=time(22, 0),
+            created_by=self.guardian,
+        )
+        locked_time = timezone.make_aware(datetime(2026, 5, 25, 21, 0))
+        with patch("rewards.models.timezone.now", return_value=locked_time):
+            scheduled = self.client.get(reverse("discover_page"))
+            status = self.client.get(reverse("discover_status"))
+
+        self.assertContains(scheduled, "Discover is resting right now")
+        self.assertNotContains(scheduled, "Make a snack")
+        self.assertNotContains(scheduled, "youtube-nocookie.com/embed")
+        self.assertTrue(status.json()["locked"])
+        self.assertEqual(status.json()["reason"], "schedule")
+
+    def test_mom_manages_video_library_assignments_and_discover_schedules_only(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        self.client.force_login(mom.user)
+
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Video Library")
+        self.client.post(
+            reverse("guardian_video_playlist_create"),
+            {"child_id": self.child.pk, "title": "Animal Adventures", "description": "Approved videos", "active": "on"},
+        )
+        playlist = VideoPlaylist.objects.get(title="Animal Adventures")
+        self.client.post(
+            reverse("guardian_video_clip_add", args=[playlist.pk]),
+            {
+                "child_id": self.child.pk,
+                "youtube_url": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+                "title": "Amazing habitats",
+                "subject_tag": "Animals",
+            },
+        )
+        self.client.post(reverse("guardian_video_assignment_toggle", args=[playlist.pk]), {"child_id": self.child.pk})
+        self.client.post(
+            reverse("guardian_discover_schedule"),
+            {
+                "child_id": self.child.pk,
+                "days": ["0", "1", "2", "3", "4"],
+                "start_time": "20:00",
+                "end_time": "07:00",
+                "enabled": "on",
+            },
+        )
+        self.client.post(
+            reverse("guardian_award"),
+            {"child_id": self.child.pk, "reason": "Should remain blocked", "tokens": "2", "cash_amount": "0"},
+        )
+
+        self.assertTrue(VideoClip.objects.filter(playlist=playlist, title="Amazing habitats").exists())
+        self.assertTrue(VideoPlaylistAssignment.objects.filter(playlist=playlist, child=self.child, enabled=True).exists())
+        self.assertTrue(DiscoverSchedule.objects.filter(child=self.child, created_by=mom).exists())
+        self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.DISCOVER).exists())
+        self.assertFalse(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.AWARD).exists())
 
     def test_messages_icon_shows_unread_and_opening_thread_marks_message_read(self):
         mom_user = User.objects.create_user(username="mom", password="test")

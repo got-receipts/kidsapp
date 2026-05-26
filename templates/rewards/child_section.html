@@ -21,6 +21,7 @@
     <a class="{% if active_section == 'store' %}active{% endif %}" href="{% url 'child_section' 'store' %}">Store</a>
     <a href="{% url 'wallet_page' %}">Wallet</a>
     <a href="{% url 'shopping_page' %}">Shopping</a>
+    <a href="{% url 'discover_page' %}">Discover</a>
     {% endif %}
   </nav>
   {% if active_section == "today" %}
