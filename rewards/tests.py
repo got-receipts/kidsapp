@@ -452,6 +452,7 @@ class LedgerApprovalTests(TestCase):
             description="Outdoor ride",
             retailer="Google Shopping search",
             retailer_url="https://www.google.com/search?tbm=shop&q=starter+scooter",
+            image_url="https://images.example.com/starter-scooter.jpg",
             retail_price_cents=225,
             category=ShoppingProduct.Category.OUTDOOR,
         )
@@ -460,6 +461,12 @@ class LedgerApprovalTests(TestCase):
         page = self.client.get(reverse("shopping_page"))
         self.assertContains(page, "Build your cart")
         self.assertContains(page, "Back")
+        self.assertContains(page, "Toy Market")
+        self.assertContains(page, "data-product-image")
+        self.assertContains(page, "catalog/outdoor.svg")
+        self.assertContains(page, reverse("shopping_product_photo", args=[product.pk]))
+        self.assertNotContains(page, product.image_url)
+        self.assertNotContains(page, product.retailer_url)
         self.client.post(reverse("shopping_cart_add", args=[product.pk]))
         self.client.post(reverse("shopping_checkout"))
 
@@ -480,6 +487,44 @@ class LedgerApprovalTests(TestCase):
         ledger.refresh_from_db()
         self.assertEqual(self.wallet.cash_cents, 275)
         self.assertEqual(ledger.status, LedgerRequest.Status.PENDING)
+
+    @patch("rewards.views._download_product_image", return_value=(b"photo-bytes", "image/jpeg"))
+    def test_child_catalog_photo_is_relayed_through_the_app(self, download_image):
+        product = ShoppingProduct.objects.create(
+            name="Camera",
+            retailer="Approved retailer",
+            retailer_url="https://shop.example.com/camera",
+            image_url="https://cdn.example.com/camera.jpg",
+            retail_price_cents=2599,
+            category=ShoppingProduct.Category.ELECTRONICS,
+        )
+        self.client.force_login(self.child.user)
+
+        response = self.client.get(reverse("shopping_product_photo", args=[product.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        self.assertEqual(response.content, b"photo-bytes")
+        download_image.assert_called_once_with(product.image_url)
+
+    @patch("rewards.views._download_product_image", return_value=(b"photo-bytes", "image/jpeg"))
+    @patch("rewards.views._find_product_photo_url", return_value="https://cdn.example.com/imported-photo.jpg")
+    def test_dad_can_pull_catalog_photo_from_product_link(self, find_photo, download_image):
+        product = ShoppingProduct.objects.create(
+            name="Building kit",
+            retailer="Approved retailer",
+            retailer_url="https://shop.example.com/building-kit",
+            retail_price_cents=1999,
+            category=ShoppingProduct.Category.BUILDING,
+        )
+        self.client.force_login(self.guardian.user)
+
+        self.client.post(reverse("dad_shopping_product_import_photo", args=[product.pk]), {"child_id": self.child.pk})
+
+        product.refresh_from_db()
+        self.assertEqual(product.image_url, "https://cdn.example.com/imported-photo.jpg")
+        find_photo.assert_called_once_with(product.retailer_url)
+        download_image.assert_called_once_with(product.image_url)
 
     def test_mom_can_complete_shopping_purchase_but_cannot_edit_catalog(self):
         mom_user = User.objects.create_user(username="mom", password="test")
@@ -578,6 +623,17 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(self.wallet.tokens, 15)
         self.assertEqual(self.wallet.cash_cents, 400)
         self.assertEqual(item.inventory_quantity, 0)
+
+    def test_reward_store_uses_child_prize_shop_layout(self):
+        StoreItem.objects.create(name="Pick dessert", description="Sweet treat.", token_cost=5)
+        self.client.force_login(self.child.user)
+
+        response = self.client.get(reverse("child_section", args=["store"]))
+
+        self.assertContains(response, "Prize Shop")
+        self.assertContains(response, "tokens ready")
+        self.assertContains(response, "reward-card")
+        self.assertContains(response, "Ask for this")
 
     def test_child_cannot_send_more_than_available_cash(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")

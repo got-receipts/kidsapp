@@ -145,15 +145,21 @@
     {% empty %}<p class="empty">Your next growth goal will show here.</p>{% endfor %}
   </section>
   {% elif active_section == "store" %}
-  <section class="card child-native-page store-native-page">
-    <div class="card-head"><h1>Reward Store</h1><span class="badge gold">Dream big!</span></div>
-    <div class="store-grid">
+  <section class="child-native-page store-native-page prize-shop-page">
+    <div class="prize-shop-hero">
+      <div><p class="eyebrow">Reward Store</p><h1>Prize Shop</h1><p>Turn the tokens you earn into fun family rewards and adventures.</p></div>
+      <div class="prize-purse"><strong>{{ wallet.tokens }}</strong><small>tokens ready</small>{% if wallet.available_cash_cents %}<span>+ {{ wallet.available_cash_cents|dollars }} cash</span>{% endif %}</div>
+    </div>
+    <div class="prize-guide"><span class="treat-dot"></span>Treats <span class="adventure-dot"></span>Adventures <span class="dream-dot"></span>Big dreams</div>
+    <div class="store-grid reward-shelf">
       {% for item in store_items %}
-        <article class="item store-{{ item.category }}"><span class="item-type">{{ item.get_category_display }}</span><strong>{{ item.name }}</strong><small>{{ item.description }}</small><b>{% if item.token_cost %}{{ item.token_cost }} tokens{% endif %}{% if item.token_cost and item.cash_cost_cents %} + {% endif %}{% if item.cash_cost_cents %}{{ item.cash_cost_cents|dollars }}{% endif %}</b>
-          {% if item.inventory_quantity != None %}<small>{{ item.inventory_quantity }} left</small>{% endif %}
-          <form action="{% url 'buy_item' item.pk %}" method="post">{% csrf_token %}<input type="hidden" name="return_section" value="store"><button class="action" {% if wallet.tokens < item.token_cost or wallet.cash_cents < item.cash_cost_cents %}disabled{% endif %}>{% if item.requires_approval %}Request{% else %}Redeem{% endif %}</button></form>
+        <article class="reward-card store-{{ item.category }}">
+          <div class="reward-art">{% if item.category == "grand" %}&#127903;{% elif item.category == "experience" %}&#127914;{% else %}&#127873;{% endif %}</div>
+          <div class="reward-copy"><span class="item-type">{{ item.get_category_display }}</span><strong>{{ item.name }}</strong><small>{{ item.description }}</small></div>
+          <div class="reward-price"><b>{% if item.token_cost %}{{ item.token_cost }} <em>tokens</em>{% endif %}{% if item.token_cost and item.cash_cost_cents %} + {% endif %}{% if item.cash_cost_cents %}{{ item.cash_cost_cents|dollars }}{% endif %}</b>{% if item.inventory_quantity != None %}<small>{{ item.inventory_quantity }} left</small>{% endif %}</div>
+          <form action="{% url 'buy_item' item.pk %}" method="post">{% csrf_token %}<input type="hidden" name="return_section" value="store"><button class="reward-button" {% if wallet.tokens < item.token_cost or wallet.cash_cents < item.cash_cost_cents %}disabled{% endif %}>{% if item.requires_approval %}Ask for this{% else %}Unlock reward{% endif %}</button></form>
         </article>
-      {% empty %}<p class="empty">The family store is being stocked.</p>{% endfor %}
+      {% empty %}<div class="prize-empty"><span>&#127873;</span><strong>New prizes coming soon!</strong><small>Your family is stocking the shop.</small></div>{% endfor %}
     </div>
   </section>
   {% endif %}

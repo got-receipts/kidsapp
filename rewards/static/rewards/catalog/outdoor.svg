@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 430" role="img" aria-label="Outdoor scooter and sun">
+  <defs><linearGradient id="bg" y2="1"><stop stop-color="#aee6ff"/><stop offset=".62" stop-color="#e8fbff"/><stop offset=".63" stop-color="#9de07b"/><stop offset="1" stop-color="#60b95e"/></linearGradient></defs>
+  <rect width="640" height="430" rx="36" fill="url(#bg)"/>
+  <circle cx="504" cy="83" r="47" fill="#ffd353"/>
+  <path d="M119 310c95-33 225-43 411-4" fill="none" stroke="#4a9a53" stroke-width="12" stroke-linecap="round"/>
+  <g transform="translate(206 106)" fill="none" stroke="#344d65" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="32" cy="205" r="25" fill="#eff5ff"/><circle cx="214" cy="205" r="25" fill="#eff5ff"/>
+    <path d="M32 172h132l32-142M171 30h48M92 173l-20-90"/>
+    <path d="M70 82h56" stroke="#f36d74" stroke-width="22"/>
+  </g>
+  <text x="320" y="389" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#1f613d">GO EXPLORE</text>
+</svg>

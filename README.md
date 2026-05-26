@@ -97,7 +97,7 @@ An Apple Wallet display pass or a real funded card can be considered later only 
 
 Shopping is separate from the token Reward Store. Children build a cart using only their Cash App balance, and checkout reserves that cash until Dad, GG, or Mom records a purchase or cancels and refunds the order. Dad can add, edit, hide, mark out of stock, or delete catalog items.
 
-The starter migration supplies 50 editable listings with public illustrative photos, displayed retail-price snapshots, and Google Shopping search links for adult checkout. It is not a live Google product API or automated retailer checkout; the fulfilling adult must verify the current item, price, availability, and ordering details before purchasing.
+The starter migration supplies 50 editable listings with public illustrative photos, displayed retail-price snapshots, and Google Shopping search links for adult checkout. Dad can replace a listing link with a direct public product page and use **Pull photo** to import its preview image server-side. Child screens request photos only through Family Circle endpoints, never by receiving retailer or source-image links. Import images only from sources the family has permission to display. This is not a live Google product API or automated retailer checkout; the fulfilling adult must verify the current item, price, availability, and ordering details before purchasing.
 
 ## Guardian Reminder Notifications
 

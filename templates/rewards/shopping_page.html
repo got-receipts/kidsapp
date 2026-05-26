@@ -19,40 +19,48 @@
     <a class="active" href="{% url 'shopping_page' %}">Shopping</a>
     <a href="{% url 'messages_inbox' %}">Messages</a>
   </nav>
-  <section class="shopping-hero">
+  <section class="shopping-hero toy-market-hero">
     <div>
-      <p class="eyebrow">Shopping</p>
+      <p class="eyebrow">Toy Market</p>
       <h1>Build your cart</h1>
-      <p>Choose toys with your Cash App balance. Tokens stay tokens unless you convert them in Wallet.</p>
+      <p>Find something awesome, pop it in your bag, and send it to your parent with your Cash App money.</p>
+      <div class="market-bubbles" aria-hidden="true"><span>&#9733;</span><span>&#127918;</span><span>&#127912;</span></div>
     </div>
     <div class="shopping-balance">
-      <small>Spendable cash</small>
+      <small>My shopping money</small>
       <strong>{{ wallet.available_cash_cents|dollars }}</strong>
-      <span>Parent confirms the current price before purchasing.</span>
+      <span>Tokens stay safe until you convert them in Wallet.</span>
     </div>
   </section>
   <section class="shopping-layout">
     <div class="shopping-catalog">
       <form class="shopping-filters" method="get" action="{% url 'shopping_page' %}">
-        <label class="shopping-search"><span class="sr-only">Search products</span><input name="q" value="{{ search }}" placeholder="Search toys and electronics"></label>
-        <select name="category" aria-label="Filter category">
-          <option value="">All categories</option>
-          {% for value, label in categories %}<option value="{{ value }}" {% if value == selected_category %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select>
-        <button class="action" type="submit">Find</button>
+        <label class="shopping-search"><span class="shop-search-icon">&#128269;</span><span class="sr-only">Search products</span><input name="q" value="{{ search }}" placeholder="What would you like to find?"></label>
+        {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+        <button class="toy-find" type="submit">Search</button>
       </form>
-      <p class="shopping-disclosure">These are starter retail-price snapshots with photos. Your parent checks current retailer price and availability before purchase.</p>
+      <nav class="toy-categories" aria-label="Shop categories">
+        <a class="{% if not selected_category %}active{% endif %}" href="{% url 'shopping_page' %}{% if search %}?q={{ search|urlencode }}{% endif %}">All</a>
+        {% for value, label in categories %}<a class="{% if value == selected_category %}active{% endif %}" href="{% url 'shopping_page' %}?category={{ value }}{% if search %}&amp;q={{ search|urlencode }}{% endif %}">{{ label }}</a>{% endfor %}
+      </nav>
+      <div class="toy-section-title"><h2>{% if selected_category %}{{ selected_category|title }} picks{% elif search %}Matching toys{% else %}Fun finds for you{% endif %}</h2><span>{{ products|length }} to browse</span></div>
+      <p class="shopping-disclosure">Parent checks the current price and availability before ordering.</p>
       <div class="shopping-product-grid">
       {% for product in products %}
         <article class="shopping-product {% if product.featured %}featured{% endif %}">
-          {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}">{% endif %}
+          <div class="toy-photo category-{{ product.category }}">
+            {% with fallback_path='rewards/catalog/'|add:product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}
+            <img src="{% url 'shopping_product_photo' product.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" loading="lazy" alt="{{ product.name }}">
+            {% endwith %}
+            {% if product.featured %}<span class="toy-favorite">&#9733; Top Pick</span>{% endif %}
+          </div>
           <div class="shopping-product-body">
-            <small>{{ product.get_category_display }}{% if product.minimum_age %} &middot; Age {{ product.minimum_age }}+{% endif %}{% if product.featured %} &middot; Featured{% endif %}</small>
+            <small>{{ product.get_category_display }}{% if product.minimum_age %} &middot; Age {{ product.minimum_age }}+{% endif %}</small>
             <strong>{{ product.name }}</strong>
             <p>{{ product.description }}</p>
             <div class="shopping-product-footer">
               <b>{{ product.retail_price_cents|dollars }}</b>
-              <form method="post" action="{% url 'shopping_cart_add' product.pk %}">{% csrf_token %}<button class="primary" type="submit">Add</button></form>
+              <form method="post" action="{% url 'shopping_cart_add' product.pk %}">{% csrf_token %}<button class="toy-add" type="submit"><span>+</span> Bag</button></form>
             </div>
           </div>
         </article>
@@ -61,11 +69,13 @@
       {% endfor %}
       </div>
     </div>
-    <aside class="shopping-cart card">
-      <div class="card-head"><h2>My Cart</h2><span class="badge gold">{{ cart_items|length }} item{{ cart_items|length|pluralize }}</span></div>
+    <aside class="shopping-cart toy-bag">
+      <div class="toy-bag-head"><span class="toy-bag-icon">&#128717;</span><div><small>My Toy Bag</small><h2>Ready to order?</h2></div><b>{{ cart_items|length }}</b></div>
       {% for item in cart_items %}
         <div class="shopping-cart-item">
-          {% if item.product.image_url %}<img src="{{ item.product.image_url }}" alt="{{ item.product.name }}">{% endif %}
+          {% with fallback_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}
+          <img src="{% url 'shopping_product_photo' item.product.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" loading="lazy" alt="{{ item.product.name }}">
+          {% endwith %}
           <div><strong>{{ item.product.name }}</strong><small>{{ item.subtotal_cents|dollars }}</small></div>
           <div class="cart-quantity">
             <form method="post" action="{% url 'shopping_cart_update' item.pk %}">{% csrf_token %}<input type="hidden" name="action" value="decrease"><button type="submit" aria-label="Decrease quantity">-</button></form>
@@ -74,10 +84,10 @@
           </div>
           <form method="post" action="{% url 'shopping_cart_update' item.pk %}">{% csrf_token %}<input type="hidden" name="action" value="remove"><button class="cart-remove" type="submit">Remove</button></form>
         </div>
-      {% empty %}<p class="empty">Add a product to start your cart.</p>{% endfor %}
+      {% empty %}<div class="toy-bag-empty"><span>&#127873;</span><strong>Your bag is waiting!</strong><small>Add something fun to begin.</small></div>{% endfor %}
       {% if cart_items %}
       <div class="shopping-cart-total"><span>Total</span><strong>{{ cart_total_cents|dollars }}</strong></div>
-      <p class="cart-policy">Checkout uses cash only. Your amount is reserved until your parent purchases the order or refunds it.</p>
+      <p class="cart-policy">Uses Cash App money only. Your parent can purchase it or send your money back.</p>
       <form method="post" action="{% url 'shopping_checkout' %}">
         {% csrf_token %}
         <button class="shopping-checkout" type="submit" {% if cart_total_cents > wallet.available_cash_cents %}disabled{% endif %}>Send to parent for purchase</button>
@@ -86,8 +96,8 @@
       {% endif %}
     </aside>
   </section>
-  <section class="card shopping-orders">
-    <div class="card-head"><h2>My Orders</h2><span class="badge">Updates</span></div>
+  <section class="shopping-orders kid-order-tracker">
+    <div class="toy-section-title"><h2>My Orders</h2><span>Track my picks</span></div>
     {% for order in orders %}
       <article class="shopping-order">
         <header><strong>Order #{{ order.pk }}</strong><span class="badge {% if order.status == 'canceled' %}coral{% elif order.status == 'submitted' or order.status == 'claimed' %}waiting{% endif %}">{{ order.get_status_display }}</span></header>

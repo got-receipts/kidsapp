@@ -113,7 +113,7 @@ class ShoppingProductForm(forms.ModelForm):
         ]
         labels = {
             "retailer_url": "Purchase or Google Shopping link",
-            "image_url": "Product photo URL",
+            "image_url": "Approved photo URL (optional if pulling from product link)",
             "minimum_age": "Minimum age (optional)",
             "featured": "Featured for children",
             "in_stock": "Available to request",

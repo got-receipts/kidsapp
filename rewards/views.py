@@ -1,7 +1,13 @@
 import calendar
+import ipaddress
 import json
+import socket
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from html.parser import HTMLParser
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from django.conf import settings
 from django.contrib import messages
@@ -10,8 +16,9 @@ from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Case, F, IntegerField, Q, Sum, When
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.templatetags.static import static
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -70,6 +77,27 @@ from .services import ensure_today_chores
 
 
 CHILD_SECTIONS = {"today", "chores", "badges", "school", "store", "savings", "goals"}
+REMOTE_IMAGE_LIMIT = 3 * 1024 * 1024
+REMOTE_PAGE_LIMIT = 2 * 1024 * 1024
+
+
+class _NoRedirects(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+class _PreviewPhotoParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.photo_url = ""
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "meta" or self.photo_url:
+            return
+        values = {key.lower(): value for key, value in attrs if value}
+        marker = (values.get("property") or values.get("name") or "").lower()
+        if marker in {"og:image", "og:image:url", "twitter:image", "twitter:image:src"}:
+            self.photo_url = values.get("content", "")
 
 
 class FamilyLoginView(LoginView):
@@ -86,8 +114,8 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v3';
-const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png'];
+    source = """const CACHE = 'family-circle-v4';
+const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('push', event => {
@@ -186,6 +214,77 @@ def _notify(child, kind, title, message):
 
 def _audit(actor, child, action, description, **related):
     AuditLog.objects.create(actor=actor, child=child, action=action, description=description[:240], **related)
+
+
+def _public_remote_url(url):
+    parsed = urlparse(url or "")
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    try:
+        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except OSError:
+        return False
+    for result in addresses:
+        address = ipaddress.ip_address(result[4][0])
+        if not address.is_global:
+            return False
+    return True
+
+
+def _read_remote(url, accept, limit):
+    if not _public_remote_url(url):
+        return None, ""
+    request = Request(
+        url,
+        headers={
+            "Accept": accept,
+            "User-Agent": "FamilyCircleCatalog/1.0",
+        },
+    )
+    try:
+        with build_opener(_NoRedirects).open(request, timeout=8) as response:
+            body = response.read(limit + 1)
+            if len(body) > limit:
+                return None, ""
+            return body, response.headers.get_content_type()
+    except (HTTPError, URLError, OSError, ValueError):
+        return None, ""
+
+
+def _download_product_image(url):
+    body, content_type = _read_remote(url, "image/*", REMOTE_IMAGE_LIMIT)
+    if not body or not content_type.startswith("image/"):
+        return None
+    return body, content_type
+
+
+def _find_product_photo_url(product_url):
+    body, content_type = _read_remote(product_url, "text/html", REMOTE_PAGE_LIMIT)
+    if not body or content_type not in {"text/html", "application/xhtml+xml"}:
+        return ""
+    parser = _PreviewPhotoParser()
+    try:
+        parser.feed(body.decode("utf-8", errors="ignore"))
+    except ValueError:
+        return ""
+    photo_url = urljoin(product_url, parser.photo_url)
+    return photo_url if len(photo_url) <= 500 and _public_remote_url(photo_url) else ""
+
+
+def _shopping_photo_fallback(category):
+    safe_category = category if category in ShoppingProduct.Category.values else "gift"
+    return redirect(static(f"rewards/catalog/{safe_category}.svg"))
+
+
+def _shopping_photo_response(url, category):
+    downloaded = _download_product_image(url)
+    if downloaded is None:
+        return _shopping_photo_fallback(category)
+    body, content_type = downloaded
+    response = HttpResponse(body, content_type=content_type)
+    response["Cache-Control"] = "private, max-age=21600"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def _message_query(profile, contact):
@@ -945,6 +1044,28 @@ def shopping_page(request):
 
 
 @login_required
+@require_http_methods(["GET"])
+def shopping_product_photo(request, pk):
+    _profile(request)
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    return _shopping_photo_response(product.image_url, product.category)
+
+
+@login_required
+@require_http_methods(["GET"])
+def shopping_order_item_photo(request, pk):
+    profile = _profile(request)
+    item = get_object_or_404(ShoppingOrderItem.objects.select_related("order__child", "product"), pk=pk)
+    can_fulfill = profile.is_guardian or (
+        profile.role == Profile.Role.VIEWER and profile.user.username.lower() == "mom"
+    )
+    if item.order.child_id != profile.pk and not can_fulfill:
+        raise Http404
+    category = item.product.category if item.product else "gift"
+    return _shopping_photo_response(item.image_url, category)
+
+
+@login_required
 @require_POST
 def shopping_cart_add(request, pk):
     profile = _profile(request)
@@ -1657,6 +1778,25 @@ def dad_shopping_product_edit(request, pk):
     form.save()
     _audit(dad, None, "shopping_product_updated", product.name)
     messages.success(request, "Shopping product updated.")
+    return redirect(f"/?child={selected_id}")
+
+
+@login_required
+@require_POST
+def dad_shopping_product_import_photo(request, pk):
+    dad = _dad(request)
+    selected_id = request.POST.get("child_id", "")
+    if dad is None:
+        return redirect("dashboard")
+    product = get_object_or_404(ShoppingProduct, pk=pk)
+    photo_url = _find_product_photo_url(product.retailer_url)
+    if not photo_url or _download_product_image(photo_url) is None:
+        messages.error(request, "No usable product photo was found at that link. Try a direct public product page or enter an approved photo URL.")
+        return redirect(f"/?child={selected_id}")
+    product.image_url = photo_url
+    product.save(update_fields=["image_url", "updated_at"])
+    _audit(dad, None, "shopping_product_photo_imported", product.name)
+    messages.success(request, f"Photo imported for {product.name}. Children see it inside Shopping without the source link.")
     return redirect(f"/?child={selected_id}")
 
 

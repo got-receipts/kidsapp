@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 430" role="img" aria-label="Wrapped gift">
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#fff0cf"/><stop offset="1" stop-color="#ffe5ee"/></linearGradient></defs>
+  <rect width="640" height="430" rx="36" fill="url(#bg)"/>
+  <path d="M165 193h310v154H165Z" fill="#f26e7b"/><path d="M145 154h350v66H145Z" fill="#e25167"/>
+  <path d="M288 154h64v193h-64Z" fill="#ffd34e"/>
+  <path d="M319 154c-98-6-103-87-44-88 32 0 48 39 44 88Zm2 0c98-6 103-87 44-88-32 0-48 39-44 88Z" fill="#ffd34e"/>
+  <text x="320" y="392" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#8d4e59">A FUN SURPRISE</text>
+</svg>

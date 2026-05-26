@@ -562,7 +562,7 @@
             <div class="fulfillment-items">
               {% for item in order.items.all %}
               <div class="fulfillment-item">
-                {% if item.image_url %}<img src="{{ item.image_url }}" alt="{{ item.product_name }}">{% endif %}
+                {% if item.product %}{% with fallback_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}<img src="{% url 'shopping_order_item_photo' item.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" alt="{{ item.product_name }}">{% endwith %}{% else %}{% static 'rewards/catalog/gift.svg' as fallback_photo %}<img src="{% url 'shopping_order_item_photo' item.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" alt="{{ item.product_name }}">{% endif %}
                 <div><strong>{{ item.product_name }}</strong><small>{{ item.quantity }} x {{ item.unit_price_cents|dollars }} &middot; {{ item.retailer }}</small><a href="{{ item.retailer_url }}" target="_blank" rel="noopener noreferrer">Check price / purchase</a></div>
               </div>
               {% endfor %}
@@ -594,7 +594,7 @@
         <dialog class="review-dialog action-dialog" id="action-shopping-product">
           <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
           <p class="eyebrow">Shopping catalog</p><h2>Add product</h2>
-          <p class="control-note">Use a retailer or Google Shopping link and a product photo URL. Prices are displayed snapshots for parent confirmation at checkout.</p>
+          <p class="control-note">Use a direct product page link and optionally an approved photo URL. After adding a product, Dad can pull the page's preview photo; children receive only an in-app image address.</p>
           <form class="form" method="post" action="{% url 'dad_shopping_product_create' %}">
             {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ shopping_product_form.as_p }}
             <button class="primary" type="submit">Add product</button>
@@ -602,14 +602,15 @@
         </dialog>
         <article class="card fulfillment-catalog">
           <div class="card-head"><h2>Shopping catalog</h2><span class="badge">Dad manages</span></div>
-          <p class="control-note">Starter listings are editable retail snapshots. Set unavailable products out of stock or delete them entirely.</p>
+          <p class="control-note">Starter listings are editable retail snapshots. Import photos only from sources you are allowed to display, and verify current price before purchasing.</p>
           <div class="catalog-admin-grid">
           {% for product in shopping_catalog %}
             <article class="catalog-admin-product">
-              {% if product.image_url %}<img src="{{ product.image_url }}" alt="{{ product.name }}">{% endif %}
+              {% with fallback_path='rewards/catalog/'|add:product.category|add:'.svg' %}{% static fallback_path as fallback_photo %}<img src="{% url 'shopping_product_photo' product.pk %}" data-product-image data-fallback-src="{{ fallback_photo }}" alt="{{ product.name }}">{% endwith %}
               <div><strong>{{ product.name }}</strong><small>{{ product.retail_price_cents|dollars }} &middot; {{ product.get_category_display }}</small><span class="badge {% if not product.in_stock or not product.active %}waiting{% endif %}">{% if not product.active %}Hidden{% elif product.in_stock %}In stock{% else %}Out of stock{% endif %}</span></div>
               <div class="catalog-actions">
                 <button class="remove-button" type="button" data-open-dialog="shopping-product-edit-{{ product.pk }}">Edit</button>
+                <form method="post" action="{% url 'dad_shopping_product_import_photo' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">Pull photo</button></form>
                 <form method="post" action="{% url 'dad_shopping_product_stock' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.in_stock %}Out of stock{% else %}Restock{% endif %}</button></form>
                 <form method="post" action="{% url 'dad_shopping_product_toggle' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.active %}Hide{% else %}Show{% endif %}</button></form>
                 <form method="post" action="{% url 'dad_shopping_product_delete' product.pk %}" data-confirm-shopping-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
@@ -625,7 +626,7 @@
                 <p><label>Displayed retail price ($)<input name="retail_price" type="number" min="0.01" step="0.01" required value="{{ product.retail_price_cents|amount }}"></label></p>
                 <p><label>Retailer<input name="retailer" maxlength="60" required value="{{ product.retailer }}"></label></p>
                 <p><label>Purchase or Google Shopping link<input name="retailer_url" type="url" required value="{{ product.retailer_url }}"></label></p>
-                <p><label>Product photo URL<input name="image_url" type="url" value="{{ product.image_url }}"></label></p>
+                <p><label>Approved photo URL (optional if pulling from product link)<input name="image_url" type="url" value="{{ product.image_url }}"></label></p>
                 <p><label>Category<select name="category"><option value="building" {% if product.category == 'building' %}selected{% endif %}>Building sets</option><option value="stem" {% if product.category == 'stem' %}selected{% endif %}>STEM &amp; learning</option><option value="creative" {% if product.category == 'creative' %}selected{% endif %}>Arts &amp; crafts</option><option value="games" {% if product.category == 'games' %}selected{% endif %}>Games &amp; puzzles</option><option value="outdoor" {% if product.category == 'outdoor' %}selected{% endif %}>Outdoor play</option><option value="electronics" {% if product.category == 'electronics' %}selected{% endif %}>Kids electronics</option><option value="pretend" {% if product.category == 'pretend' %}selected{% endif %}>Pretend play</option></select></label></p>
                 <p><label>Minimum age (optional)<input name="minimum_age" type="number" min="0" value="{{ product.minimum_age|default_if_none:'' }}"></label></p>
                 <p><label><input name="featured" type="checkbox" {% if product.featured %}checked{% endif %}> Featured for children</label></p>

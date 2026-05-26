@@ -245,6 +245,20 @@ document.querySelectorAll("[data-go-back]").forEach((button) => {
   });
 });
 
+function useCatalogFallback(image) {
+  const fallback = image.dataset.fallbackSrc;
+  if (!fallback) return;
+  image.dataset.fallbackLoaded = "true";
+  image.src = fallback;
+  image.classList.add("fallback-art");
+}
+
+const catalogImages = document.querySelectorAll("[data-product-image]");
+catalogImages.forEach((image) => {
+  image.addEventListener("error", () => useCatalogFallback(image));
+  if (image.complete && image.naturalWidth === 0) useCatalogFallback(image);
+});
+
 const messageThread = document.querySelector("[data-message-thread]");
 if (messageThread) {
   messageThread.scrollTop = messageThread.scrollHeight;

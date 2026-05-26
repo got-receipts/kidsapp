@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 430" role="img" aria-label="Art palette">
+  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#fff0f5"/><stop offset="1" stop-color="#fff7cf"/></linearGradient></defs>
+  <rect width="640" height="430" rx="36" fill="url(#bg)"/>
+  <path d="M329 84c-125 0-213 73-213 166 0 72 67 116 132 116 36 0 44-27 35-51-11-29 13-50 43-50h76c73 0 122-31 122-78 0-66-82-103-195-103Z" fill="#f1bd86"/>
+  <circle cx="210" cy="194" r="28" fill="#ff636e"/><circle cx="270" cy="145" r="27" fill="#f7ce39"/><circle cx="343" cy="139" r="27" fill="#5dc68d"/><circle cx="412" cy="171" r="27" fill="#55a9e5"/>
+  <ellipse cx="223" cy="271" rx="29" ry="24" fill="#fff6e9"/>
+  <path d="m396 300 115-141 21 17-118 139Z" fill="#785448"/><path d="m510 160 25-27 12 10-15 33Z" fill="#e66967"/>
+  <text x="320" y="396" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#7c5471">MAKE IT YOUR WAY</text>
+</svg>

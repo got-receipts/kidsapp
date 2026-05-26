@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 430" role="img" aria-label="Science rocket">
+  <defs><linearGradient id="bg" y2="1"><stop stop-color="#122550"/><stop offset="1" stop-color="#337bb6"/></linearGradient></defs>
+  <rect width="640" height="430" rx="36" fill="url(#bg)"/>
+  <g fill="#fff6bc"><circle cx="102" cy="78" r="6"/><circle cx="522" cy="62" r="9"/><circle cx="476" cy="202" r="5"/><circle cx="158" cy="194" r="5"/></g>
+  <g transform="translate(246 54)">
+    <path d="M76 18c55 48 63 120 26 180H50C13 138 21 66 76 18Z" fill="#f7fbff"/>
+    <path d="M76 18c30 26 47 58 50 90H76Z" fill="#58c9ed"/><circle cx="76" cy="101" r="20" fill="#225394"/>
+    <path d="M49 155 8 194v-57l33-28m62 46 41 39v-57l-33-28" fill="#ff6c70"/>
+    <path d="M54 198 76 278l22-80Z" fill="#ffcb3d"/><path d="M63 198 76 245l13-47Z" fill="#ff7548"/>
+  </g>
+  <text x="320" y="386" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#ecf9ff">DISCOVER SOMETHING NEW</text>
+</svg>
