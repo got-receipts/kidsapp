@@ -25,6 +25,7 @@ This is private family software. All rights reserved; it is not intended for red
 - Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
 - Private in-app Messages with child, sibling, guardian, and Mom conversations in a phone-style bubble interface.
+- LiveKit Cloud-powered one-to-one family audio/video calling from Messages, with parent-managed child lock schedules for messaging and calls.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
 - A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights without editing or financial controls.
 - Inventory-aware Family Store items with token prices, cash prices, mixed prices, hidden/unlocked state, age limits, and optional redemption approval.
@@ -32,7 +33,7 @@ This is private family software. All rights reserved; it is not intended for red
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.2.0`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.3.0`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -104,6 +105,18 @@ Cron schedule: */30 * * * *
 Railway evaluates cron schedules in UTC. The command checks the configured `America/New_York` application timezone and sends the star reminder once per day after 7:30 PM and the schedule-planning reminder once per day after 9:00 PM, so it remains correct when daylight saving time changes.
 
 On iPhone, push notifications require installing the PWA from Safari using **Add to Home Screen**, then enabling notifications from inside the installed app.
+
+## Family Calling
+
+Audio and video calls stay inside Messages and connect through LiveKit Cloud. Configure the following Railway environment variables; `LIVEKIT_API_SECRET` must remain server-side and is used only by Django to issue short-lived participant tokens:
+
+```text
+LIVEKIT_WS_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
+```
+
+Dad and GG can add child-specific **Message & Call Limits** from Guardian Actions. During a scheduled lock, the child can read earlier messages but cannot send new messages or participate in audio/video calls.
 
 ## Family Calendar Publishing
 

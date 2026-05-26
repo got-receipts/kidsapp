@@ -7,6 +7,7 @@ from django.utils import timezone
 from .models import (
     ChildRule,
     Chore,
+    CommunicationSchedule,
     DailyScheduleEvent,
     FamilySettings,
     FamilyMessage,
@@ -186,6 +187,48 @@ class FamilyMessageForm(forms.ModelForm):
         if not body:
             raise forms.ValidationError("Write a message before sending.")
         return body
+
+
+class CommunicationScheduleForm(forms.ModelForm):
+    days = forms.MultipleChoiceField(
+        choices=CommunicationSchedule.WEEKDAYS,
+        widget=forms.CheckboxSelectMultiple,
+        label="Lock on these days",
+    )
+
+    class Meta:
+        model = CommunicationSchedule
+        fields = ["feature", "start_time", "end_time", "enabled"]
+        labels = {
+            "feature": "Lock access to",
+            "start_time": "Starts at",
+            "end_time": "Ends at",
+            "enabled": "Schedule enabled",
+        }
+        widgets = {
+            "start_time": forms.TimeInput(attrs={"type": "time"}),
+            "end_time": forms.TimeInput(attrs={"type": "time"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial["days"] = self.instance.days_of_week.split(",")
+        elif not self.is_bound:
+            self.initial["days"] = [value for value, _ in CommunicationSchedule.WEEKDAYS]
+
+    def save(self, commit=True):
+        schedule = super().save(commit=False)
+        schedule.days_of_week = ",".join(self.cleaned_data["days"])
+        if commit:
+            schedule.save()
+        return schedule
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("start_time") and cleaned.get("end_time") and cleaned["start_time"] == cleaned["end_time"]:
+            raise forms.ValidationError("Choose different start and end times for this lock schedule.")
+        return cleaned
 
 
 class TokenCashoutForm(forms.Form):

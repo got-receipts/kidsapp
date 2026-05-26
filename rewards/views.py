@@ -22,6 +22,7 @@ from .forms import (
     ChildProfileForm,
     ChildRuleForm,
     ChoreForm,
+    CommunicationScheduleForm,
     DailyScheduleEventForm,
     FamilyMessageForm,
     FamilySettingsForm,
@@ -42,8 +43,10 @@ from .models import (
     BehaviorStar,
     ChildRule,
     Chore,
+    CommunicationSchedule,
     DailyScheduleEvent,
     FamilyMessage,
+    FamilyCall,
     FamilySettings,
     GrowthGoal,
     HouseRule,
@@ -190,6 +193,68 @@ def _message_contacts(profile):
         )
         contact.unread_count = profile.received_family_messages.filter(sender=contact, read_at__isnull=True).count()
     return contacts
+
+
+def _communication_lock(profile, feature):
+    if profile.role != Profile.Role.CHILD:
+        return None
+    feature_filter = [feature, CommunicationSchedule.Feature.BOTH]
+    for schedule in profile.communication_schedules.filter(enabled=True, feature__in=feature_filter):
+        if schedule.applies_at():
+            return schedule
+    return None
+
+
+def _call_schedule_lock(call):
+    for participant in (call.caller, call.recipient):
+        schedule = _communication_lock(participant, CommunicationSchedule.Feature.CALLING)
+        if schedule:
+            return participant, schedule
+    return None, None
+
+
+def _livekit_configured():
+    return bool(settings.LIVEKIT_WS_URL and settings.LIVEKIT_API_KEY and settings.LIVEKIT_API_SECRET)
+
+
+def _incoming_call(profile):
+    _expire_ringing_calls()
+    cutoff = timezone.now() - timedelta(minutes=3)
+    return (
+        FamilyCall.objects.filter(recipient=profile, status=FamilyCall.Status.RINGING, created_at__gte=cutoff)
+        .select_related("caller")
+        .first()
+    )
+
+
+def _expire_ringing_calls():
+    now = timezone.now()
+    FamilyCall.objects.filter(
+        status=FamilyCall.Status.RINGING,
+        created_at__lt=now - timedelta(minutes=3),
+    ).update(status=FamilyCall.Status.ENDED, ended_at=now)
+
+
+def _make_livekit_token(profile, call):
+    try:
+        from livekit import api
+    except ImportError as error:
+        raise ValidationError("LiveKit server support is not installed.") from error
+    return (
+        api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+        .with_identity(f"profile-{profile.pk}")
+        .with_name(profile.display_name)
+        .with_ttl(timedelta(minutes=30))
+        .with_grants(
+            api.VideoGrants(
+                room_join=True,
+                room=call.room_name,
+                can_publish=True,
+                can_subscribe=True,
+            )
+        )
+        .to_jwt()
+    )
 
 
 def _expire_rules():
@@ -454,6 +519,9 @@ def dashboard(request):
             "grounding_form": GroundingForm(),
             "dad_controls": dad_controls,
             "unread_message_count": _unread_message_count(profile),
+            "selected_communication_schedules": selected.communication_schedules.all() if selected and can_manage else [],
+            "communication_schedule_form": CommunicationScheduleForm(),
+            "livekit_configured": _livekit_configured(),
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
@@ -463,6 +531,7 @@ def dashboard(request):
 @require_http_methods(["GET"])
 def messages_inbox(request):
     profile = _profile(request)
+    incoming_call = None if _communication_lock(profile, CommunicationSchedule.Feature.CALLING) else _incoming_call(profile)
     return render(
         request,
         "rewards/messages_inbox.html",
@@ -470,6 +539,10 @@ def messages_inbox(request):
             "profile": profile,
             "contacts": _message_contacts(profile),
             "unread_message_count": _unread_message_count(profile),
+            "messaging_lock": _communication_lock(profile, CommunicationSchedule.Feature.MESSAGING),
+            "calling_lock": _communication_lock(profile, CommunicationSchedule.Feature.CALLING),
+            "incoming_call": incoming_call,
+            "livekit_configured": _livekit_configured(),
         },
     )
 
@@ -482,16 +555,22 @@ def message_thread(request, recipient_pk):
     if recipient.pk == profile.pk:
         messages.error(request, "Choose another family member to send a message.")
         return redirect("messages_inbox")
+    messaging_lock = _communication_lock(profile, CommunicationSchedule.Feature.MESSAGING)
+    calling_lock = _communication_lock(profile, CommunicationSchedule.Feature.CALLING)
     profile.received_family_messages.filter(sender=recipient, read_at__isnull=True).update(read_at=timezone.now())
     if request.method == "POST":
         form = FamilyMessageForm(request.POST)
-        if form.is_valid():
+        if messaging_lock:
+            messages.error(request, "Messaging is locked by your family schedule right now.")
+        elif form.is_valid():
             message = form.save(commit=False)
             message.sender = profile
             message.recipient = recipient
             message.save()
+            _notify(recipient, Notification.Kind.MESSAGE, f"Message from {profile.display_name}", message.body)
             return redirect("message_thread", recipient_pk=recipient.pk)
-        messages.error(request, "Write a message before sending.")
+        else:
+            messages.error(request, "Write a message before sending.")
     else:
         form = FamilyMessageForm()
     return render(
@@ -503,7 +582,179 @@ def message_thread(request, recipient_pk):
             "thread_messages": FamilyMessage.objects.filter(_message_query(profile, recipient)).select_related("sender"),
             "message_form": form,
             "unread_message_count": _unread_message_count(profile),
+            "messaging_lock": messaging_lock,
+            "calling_lock": calling_lock,
+            "incoming_call": None if calling_lock else _incoming_call(profile),
+            "livekit_configured": _livekit_configured(),
         },
+    )
+
+
+@login_required
+@require_POST
+def start_family_call(request, recipient_pk, call_type):
+    caller = _profile(request)
+    recipient = get_object_or_404(Profile, pk=recipient_pk)
+    if recipient.pk == caller.pk or call_type not in FamilyCall.Type.values:
+        messages.error(request, "Choose a valid family member and call type.")
+        return redirect("messages_inbox")
+    if not _livekit_configured():
+        messages.error(request, "Video calling has not been configured by a parent yet.")
+        return redirect("message_thread", recipient_pk=recipient.pk)
+    for participant in (caller, recipient):
+        if _communication_lock(participant, CommunicationSchedule.Feature.CALLING):
+            messages.error(request, f"Calling is locked for {participant.display_name} by the family schedule right now.")
+            return redirect("message_thread", recipient_pk=recipient.pk)
+    _expire_ringing_calls()
+    existing = FamilyCall.objects.filter(
+        Q(caller=caller, recipient=recipient) | Q(caller=recipient, recipient=caller),
+        status__in=[FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE],
+        created_at__gte=timezone.now() - timedelta(minutes=30),
+    ).first()
+    if existing:
+        return redirect("call_room", pk=existing.pk)
+    call = FamilyCall.objects.create(caller=caller, recipient=recipient, call_type=call_type)
+    label = call.get_call_type_display().lower()
+    FamilyMessage.objects.create(sender=caller, recipient=recipient, body=f"Started a {label} call.")
+    _notify(recipient, Notification.Kind.CALL, f"Incoming {label} call", f"{caller.display_name} is calling you.")
+    return redirect("call_room", pk=call.pk)
+
+
+@login_required
+@require_http_methods(["GET"])
+def call_room(request, pk):
+    profile = _profile(request)
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    if not call.includes(profile):
+        return redirect("messages_inbox")
+    contact = call.recipient if call.caller_id == profile.pk else call.caller
+    call_lock = _communication_lock(profile, CommunicationSchedule.Feature.CALLING)
+    if call_lock:
+        messages.error(request, "Calls are locked by your family schedule right now.")
+        return redirect("message_thread", recipient_pk=contact.pk)
+    can_join = call.status == FamilyCall.Status.ACTIVE or (
+        call.caller_id == profile.pk and call.status == FamilyCall.Status.RINGING
+    )
+    return render(
+        request,
+        "rewards/call_room.html",
+        {
+            "profile": profile,
+            "call": call,
+            "contact": contact,
+            "can_join": can_join,
+            "livekit_configured": _livekit_configured(),
+        },
+    )
+
+
+@login_required
+@require_POST
+def accept_family_call(request, pk):
+    profile = _profile(request)
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk, recipient=profile)
+    locked_participant, _ = _call_schedule_lock(call)
+    if locked_participant:
+        messages.error(request, f"Calls are locked for {locked_participant.display_name} by the family schedule right now.")
+        return redirect("message_thread", recipient_pk=call.caller_id)
+    if call.status == FamilyCall.Status.RINGING:
+        call.status = FamilyCall.Status.ACTIVE
+        call.answered_at = timezone.now()
+        call.save(update_fields=["status", "answered_at"])
+    return redirect("call_room", pk=call.pk)
+
+
+@login_required
+@require_POST
+def decline_family_call(request, pk):
+    profile = _profile(request)
+    call = get_object_or_404(FamilyCall, pk=pk, recipient=profile)
+    if call.status == FamilyCall.Status.RINGING:
+        call.status = FamilyCall.Status.DECLINED
+        call.ended_at = timezone.now()
+        call.save(update_fields=["status", "ended_at"])
+        FamilyMessage.objects.create(sender=profile, recipient=call.caller, body=f"Declined {call.get_call_type_display().lower()} call.")
+    return redirect("message_thread", recipient_pk=call.caller_id)
+
+
+@login_required
+@require_POST
+def end_family_call(request, pk):
+    profile = _profile(request)
+    call = get_object_or_404(FamilyCall, pk=pk)
+    if not call.includes(profile):
+        return redirect("messages_inbox")
+    contact = call.recipient if call.caller_id == profile.pk else call.caller
+    if call.status in [FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE]:
+        call.status = FamilyCall.Status.ENDED
+        call.ended_at = timezone.now()
+        call.save(update_fields=["status", "ended_at"])
+        FamilyMessage.objects.create(sender=profile, recipient=contact, body=f"Ended {call.get_call_type_display().lower()} call.")
+    return redirect("message_thread", recipient_pk=contact.pk)
+
+
+@login_required
+@require_http_methods(["GET"])
+def call_token(request, pk):
+    profile = _profile(request)
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    if not call.includes(profile):
+        return JsonResponse({"error": "Not permitted."}, status=403)
+    if not _livekit_configured():
+        return JsonResponse({"error": "Calling is not configured."}, status=503)
+    locked_participant, _ = _call_schedule_lock(call)
+    if locked_participant:
+        return JsonResponse({"error": "Calls are locked right now."}, status=403)
+    may_join = call.status == FamilyCall.Status.ACTIVE or (
+        call.caller_id == profile.pk and call.status == FamilyCall.Status.RINGING
+    )
+    if not may_join:
+        return JsonResponse({"error": "This call is not available to join."}, status=403)
+    try:
+        token = _make_livekit_token(profile, call)
+    except ValidationError as error:
+        return JsonResponse({"error": error.message}, status=503)
+    return JsonResponse({"wsUrl": settings.LIVEKIT_WS_URL, "token": token, "callType": call.call_type})
+
+
+@login_required
+@require_http_methods(["GET"])
+def call_status(request, pk):
+    profile = _profile(request)
+    _expire_ringing_calls()
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    if not call.includes(profile):
+        return JsonResponse({"error": "Not permitted."}, status=403)
+    locked_participant, _ = _call_schedule_lock(call)
+    if (
+        locked_participant
+        and call.status in [FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE]
+    ):
+        call.status = FamilyCall.Status.ENDED
+        call.ended_at = timezone.now()
+        call.save(update_fields=["status", "ended_at"])
+        return JsonResponse({"status": call.status, "reason": "schedule"})
+    return JsonResponse({"status": call.status})
+
+
+@login_required
+@require_http_methods(["GET"])
+def incoming_call_status(request):
+    profile = _profile(request)
+    if _communication_lock(profile, CommunicationSchedule.Feature.CALLING):
+        return JsonResponse({"call": None})
+    call = _incoming_call(profile)
+    if not call:
+        return JsonResponse({"call": None})
+    return JsonResponse(
+        {
+            "call": {
+                "id": call.pk,
+                "caller": call.caller.display_name,
+                "type": call.get_call_type_display(),
+                "url": f"/calls/{call.pk}/",
+            }
+        }
     )
 
 
@@ -1119,6 +1370,57 @@ def update_family_settings(request):
     _audit(guardian, None, "exchange_rate_updated", str(settings_record))
     messages.success(request, f"Wallet exchange rate updated: {settings_record}.")
     return redirect(f"/?child={request.POST.get('child_id', '')}")
+
+
+@login_required
+@require_POST
+def guardian_communication_schedule(request):
+    guardian = _guardian(request)
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    form = CommunicationScheduleForm(request.POST)
+    if guardian is None or not form.is_valid():
+        messages.error(request, "Check the communication schedule details and try again.")
+        return redirect(f"/?child={child.pk}")
+    schedule = form.save(commit=False)
+    schedule.child = child
+    schedule.created_by = guardian
+    schedule.save()
+    start = schedule.start_time.strftime("%I:%M %p").lstrip("0")
+    end = schedule.end_time.strftime("%I:%M %p").lstrip("0")
+    description = f"{schedule.get_feature_display()} locked {schedule.days_display} from {start} to {end}."
+    _audit(guardian, child, "communication_schedule_created", description)
+    messages.success(request, f"Communication schedule saved for {child.display_name}.")
+    return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_toggle_communication_schedule(request, pk):
+    guardian = _guardian(request)
+    schedule = get_object_or_404(CommunicationSchedule, pk=pk)
+    if guardian is None:
+        return redirect("dashboard")
+    schedule.enabled = not schedule.enabled
+    schedule.save(update_fields=["enabled"])
+    action = "enabled" if schedule.enabled else "paused"
+    _audit(guardian, schedule.child, f"communication_schedule_{action}", schedule.get_feature_display())
+    messages.info(request, f"{schedule.get_feature_display()} schedule {action}.")
+    return redirect(f"/?child={schedule.child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_remove_communication_schedule(request, pk):
+    guardian = _guardian(request)
+    schedule = get_object_or_404(CommunicationSchedule, pk=pk)
+    if guardian is None:
+        return redirect("dashboard")
+    child = schedule.child
+    description = schedule.get_feature_display()
+    schedule.delete()
+    _audit(guardian, child, "communication_schedule_deleted", description)
+    messages.info(request, "Communication schedule deleted.")
+    return redirect(f"/?child={child.pk}")
 
 
 @login_required

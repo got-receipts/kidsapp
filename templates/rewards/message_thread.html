@@ -1,7 +1,7 @@
 {% extends "rewards/base.html" %}
 {% block title %}{{ recipient.display_name }} | Messages{% endblock %}
 {% block content %}
-<main class="shell ios-thread-shell {% if profile.role == 'child' %}kid-shell{% endif %}">
+<main class="shell ios-thread-shell {% if profile.role == 'child' %}kid-shell{% endif %}" data-incoming-call-url="{% url 'incoming_call_status' %}">
   <header class="ios-thread-header">
     <a class="ios-back" href="{% url 'messages_inbox' %}"><span>&lsaquo;</span> Messages</a>
     <div class="ios-thread-contact">
@@ -11,6 +11,17 @@
     </div>
     <a class="ios-home-link" href="{% url 'dashboard' %}">Home</a>
   </header>
+  <nav class="ios-call-actions" aria-label="Call {{ recipient.display_name }}">
+    {% if livekit_configured and not calling_lock %}
+      <form method="post" action="{% url 'start_family_call' recipient.pk 'audio' %}">{% csrf_token %}<button type="submit" aria-label="Audio call {{ recipient.display_name }}">&#9742; Audio</button></form>
+      <form method="post" action="{% url 'start_family_call' recipient.pk 'video' %}">{% csrf_token %}<button type="submit" aria-label="Video call {{ recipient.display_name }}">&#128247; Video</button></form>
+    {% elif calling_lock %}
+      <span>Calls locked by schedule</span>
+    {% else %}
+      <span>Calling setup pending</span>
+    {% endif %}
+  </nav>
+  {% include "rewards/_incoming_call.html" %}
   <section class="ios-chat-window" data-message-thread aria-label="Conversation with {{ recipient.display_name }}">
     {% for message in thread_messages %}
       <div class="ios-bubble-row {% if message.sender_id == profile.pk %}outgoing{% else %}incoming{% endif %}">
@@ -25,10 +36,14 @@
       </div>
     {% endfor %}
   </section>
-  <form class="ios-composer" method="post" action="{% url 'message_thread' recipient.pk %}">
-    {% csrf_token %}
-    {{ message_form.body }}
-    <button type="submit" aria-label="Send message">&uarr;</button>
-  </form>
+  {% if messaging_lock %}
+    <p class="communication-lock-note composer-locked">Messaging is locked by your family schedule right now. You can still read earlier messages.</p>
+  {% else %}
+    <form class="ios-composer" method="post" action="{% url 'message_thread' recipient.pk %}">
+      {% csrf_token %}
+      {{ message_form.body }}
+      <button type="submit" aria-label="Send message">&uarr;</button>
+    </form>
+  {% endif %}
 </main>
 {% endblock %}

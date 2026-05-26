@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -13,9 +13,11 @@ from .models import (
     BehaviorStar,
     ChildRule,
     Chore,
+    CommunicationSchedule,
     DailyScheduleEvent,
     FamilySettings,
     FamilyMessage,
+    FamilyCall,
     HouseRule,
     LedgerRequest,
     Notification,
@@ -609,6 +611,95 @@ class LedgerApprovalTests(TestCase):
         response = self.client.post(reverse("message_thread", args=[self.child.pk]), {"body": "Still no"})
         self.assertRedirects(response, reverse("messages_inbox"))
         self.assertFalse(FamilyMessage.objects.exists())
+
+    def test_guardian_can_create_child_message_and_call_lock_schedule(self):
+        self.client.force_login(self.guardian.user)
+
+        response = self.client.post(
+            reverse("guardian_communication_schedule"),
+            {
+                "child_id": self.child.pk,
+                "feature": "both",
+                "days": ["0", "1", "2", "3", "4"],
+                "start_time": "20:00",
+                "end_time": "07:00",
+                "enabled": "on",
+            },
+        )
+
+        self.assertRedirects(response, f"/?child={self.child.pk}")
+        schedule = CommunicationSchedule.objects.get(child=self.child)
+        self.assertEqual(schedule.feature, CommunicationSchedule.Feature.BOTH)
+        self.assertEqual(schedule.days_of_week, "0,1,2,3,4")
+        self.assertTrue(AuditLog.objects.filter(action="communication_schedule_created", child=self.child).exists())
+
+    @override_settings(LIVEKIT_WS_URL="wss://family.livekit.cloud", LIVEKIT_API_KEY="key", LIVEKIT_API_SECRET="secret")
+    def test_active_schedule_blocks_child_messages_and_calls(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        CommunicationSchedule.objects.create(
+            child=self.child,
+            feature=CommunicationSchedule.Feature.BOTH,
+            days_of_week="0",
+            start_time=time(20, 0),
+            end_time=time(22, 0),
+            created_by=self.guardian,
+        )
+        locked_time = timezone.make_aware(datetime(2026, 5, 25, 21, 0))
+        self.client.force_login(self.child.user)
+
+        with patch("rewards.models.timezone.now", return_value=locked_time):
+            response = self.client.post(reverse("message_thread", args=[mom.pk]), {"body": "Can I call?"}, follow=True)
+            call_response = self.client.post(reverse("start_family_call", args=[mom.pk, "video"]), follow=True)
+
+        self.assertContains(response, "Messaging is locked")
+        self.assertContains(call_response, "Calling is locked")
+        self.assertFalse(FamilyMessage.objects.exists())
+        self.assertFalse(FamilyCall.objects.exists())
+        active_call = FamilyCall.objects.create(
+            caller=self.child,
+            recipient=mom,
+            call_type=FamilyCall.Type.AUDIO,
+            status=FamilyCall.Status.ACTIVE,
+        )
+        with patch("rewards.models.timezone.now", return_value=locked_time):
+            closed_response = self.client.get(reverse("call_status", args=[active_call.pk]))
+        active_call.refresh_from_db()
+        self.assertEqual(closed_response.json()["reason"], "schedule")
+        self.assertEqual(active_call.status, FamilyCall.Status.ENDED)
+
+    @override_settings(LIVEKIT_WS_URL="wss://family.livekit.cloud", LIVEKIT_API_KEY="key", LIVEKIT_API_SECRET="secret")
+    @patch("rewards.views._make_livekit_token", return_value="short-lived-token")
+    def test_family_video_call_accepts_and_issues_token_only_to_participant(self, token_builder):
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        outsider_user = User.objects.create_user(username="mom", password="test")
+        outsider = Profile.objects.create(user=outsider_user, display_name="Mom", role=Profile.Role.VIEWER)
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("start_family_call", args=[sibling.pk, "video"]))
+        call = FamilyCall.objects.get(caller=self.child, recipient=sibling)
+        self.assertEqual(call.status, FamilyCall.Status.RINGING)
+
+        self.client.force_login(sibling.user)
+        incoming = self.client.get(reverse("call_room", args=[call.pk]))
+        self.assertContains(incoming, "Incoming video call")
+        self.client.post(reverse("accept_family_call", args=[call.pk]))
+        call.refresh_from_db()
+        self.assertEqual(call.status, FamilyCall.Status.ACTIVE)
+        token_response = self.client.get(reverse("call_token", args=[call.pk]))
+        self.assertEqual(token_response.json()["token"], "short-lived-token")
+        self.assertEqual(self.client.get(reverse("call_status", args=[call.pk])).json()["status"], FamilyCall.Status.ACTIVE)
+        self.client.post(reverse("end_family_call", args=[call.pk]))
+
+        self.client.force_login(self.child.user)
+        self.assertEqual(self.client.get(reverse("call_status", args=[call.pk])).json()["status"], FamilyCall.Status.ENDED)
+        self.client.force_login(outsider.user)
+        forbidden = self.client.get(reverse("call_token", args=[call.pk]))
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(self.client.get(reverse("call_status", args=[call.pk])).status_code, 403)
+        token_builder.assert_called_once()
 
     def test_guardian_daily_plan_and_rules_appear_in_child_morning_message(self):
         self.client.force_login(self.guardian.user)

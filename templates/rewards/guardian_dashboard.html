@@ -82,6 +82,7 @@
           <button class="action-tile" type="button" data-open-dialog="action-profile">Store Eligibility</button>
           <button class="action-tile gold" type="button" data-open-dialog="action-balance">Wallet Funds</button>
           <button class="action-tile gold" type="button" data-open-dialog="action-rate">Exchange Rate</button>
+          <button class="action-tile" type="button" data-open-dialog="action-communications">Message &amp; Call Limits</button>
         </div>
       </article>
       <dialog class="review-dialog action-dialog" id="action-deduct">
@@ -188,6 +189,15 @@
         <p>Children earn tokens from chores, then instantly convert tokens to wallet cash using this parent-controlled rate. Cash cannot convert back to tokens.</p>
         <form class="form" method="post" action="{% url 'update_family_settings' %}">
           {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ settings_form.as_p }}<button class="primary">Save exchange rate</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-communications">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Digital hours</p><h2>Messages &amp; call schedule</h2>
+        <p>During locked hours, {{ selected.display_name }} can read existing messages but cannot send new messages or participate in calls.</p>
+        <form class="form communication-form" method="post" action="{% url 'guardian_communication_schedule' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ communication_schedule_form.as_p }}
+          <button class="primary">Add lock schedule</button>
         </form>
       </dialog>
       <article class="card chore-reviews">
@@ -343,6 +353,20 @@
           </div>
         {% empty %}<p class="empty">No upcoming events in a morning message yet.</p>{% endfor %}
       </article>
+      {% if can_manage %}
+      <article class="card communication-schedules" data-dashboard-module="Message & Call Limits">
+        <div class="card-head"><h2>Messages &amp; call limits</h2><span class="badge">{% if livekit_configured %}Calls ready{% else %}LiveKit setup pending{% endif %}</span></div>
+        <p class="control-note">Schedules restrict {{ selected.display_name }} during the listed hours. Open Guardian Actions to add another schedule.</p>
+        {% for schedule in selected_communication_schedules %}
+          <div class="planner-row">
+            <div><strong>{{ schedule.get_feature_display }}</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} - {{ schedule.end_time|time:"g:i A" }}</small></div>
+            <span class="badge {% if not schedule.enabled %}waiting{% endif %}">{% if schedule.enabled %}Enabled{% else %}Paused{% endif %}</span>
+            <form method="post" action="{% url 'guardian_toggle_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">{% if schedule.enabled %}Pause{% else %}Enable{% endif %}</button></form>
+            <form method="post" action="{% url 'guardian_remove_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">Delete</button></form>
+          </div>
+        {% empty %}<p class="empty">No message or calling limits are scheduled for this child.</p>{% endfor %}
+      </article>
+      {% endif %}
       <article class="card rules-control" data-dashboard-module="Personal Rules">
         <div class="card-head"><h2>{{ selected.display_name }}'s individual rules</h2><span class="badge">Personal</span></div>
         {% if can_manage %}{% for rule in all_selected_rules %}

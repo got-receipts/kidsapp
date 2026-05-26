@@ -1,0 +1,9 @@
+{% if incoming_call %}
+<section class="incoming-call-banner" data-incoming-call-banner>
+  <span class="incoming-pulse"></span>
+  <div><strong>Incoming {{ incoming_call.get_call_type_display|lower }} call</strong><small>{{ incoming_call.caller.display_name }} is calling...</small></div>
+  <a href="{% url 'call_room' incoming_call.pk %}">Answer</a>
+</section>
+{% else %}
+<section class="incoming-call-banner hidden" data-incoming-call-banner></section>
+{% endif %}

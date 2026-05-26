@@ -256,6 +256,114 @@ document.querySelectorAll(".ios-composer textarea").forEach((field) => {
   });
 });
 
+const messagingApp = document.querySelector("[data-incoming-call-url]");
+if (messagingApp) {
+  const banner = messagingApp.querySelector("[data-incoming-call-banner]");
+  async function pollIncomingCall() {
+    try {
+      const response = await fetch(messagingApp.dataset.incomingCallUrl, {headers: {"Accept": "application/json"}});
+      if (!response.ok) return;
+      const {call} = await response.json();
+      if (!call) return;
+      banner.classList.remove("hidden");
+      banner.innerHTML = "";
+      const pulse = document.createElement("span");
+      pulse.className = "incoming-pulse";
+      const copy = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = `Incoming ${call.type.toLowerCase()} call`;
+      const detail = document.createElement("small");
+      detail.textContent = `${call.caller} is calling...`;
+      copy.append(title, detail);
+      const link = document.createElement("a");
+      link.href = call.url;
+      link.textContent = "Answer";
+      banner.append(pulse, copy, link);
+    } catch (error) {
+      // Poll again later if the connection briefly drops.
+    }
+  }
+  pollIncomingCall();
+  window.setInterval(pollIncomingCall, 4000);
+}
+
+const watchedCallScreen = document.querySelector("[data-watch-call='yes']");
+if (watchedCallScreen) {
+  let callFinished = false;
+  async function pollCallStatus() {
+    if (callFinished) return;
+    try {
+      const response = await fetch(watchedCallScreen.dataset.statusUrl, {headers: {"Accept": "application/json"}});
+      if (!response.ok) return;
+      const {status, reason} = await response.json();
+      if (status !== "declined" && status !== "ended") return;
+      callFinished = true;
+      const message = reason === "schedule" ? "Calling hours are over." : (status === "declined" ? "Call declined." : "Call ended.");
+      toast(message);
+      window.setTimeout(() => {
+        window.location.href = watchedCallScreen.dataset.returnUrl;
+      }, 700);
+    } catch (error) {
+      // The next poll will retry if the network briefly drops.
+    }
+  }
+  pollCallStatus();
+  window.setInterval(pollCallStatus, 2000);
+}
+
+const callScreen = document.querySelector("[data-livekit-call='join']");
+if (callScreen) {
+  const waiting = callScreen.querySelector("[data-call-waiting]");
+  const remoteVideo = callScreen.querySelector("[data-remote-video]");
+  const localVideo = callScreen.querySelector("[data-local-video]");
+  let room;
+  let microphoneEnabled = true;
+  let cameraEnabled = callScreen.dataset.callType === "video";
+
+  async function connectLiveKitCall() {
+    try {
+      const tokenResponse = await fetch(callScreen.dataset.tokenUrl, {headers: {"Accept": "application/json"}});
+      const connection = await tokenResponse.json();
+      if (!tokenResponse.ok) throw new Error(connection.error || "Could not join the call.");
+      const {Room, RoomEvent, Track} = await import("https://cdn.jsdelivr.net/npm/livekit-client@2.15.7/+esm");
+      room = new Room({adaptiveStream: true, dynacast: true});
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === Track.Kind.Video) {
+          track.attach(remoteVideo);
+          waiting.classList.add("hidden");
+        } else {
+          const audioElement = track.attach();
+          audioElement.hidden = true;
+          callScreen.appendChild(audioElement);
+        }
+      });
+      await room.connect(connection.wsUrl, connection.token);
+      await room.localParticipant.setMicrophoneEnabled(true);
+      if (cameraEnabled) {
+        const publication = await room.localParticipant.setCameraEnabled(true);
+        const track = publication && publication.track;
+        if (track && localVideo) track.attach(localVideo);
+      }
+    } catch (error) {
+      toast(error.message || "Could not connect the family call.");
+    }
+  }
+
+  callScreen.querySelector("[data-toggle-mic]")?.addEventListener("click", async (event) => {
+    microphoneEnabled = !microphoneEnabled;
+    await room?.localParticipant.setMicrophoneEnabled(microphoneEnabled);
+    event.currentTarget.textContent = microphoneEnabled ? "Mute" : "Unmute";
+  });
+  callScreen.querySelector("[data-toggle-camera]")?.addEventListener("click", async (event) => {
+    cameraEnabled = !cameraEnabled;
+    await room?.localParticipant.setCameraEnabled(cameraEnabled);
+    event.currentTarget.textContent = cameraEnabled ? "Camera" : "Camera Off";
+  });
+  callScreen.querySelector("[data-end-call]")?.addEventListener("submit", () => room?.disconnect());
+  window.addEventListener("pagehide", () => room?.disconnect());
+  connectLiveKitCall();
+}
+
 const guardianGrid = document.querySelector(".guardian .grid");
 if (guardianGrid) {
   const modules = Array.from(guardianGrid.querySelectorAll("[data-dashboard-module]"));

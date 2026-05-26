@@ -1,4 +1,5 @@
 from datetime import time
+import uuid
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -561,6 +562,8 @@ class Notification(models.Model):
         GROUNDED = "grounded", "Grounded mode"
         WALLET = "wallet", "Wallet update"
         STORE = "store", "Store purchase"
+        MESSAGE = "message", "Message"
+        CALL = "call", "Call"
 
     recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=12, choices=Kind.choices)
@@ -599,6 +602,106 @@ class FamilyMessage(models.Model):
         indexes = [
             models.Index(fields=["recipient", "read_at"], name="message_unread_idx"),
             models.Index(fields=["sender", "recipient", "created_at"], name="message_thread_idx"),
+        ]
+
+
+class CommunicationSchedule(models.Model):
+    class Feature(models.TextChoices):
+        MESSAGING = "messaging", "Messages only"
+        CALLING = "calling", "Calls only"
+        BOTH = "both", "Messages and calls"
+
+    WEEKDAYS = [
+        ("0", "Monday"),
+        ("1", "Tuesday"),
+        ("2", "Wednesday"),
+        ("3", "Thursday"),
+        ("4", "Friday"),
+        ("5", "Saturday"),
+        ("6", "Sunday"),
+    ]
+
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="communication_schedules")
+    feature = models.CharField(max_length=12, choices=Feature.choices, default=Feature.BOTH)
+    days_of_week = models.CharField(max_length=20, default="0,1,2,3,4,5,6")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    enabled = models.BooleanField(default=True)
+    created_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="communication_schedules_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.child_id and self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Communication schedules apply only to child accounts.")
+        valid_days = {day for day, _ in self.WEEKDAYS}
+        if not set(filter(None, self.days_of_week.split(","))).issubset(valid_days):
+            raise ValidationError("Select valid schedule days.")
+
+    def applies_at(self, moment=None):
+        if not self.enabled:
+            return False
+        moment = timezone.localtime(moment or timezone.now())
+        selected_days = set(filter(None, self.days_of_week.split(",")))
+        current_day = str(moment.weekday())
+        current_time = moment.time().replace(tzinfo=None)
+        if self.start_time <= self.end_time:
+            return current_day in selected_days and self.start_time <= current_time < self.end_time
+        if current_time >= self.start_time:
+            return current_day in selected_days
+        previous_day = str((moment.weekday() - 1) % 7)
+        return current_time < self.end_time and previous_day in selected_days
+
+    @property
+    def days_display(self):
+        selected_days = set(filter(None, self.days_of_week.split(",")))
+        return ", ".join(label[:3] for value, label in self.WEEKDAYS if value in selected_days)
+
+    class Meta:
+        ordering = ["child__display_name", "start_time"]
+
+
+def new_call_room_name():
+    return f"family-call-{uuid.uuid4().hex}"
+
+
+class FamilyCall(models.Model):
+    class Type(models.TextChoices):
+        AUDIO = "audio", "Audio"
+        VIDEO = "video", "Video"
+
+    class Status(models.TextChoices):
+        RINGING = "ringing", "Ringing"
+        ACTIVE = "active", "Active"
+        DECLINED = "declined", "Declined"
+        ENDED = "ended", "Ended"
+
+    caller = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="calls_started")
+    recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="calls_received")
+    call_type = models.CharField(max_length=8, choices=Type.choices)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.RINGING)
+    room_name = models.CharField(max_length=80, unique=True, default=new_call_room_name, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    answered_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    def clean(self):
+        if self.caller_id and self.caller_id == self.recipient_id:
+            raise ValidationError("You cannot call yourself.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def includes(self, profile):
+        return profile.pk in {self.caller_id, self.recipient_id}
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(caller=F("recipient")),
+                name="family_call_recipient_differs_from_caller",
+            )
         ]
 
 

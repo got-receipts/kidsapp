@@ -1,7 +1,7 @@
 {% extends "rewards/base.html" %}
 {% block title %}Messages | Family Circle{% endblock %}
 {% block content %}
-<main class="shell ios-messages-shell {% if profile.role == 'child' %}kid-shell{% endif %}">
+<main class="shell ios-messages-shell {% if profile.role == 'child' %}kid-shell{% endif %}" data-incoming-call-url="{% url 'incoming_call_status' %}">
   <header class="ios-messages-nav">
     <a class="ios-back" href="{% url 'dashboard' %}"><span>&lsaquo;</span> Home</a>
     <strong>Messages</strong>
@@ -11,6 +11,9 @@
     <h1>Messages</h1>
     {% if unread_message_count %}<span>{{ unread_message_count }} unread</span>{% endif %}
   </section>
+  {% include "rewards/_incoming_call.html" %}
+  {% if messaging_lock %}<p class="communication-lock-note">Messaging is locked by your family schedule right now. You can still read conversations.</p>{% endif %}
+  {% if calling_lock %}<p class="communication-lock-note">Calls are locked by your family schedule right now.</p>{% endif %}
   <section class="ios-conversation-list" aria-label="Family conversations">
     {% for contact in contacts %}
       <a class="ios-conversation {% if contact.unread_count %}unread{% endif %}" href="{% url 'message_thread' contact.pk %}">

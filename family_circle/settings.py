@@ -113,7 +113,10 @@ CSRF_FAILURE_VIEW = "rewards.views.csrf_failure"
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:family-circle@example.com")
-APP_VERSION = os.getenv("APP_VERSION", "2.2.0")
+LIVEKIT_WS_URL = os.getenv("LIVEKIT_WS_URL", "").strip()
+LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "").strip()
+LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "").strip()
+APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG

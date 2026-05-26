@@ -1,0 +1,46 @@
+{% extends "rewards/base.html" %}
+{% block title %}{{ call.get_call_type_display }} Call | Family Circle{% endblock %}
+{% block content %}
+<main class="family-call-screen" data-livekit-call="{% if can_join %}join{% else %}waiting{% endif %}" data-watch-call="{% if call.status == 'ringing' or call.status == 'active' %}yes{% else %}no{% endif %}" data-token-url="{% url 'call_token' call.pk %}" data-status-url="{% url 'call_status' call.pk %}" data-return-url="{% url 'message_thread' contact.pk %}" data-call-type="{{ call.call_type }}">
+  <header class="family-call-header">
+    <a href="{% url 'message_thread' contact.pk %}">&lsaquo; Messages</a>
+    <strong>{{ call.get_call_type_display }} Call</strong>
+    <span></span>
+  </header>
+  <section class="call-stage">
+    <video class="remote-video" data-remote-video autoplay playsinline></video>
+    <div class="call-waiting" data-call-waiting>
+      <span class="ios-avatar">{{ contact.display_name|first }}</span>
+      <h1>{{ contact.display_name }}</h1>
+      {% if call.status == 'ringing' and call.recipient_id == profile.pk %}
+        <p>Incoming {{ call.get_call_type_display|lower }} call</p>
+      {% elif call.status == 'ringing' %}
+        <p>Calling...</p>
+      {% elif call.status == 'declined' %}
+        <p>Call declined</p>
+      {% elif call.status == 'ended' %}
+        <p>Call ended</p>
+      {% else %}
+        <p>Connecting...</p>
+      {% endif %}
+    </div>
+    {% if can_join %}<video class="local-video" data-local-video autoplay playsinline muted></video>{% endif %}
+  </section>
+  {% if call.status == 'ringing' and call.recipient_id == profile.pk %}
+  <div class="incoming-call-controls">
+    <form method="post" action="{% url 'decline_family_call' call.pk %}">{% csrf_token %}<button class="call-decline" type="submit">Decline</button></form>
+    <form method="post" action="{% url 'accept_family_call' call.pk %}">{% csrf_token %}<button class="call-accept" type="submit">Accept</button></form>
+  </div>
+  {% elif can_join %}
+  <div class="live-call-controls">
+    <button type="button" data-toggle-mic>Mute</button>
+    {% if call.call_type == 'video' %}<button type="button" data-toggle-camera>Camera</button>{% endif %}
+    <form method="post" action="{% url 'end_family_call' call.pk %}" data-end-call>{% csrf_token %}<button class="call-decline" type="submit">End</button></form>
+  </div>
+  {% else %}
+  <div class="live-call-controls">
+    <a class="call-return" href="{% url 'message_thread' contact.pk %}">Return to messages</a>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}
