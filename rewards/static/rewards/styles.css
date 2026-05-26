@@ -606,6 +606,43 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px;
   font-weight: bold;
 }
+.ios-refresh-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 7px 8px 7px 13px;
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+.ios-refresh-bar small { font-size: 11px; font-weight: 700; }
+.ios-refresh-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 13px;
+  background: #e9f2ff;
+  color: #007aff;
+  font-size: 12px;
+  font-weight: bold;
+}
+.ios-refresh-bar button span { font-size: 17px; line-height: 1; }
+.ios-refresh-bar button.refreshing span { animation: refreshSpin .6s linear infinite; }
+.ios-call-budget {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 14px;
+  background: #e9f2ff;
+  color: #476174;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.ios-call-budget strong { color: #007aff; }
+[data-theme="dark"] .ios-refresh-bar button,
+[data-theme="dark"] .ios-call-budget { background: #172c49; color: #acc7e9; }
 .ios-conversation-list {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -1717,6 +1754,216 @@ a { color: inherit; text-decoration: none; }
 .guardian-card p:last-child { color: #d0d8e0; font-size: 13px; }
 .guardian-card h2 { margin-bottom: 7px; }
 .guardian-avatar { background: var(--mint); color: white; }
+.guardian-os {
+  max-width: 940px;
+  padding-bottom: calc(98px + env(safe-area-inset-bottom));
+}
+.guardian-os .guardian-card {
+  background:
+    radial-gradient(circle at 86% 16%, rgb(74 211 211 / 24%), transparent 25%),
+    linear-gradient(138deg, #10243c, #1e4253);
+}
+.guardian-home-screen[hidden] { display: none; }
+.guardian-app-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 13px 7px;
+  margin: 17px 0 7px;
+  padding: 16px 10px 18px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: rgb(255 253 248 / 55%);
+  box-shadow: var(--shadow);
+}
+[data-theme="dark"] .guardian-app-grid { background: rgb(17 31 49 / 55%); }
+.parent-app {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-height: 103px;
+  padding: 4px 3px;
+  color: var(--navy);
+  background: transparent;
+  text-align: center;
+}
+.parent-app b {
+  display: grid;
+  place-items: center;
+  width: 59px;
+  height: 59px;
+  border-radius: 17px;
+  color: #fff;
+  font-size: 25px;
+  font-weight: 800;
+  box-shadow: 0 9px 20px rgb(20 38 61 / 18%);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.parent-app strong { font-size: 13px; font-weight: 800; }
+.parent-app small {
+  overflow: hidden;
+  width: 100%;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.parent-app:hover b,
+.parent-app:focus-visible b {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 14px 27px rgb(20 38 61 / 25%);
+}
+.parent-app.app-controls b { background: linear-gradient(145deg, #566fc8, #334784); }
+.parent-app.app-wallet b { background: linear-gradient(145deg, #28ba63, #097f3d); }
+.parent-app.app-approvals b { background: linear-gradient(145deg, #42b290, #218168); }
+.parent-app.app-calendar b { background: linear-gradient(145deg, #fa615b, #c73b40); font-size: 17px; }
+.parent-app.app-routine b { background: linear-gradient(145deg, #f0bb4c, #c28522); }
+.parent-app.app-rules b { background: linear-gradient(145deg, #6f90ce, #3e5d9c); }
+.parent-app.app-store b { background: linear-gradient(145deg, #ee789b, #b44669); }
+.parent-app.app-limits b { background: linear-gradient(145deg, #637487, #283849); }
+.parent-app.app-behavior b { background: linear-gradient(145deg, #ffd15e, #e09322); color: #67430e; }
+.parent-app.app-progress b { background: linear-gradient(145deg, #5badd8, #3377ad); font-size: 17px; }
+.parent-app.app-audit b { background: linear-gradient(145deg, #5a6578, #27313f); }
+.parent-app.app-ledger b { background: linear-gradient(145deg, #3fbeaf, #177875); }
+.parent-app.app-messages b { background: linear-gradient(145deg, #55d56d, #1d963f); }
+.guardian-app-pages { margin-top: 3px; }
+.guardian-native-app {
+  display: none;
+  min-height: calc(100vh - 190px);
+  padding-bottom: 14px;
+}
+.guardian-native-app.active {
+  display: block;
+  animation: parentAppIn .23s ease-out;
+}
+.guardian-app-topbar {
+  display: grid;
+  grid-template-columns: minmax(76px, 1fr) auto minmax(76px, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0 17px;
+}
+.guardian-app-topbar > button:first-child {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  min-height: 41px;
+  padding: 7px 12px 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: var(--paper);
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 800;
+}
+.guardian-app-topbar > button:first-child span {
+  font-size: 27px;
+  line-height: .7;
+}
+.guardian-app-topbar div {
+  min-width: 0;
+  text-align: center;
+}
+.guardian-app-topbar h1 { font-size: 22px; letter-spacing: -.04em; }
+.guardian-app-topbar small {
+  display: block;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guardian-app-topbar .app-add {
+  justify-self: end;
+  min-height: 39px;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: var(--mint-pale);
+  color: #256a56;
+  font-size: 13px;
+  font-weight: 800;
+}
+[data-theme="dark"] .guardian-app-topbar .app-add { color: #87dfc6; }
+.guardian-native-app .card { margin-bottom: 13px; }
+.guardian-calendar-board > p:not(.eyebrow) {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.parent-wallet-card {
+  background:
+    radial-gradient(circle at 88% 14%, rgb(255 255 255 / 15%), transparent 22%),
+    linear-gradient(145deg, #13ad52, #08773d);
+}
+.parent-wallet-balances {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+.parent-wallet-balances div {
+  padding: 12px 7px;
+  border-radius: 15px;
+  background: rgb(255 255 255 / 12%);
+  text-align: center;
+}
+.parent-wallet-balances strong {
+  display: block;
+  color: #fff;
+  font-size: clamp(19px, 5vw, 25px);
+}
+.parent-wallet-balances small { color: rgb(255 255 255 / 76%); font-size: 10px; }
+.guardian-empty-family h2 { margin-bottom: 7px; font-size: 19px; }
+.guardian-empty-family p { color: var(--muted); line-height: 1.45; }
+.guardian-dock {
+  position: fixed;
+  z-index: 15;
+  right: 10px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 10px;
+  display: flex;
+  justify-content: space-around;
+  max-width: 510px;
+  margin: 0 auto;
+  padding: 8px 6px;
+  border: 1px solid var(--line);
+  border-radius: 25px;
+  background: var(--dock);
+  box-shadow: 0 14px 30px rgb(20 38 61 / 19%);
+  backdrop-filter: blur(13px);
+}
+.guardian-dock a,
+.guardian-dock button {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 68px;
+  padding: 4px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: bold;
+}
+.guardian-dock span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 31px;
+  border-radius: 12px;
+  background: #e9efff;
+  color: #536fc7;
+  font-size: 18px;
+}
+.guardian-dock :nth-child(2) span { background: var(--mint-pale); color: var(--mint); }
+.guardian-dock :nth-child(3) span { background: #e9efff; color: #536fc7; }
+.guardian-dock .dock-messages span { background: #e6f8ed; color: #34c759; }
+.guardian-dock [aria-current="page"] { color: var(--navy); }
+[data-theme="dark"] .guardian-dock span { background: #1d2947; color: #9eb6ff; }
+[data-theme="dark"] .guardian-dock .dock-messages span { background: #173828; color: #55d973; }
+.guardian-os ~ .app-footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 .child-picker { display: flex; gap: 8px; margin: 17px 0; }
 .guardian .grid { align-items: start; }
 .guardian .grid > .card {
@@ -2177,6 +2424,8 @@ button.calendar-day:active { transform: scale(.93); }
 .note-entry.negative { border-left: 4px solid var(--red); background: var(--red-pale); }
 .note-entry strong, .note-entry small { display: block; }
 .note-entry p { margin-top: 7px; font-size: 12px; line-height: 1.45; }
+.note-entry form { margin-top: 10px; }
+.punishment-ledger .punishment-row > div { flex: 1; }
 .lockdown-child strong { display: block; color: var(--red); font-size: 20px; }
 .lockdown-child p { margin: 6px 0; line-height: 1.4; }
 .lockdown-child small { color: var(--muted); font-weight: bold; }
@@ -2478,6 +2727,11 @@ button.calendar-day:active { transform: scale(.93); }
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes parentAppIn {
+  from { opacity: 0; transform: translateX(10px) scale(.992); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes refreshSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .001ms !important;
@@ -2495,6 +2749,24 @@ button.calendar-day:active { transform: scale(.93); }
   .split { grid-template-columns: 1fr 1fr; }
   .kid-map { grid-template-columns: repeat(4, 1fr); }
   .kid-map a, .kid-map button { grid-template-columns: 1fr; grid-template-rows: 52px auto auto; justify-items: center; text-align: center; }
+  .guardian-app-grid { grid-template-columns: repeat(6, 1fr); padding: 19px 17px 21px; }
+  .guardian-native-app.active {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px;
+    align-items: start;
+  }
+  .guardian-native-app .card { margin: 0; }
+  .guardian-native-app .wallet-card { margin: 0; }
+  .guardian-app-topbar,
+  .guardian-calendar-board,
+  .guardian-native-app .action-launcher,
+  .guardian-native-app .star-calendar,
+  .guardian-native-app .rules-control,
+  .guardian-native-app .communication-schedules,
+  .guardian-native-app .activity-history {
+    grid-column: 1 / -1;
+  }
   .kid-map b { grid-row: auto; }
   .map-savings { grid-column: auto; }
   .map-plan { grid-column: auto; }
@@ -2521,4 +2793,7 @@ button.calendar-day:active { transform: scale(.93); }
   .kid-dock { display: none; }
   .kid-shell ~ .app-footer { padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
   .child-app-screen { padding-bottom: 22px; }
+  .guardian-dock { display: none; }
+  .guardian-os { padding-bottom: calc(env(safe-area-inset-bottom) + 32px); }
+  .guardian-os ~ .app-footer { padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
 }

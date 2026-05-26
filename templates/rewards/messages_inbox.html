@@ -11,9 +11,19 @@
     <h1>Messages</h1>
     {% if unread_message_count %}<span>{{ unread_message_count }} unread</span>{% endif %}
   </section>
+  <div class="ios-refresh-bar" data-message-refresh>
+    <small data-refresh-status>Updated just now</small>
+    <button type="button" data-refresh-conversations aria-label="Refresh conversations"><span>&#8635;</span> Refresh</button>
+  </div>
   {% include "rewards/_incoming_call.html" %}
   {% if messaging_lock %}<p class="communication-lock-note">Messaging is locked by your family schedule right now. You can still read conversations.</p>{% endif %}
   {% if calling_lock %}<p class="communication-lock-note">Calls are locked by your family schedule right now.</p>{% endif %}
+  {% if call_allowance %}
+  <p class="ios-call-budget">
+    <strong>{{ call_allowance.remaining }}</strong> of {{ call_allowance.free_limit }} free calls left today.
+    {% if not call_allowance.remaining %}New calls cost {{ call_allowance.token_cost }} token{{ call_allowance.token_cost|pluralize }}.{% endif %}
+  </p>
+  {% endif %}
   <section class="ios-conversation-list" aria-label="Family conversations">
     {% for contact in contacts %}
       <a class="ios-conversation {% if contact.unread_count %}unread{% endif %}" href="{% url 'message_thread' contact.pk %}">

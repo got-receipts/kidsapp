@@ -217,6 +217,20 @@ def _livekit_configured():
     return bool(settings.LIVEKIT_WS_URL and settings.LIVEKIT_API_KEY and settings.LIVEKIT_API_SECRET)
 
 
+def _child_call_allowance(profile):
+    if profile.role != Profile.Role.CHILD:
+        return None
+    used = FamilyCall.objects.filter(caller=profile, allowance_day=timezone.localdate()).count()
+    free_limit = max(settings.FREE_CHILD_CALLS_PER_DAY, 0)
+    return {
+        "used": used,
+        "free_limit": free_limit,
+        "remaining": max(free_limit - used, 0),
+        "token_cost": max(settings.CHILD_CALL_TOKEN_COST, 0),
+        "reconnect_minutes": max(settings.CALL_RECONNECT_MINUTES, 1),
+    }
+
+
 def _incoming_call(profile):
     _expire_ringing_calls()
     cutoff = timezone.now() - timedelta(minutes=3)
@@ -240,11 +254,18 @@ def _make_livekit_token(profile, call):
         from livekit import api
     except ImportError as error:
         raise ValidationError("LiveKit server support is not installed.") from error
+    remaining = (
+        call.access_expires_at - timezone.now()
+        if call.access_expires_at
+        else timedelta(minutes=max(settings.CALL_RECONNECT_MINUTES, 1))
+    )
+    if remaining <= timedelta(0):
+        raise ValidationError("The reconnect window has ended. Start a new call.")
     return (
         api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
         .with_identity(f"profile-{profile.pk}")
         .with_name(profile.display_name)
-        .with_ttl(timedelta(minutes=30))
+        .with_ttl(remaining)
         .with_grants(
             api.VideoGrants(
                 room_join=True,
@@ -357,11 +378,19 @@ def _child_context(profile, family_settings, include_welcome=True):
     else:
         recap_entries = recap_entries.none()
         recap_stars = recap_stars.none()
-    recap_token_total = recap_entries.filter(token_delta__gt=0).aggregate(total=Sum("token_delta"))["total"] or 0
-    recap_token_loss = -(
-        recap_entries.filter(kind__in=[LedgerRequest.Kind.PENALTY, LedgerRequest.Kind.BEHAVIOR]).aggregate(total=Sum("token_delta"))["total"]
+    recap_token_total = (
+        recap_entries.filter(token_delta__gt=0)
+        .exclude(kind=LedgerRequest.Kind.REVERSAL)
+        .aggregate(total=Sum("token_delta"))["total"]
         or 0
     )
+    punishment_net = (
+        recap_entries.filter(
+            kind__in=[LedgerRequest.Kind.PENALTY, LedgerRequest.Kind.BEHAVIOR, LedgerRequest.Kind.REVERSAL]
+        ).aggregate(total=Sum("token_delta"))["total"]
+        or 0
+    )
+    recap_token_loss = max(-punishment_net, 0)
     recap_purchases = recap_entries.filter(kind=LedgerRequest.Kind.STORE).count()
     next_prize = next((item for item in store_items if item.token_cost > profile.wallet.tokens), None)
     savings_goal = SavingsGoal.objects.filter(child=profile).first()
@@ -457,7 +486,7 @@ def dashboard(request):
             .order_by("day", "start_time", "child__display_name")[:16]
             if can_manage else []
         )
-        history = selected.ledger_requests.select_related("store_item", "reviewed_by").all()[:30] if selected else []
+        history = selected.ledger_requests.select_related("store_item", "reviewed_by", "reversal").all()[:30] if selected else []
         if selected and not can_manage:
             history = selected.ledger_requests.filter(
                 status=LedgerRequest.Status.APPROVED,
@@ -487,6 +516,13 @@ def dashboard(request):
             "selected_grades": selected.grades.order_by("-created_at")[:8] if selected else [],
             "selected_goals": selected.goals.order_by("-created_at")[:8] if selected else [],
             "behavior_notes": selected.behavior_notes.select_related("issued_by")[:20] if selected else [],
+            "punishment_entries": (
+                selected.ledger_requests.filter(
+                    kind__in=[LedgerRequest.Kind.PENALTY, LedgerRequest.Kind.BEHAVIOR],
+                    status=LedgerRequest.Status.APPROVED,
+                ).select_related("reversal")[:20]
+                if selected and can_manage else []
+            ),
             "house_rules": _current_house_rules(),
             "all_house_rules": HouseRule.objects.all(),
             "all_selected_rules": selected.specific_rules.all() if selected else [],
@@ -543,6 +579,7 @@ def messages_inbox(request):
             "calling_lock": _communication_lock(profile, CommunicationSchedule.Feature.CALLING),
             "incoming_call": incoming_call,
             "livekit_configured": _livekit_configured(),
+            "call_allowance": _child_call_allowance(profile),
         },
     )
 
@@ -586,6 +623,7 @@ def message_thread(request, recipient_pk):
             "calling_lock": calling_lock,
             "incoming_call": None if calling_lock else _incoming_call(profile),
             "livekit_configured": _livekit_configured(),
+            "call_allowance": _child_call_allowance(profile),
         },
     )
 
@@ -606,17 +644,68 @@ def start_family_call(request, recipient_pk, call_type):
             messages.error(request, f"Calling is locked for {participant.display_name} by the family schedule right now.")
             return redirect("message_thread", recipient_pk=recipient.pk)
     _expire_ringing_calls()
-    existing = FamilyCall.objects.filter(
-        Q(caller=caller, recipient=recipient) | Q(caller=recipient, recipient=caller),
-        status__in=[FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE],
-        created_at__gte=timezone.now() - timedelta(minutes=30),
-    ).first()
-    if existing:
-        return redirect("call_room", pk=existing.pk)
-    call = FamilyCall.objects.create(caller=caller, recipient=recipient, call_type=call_type)
-    label = call.get_call_type_display().lower()
-    FamilyMessage.objects.create(sender=caller, recipient=recipient, body=f"Started a {label} call.")
-    _notify(recipient, Notification.Kind.CALL, f"Incoming {label} call", f"{caller.display_name} is calling you.")
+    now = timezone.now()
+    token_cost = 0
+    call_number = None
+    with transaction.atomic():
+        wallet = Wallet.objects.select_for_update().get(child=caller) if caller.role == Profile.Role.CHILD else None
+        existing = FamilyCall.objects.select_for_update().filter(
+            Q(caller=caller, recipient=recipient) | Q(caller=recipient, recipient=caller),
+            status__in=[FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE],
+            created_at__gte=now - timedelta(minutes=30),
+        ).first()
+        if existing and existing.access_expires_at and existing.access_expires_at <= now:
+            existing.status = FamilyCall.Status.ENDED
+            existing.ended_at = now
+            existing.save(update_fields=["status", "ended_at"])
+            existing = None
+        if existing:
+            return redirect("call_room", pk=existing.pk)
+        allowance_day = None
+        if caller.role == Profile.Role.CHILD:
+            allowance_day = timezone.localdate()
+            prior_calls = FamilyCall.objects.filter(caller=caller, allowance_day=allowance_day).count()
+            free_limit = max(settings.FREE_CHILD_CALLS_PER_DAY, 0)
+            call_number = prior_calls + 1
+            token_cost = 0 if prior_calls < free_limit else max(settings.CHILD_CALL_TOKEN_COST, 0)
+            if token_cost and caller.grounded:
+                messages.error(request, "Grounded Mode is active. Paid calls cannot use tokens right now.")
+                return redirect("message_thread", recipient_pk=recipient.pk)
+            if token_cost and wallet.tokens < token_cost:
+                token_label = "token" if token_cost == 1 else "tokens"
+                messages.error(request, f"You have used today's {free_limit} free calls and need {token_cost} {token_label} to start another call.")
+                return redirect("message_thread", recipient_pk=recipient.pk)
+            if token_cost:
+                Wallet.objects.filter(pk=wallet.pk).update(tokens=F("tokens") - token_cost)
+                description = f"Family call to {recipient.display_name}"
+                entry = LedgerRequest.objects.create(
+                    child=caller,
+                    requested_by=caller,
+                    kind=LedgerRequest.Kind.CALL,
+                    description=description,
+                    token_delta=-token_cost,
+                    status=LedgerRequest.Status.APPROVED,
+                    reviewed_at=now,
+                )
+                token_label = "token" if token_cost == 1 else "tokens"
+                _notify(caller, Notification.Kind.CALL, "Call token used", f"{description}: -{token_cost} {token_label}.")
+                _audit(caller, caller, "call_tokens_spent", description, ledger=entry)
+        call = FamilyCall.objects.create(
+            caller=caller,
+            recipient=recipient,
+            call_type=call_type,
+            allowance_day=allowance_day,
+            token_cost=token_cost,
+        )
+        label = call.get_call_type_display().lower()
+        FamilyMessage.objects.create(sender=caller, recipient=recipient, body=f"Started a {label} call.")
+        _notify(recipient, Notification.Kind.CALL, f"Incoming {label} call", f"{caller.display_name} is calling you.")
+    if caller.role == Profile.Role.CHILD:
+        if token_cost:
+            token_label = "token" if token_cost == 1 else "tokens"
+            messages.info(request, f"This call used {token_cost} {token_label}. Reconnect within {max(settings.CALL_RECONNECT_MINUTES, 1)} minutes without another charge.")
+        else:
+            messages.info(request, f"Free family call {call_number} of {max(settings.FREE_CHILD_CALLS_PER_DAY, 0)} today.")
     return redirect("call_room", pk=call.pk)
 
 
@@ -697,23 +786,32 @@ def end_family_call(request, pk):
 @require_http_methods(["GET"])
 def call_token(request, pk):
     profile = _profile(request)
-    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
-    if not call.includes(profile):
-        return JsonResponse({"error": "Not permitted."}, status=403)
-    if not _livekit_configured():
-        return JsonResponse({"error": "Calling is not configured."}, status=503)
-    locked_participant, _ = _call_schedule_lock(call)
-    if locked_participant:
-        return JsonResponse({"error": "Calls are locked right now."}, status=403)
-    may_join = call.status == FamilyCall.Status.ACTIVE or (
-        call.caller_id == profile.pk and call.status == FamilyCall.Status.RINGING
-    )
-    if not may_join:
-        return JsonResponse({"error": "This call is not available to join."}, status=403)
-    try:
-        token = _make_livekit_token(profile, call)
-    except ValidationError as error:
-        return JsonResponse({"error": error.message}, status=503)
+    with transaction.atomic():
+        call = get_object_or_404(FamilyCall.objects.select_for_update().select_related("caller", "recipient"), pk=pk)
+        if not call.includes(profile):
+            return JsonResponse({"error": "Not permitted."}, status=403)
+        if not _livekit_configured():
+            return JsonResponse({"error": "Calling is not configured."}, status=503)
+        locked_participant, _ = _call_schedule_lock(call)
+        if locked_participant:
+            return JsonResponse({"error": "Calls are locked right now."}, status=403)
+        may_join = call.status == FamilyCall.Status.ACTIVE or (
+            call.caller_id == profile.pk and call.status == FamilyCall.Status.RINGING
+        )
+        if not may_join:
+            return JsonResponse({"error": "This call is not available to join."}, status=403)
+        if not call.access_expires_at:
+            call.access_expires_at = timezone.now() + timedelta(minutes=max(settings.CALL_RECONNECT_MINUTES, 1))
+            call.save(update_fields=["access_expires_at"])
+        if call.access_expires_at <= timezone.now():
+            return JsonResponse(
+                {"error": f"The {max(settings.CALL_RECONNECT_MINUTES, 1)}-minute reconnect window has ended. Start a new call."},
+                status=409,
+            )
+        try:
+            token = _make_livekit_token(profile, call)
+        except ValidationError as error:
+            return JsonResponse({"error": error.message}, status=409)
     return JsonResponse({"wsUrl": settings.LIVEKIT_WS_URL, "token": token, "callType": call.call_type})
 
 
@@ -1509,6 +1607,64 @@ def guardian_lockdown(request):
         _audit(guardian, child, "grounded_mode_lifted", "Grounded Mode lifted.")
         messages.success(request, f"{child.display_name}'s Grounded Mode has been lifted.")
     return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_remove_behavior_note(request, pk):
+    guardian = _guardian(request)
+    note = get_object_or_404(BehaviorNote.objects.select_related("child"), pk=pk)
+    if guardian is None:
+        return redirect("dashboard")
+    child = note.child
+    active_grounding_note = (
+        note.title == "Grounded Mode issued"
+        and child.grounded
+        and child.grounded_at
+        and abs(note.issued_at - child.grounded_at) <= timedelta(seconds=5)
+    )
+    description = note.title
+    if active_grounding_note:
+        child.grounded = False
+        child.grounded_reason = ""
+        child.grounded_by = None
+        child.grounded_at = None
+        child.grounded_until = None
+        child.save(update_fields=["grounded", "grounded_reason", "grounded_by", "grounded_at", "grounded_until"])
+        _notify(child, Notification.Kind.GROUNDED, "Grounded Mode removed", "Your parent removed this restriction.")
+    note.delete()
+    _audit(guardian, child, "behavior_note_removed", description)
+    messages.success(request, f"Removed the punishment record for {child.display_name}.")
+    return redirect(f"/?child={child.pk}")
+
+
+@login_required
+@require_POST
+def guardian_reverse_punishment(request, pk):
+    guardian = _guardian(request)
+    original = get_object_or_404(LedgerRequest.objects.select_related("child"), pk=pk)
+    if guardian is None:
+        return redirect("dashboard")
+    if not original.can_reverse_punishment:
+        messages.error(request, "This punishment has already been removed or cannot be reversed.")
+        return redirect(f"/?child={original.child.pk}")
+    with transaction.atomic():
+        original = LedgerRequest.objects.select_for_update().select_related("child").get(pk=pk)
+        if not original.can_reverse_punishment:
+            messages.error(request, "This punishment has already been removed.")
+            return redirect(f"/?child={original.child.pk}")
+        reversal = LedgerRequest.objects.create(
+            child=original.child,
+            requested_by=guardian,
+            kind=LedgerRequest.Kind.REVERSAL,
+            description=f"Punishment removed: {original.description}"[:160],
+            token_delta=-original.token_delta,
+            reversal_of=original,
+        )
+        reversal.approve(guardian)
+        _audit(guardian, original.child, "punishment_reversed", reversal.description, ledger=reversal)
+    messages.success(request, f"Returned {-original.token_delta} token{'s' if original.token_delta != -1 else ''} to {original.child.display_name}.")
+    return redirect(f"/?child={original.child.pk}")
 
 
 @login_required

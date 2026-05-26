@@ -25,7 +25,8 @@ This is private family software. All rights reserved; it is not intended for red
 - Unverified checked quests create recorded token penalties; token balances may go below zero while Cash App balances remain overdraft-protected.
 - A child wallet for immediate token cash-outs, direct sibling token gifts, sibling cash payments, and in-person spending records.
 - Private in-app Messages with child, sibling, guardian, and Mom conversations in a phone-style bubble interface.
-- LiveKit Cloud-powered one-to-one family audio/video calling from Messages, with parent-managed child lock schedules for messaging and calls.
+- LiveKit Cloud-powered one-to-one family audio/video calling from Messages, with parent-managed child lock schedules, six daily free child calls, one-token additional calls, and a five-minute reconnect window.
+- Parent OS home screen with native Controls, Wallet, Approvals, Calendar, Rules, Limits, Store, Progress, Audit, and Ledger apps.
 - Child-created wallet goals with animated progress based on their wallet cash balance.
 - A Mom Family Viewer dashboard showing grades, chore progress, stars, schedule, rules, and positive highlights without editing or financial controls.
 - Inventory-aware Family Store items with token prices, cash prices, mixed prices, hidden/unlocked state, age limits, and optional redemption approval.
@@ -33,7 +34,7 @@ This is private family software. All rights reserved; it is not intended for red
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.3.0`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.5.0`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -114,9 +115,14 @@ Audio and video calls stay inside Messages and connect through LiveKit Cloud. Co
 LIVEKIT_WS_URL=wss://your-project.livekit.cloud
 LIVEKIT_API_KEY=your-api-key
 LIVEKIT_API_SECRET=your-api-secret
+FREE_CHILD_CALLS_PER_DAY=6
+CHILD_CALL_TOKEN_COST=1
+CALL_RECONNECT_MINUTES=5
 ```
 
 Dad and GG can add child-specific **Message & Call Limits** from Guardian Actions. During a scheduled lock, the child can read earlier messages but cannot send new messages or participate in audio/video calls.
+
+Each child receives six free outgoing family calls per day. Starting a new outgoing call after the free allowance deducts one token immediately and records it in the ledger. A connected call can continue beyond five minutes; the five-minute limit controls rejoining that same call after a disconnect without paying for a new call.
 
 ## Family Calendar Publishing
 

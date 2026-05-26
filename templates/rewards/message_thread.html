@@ -21,6 +21,16 @@
       <span>Calling setup pending</span>
     {% endif %}
   </nav>
+  {% if call_allowance and not calling_lock %}
+  <p class="ios-call-budget">
+    {% if call_allowance.remaining %}
+      {{ call_allowance.remaining }} free call{{ call_allowance.remaining|pluralize }} left today.
+    {% else %}
+      Calls now cost {{ call_allowance.token_cost }} token{{ call_allowance.token_cost|pluralize }} each.
+    {% endif %}
+    Reconnect within {{ call_allowance.reconnect_minutes }} minutes without a second charge.
+  </p>
+  {% endif %}
   {% include "rewards/_incoming_call.html" %}
   <section class="ios-chat-window" data-message-thread aria-label="Conversation with {{ recipient.display_name }}">
     {% for message in thread_messages %}

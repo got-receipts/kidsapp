@@ -359,6 +359,8 @@ class LedgerRequest(models.Model):
         PENALTY = "penalty", "Quest not verified"
         BEHAVIOR = "behavior", "Behavior deduction"
         GIFT = "gift", "Family transfer"
+        CALL = "call", "Family call"
+        REVERSAL = "reversal", "Punishment removed"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Waiting"
@@ -379,6 +381,13 @@ class LedgerRequest(models.Model):
     behavior_star = models.OneToOneField(BehaviorStar, null=True, blank=True, on_delete=models.SET_NULL)
     store_item = models.ForeignKey(StoreItem, null=True, blank=True, on_delete=models.SET_NULL)
     counterparty = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="transfers_with")
+    reversal_of = models.OneToOneField(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reversal",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
 
@@ -398,6 +407,16 @@ class LedgerRequest(models.Model):
     @property
     def money_delta_cents(self):
         return self.cash_delta_cents + self.spending_delta_cents
+
+    @property
+    def can_reverse_punishment(self):
+        if self.kind not in [self.Kind.PENALTY, self.Kind.BEHAVIOR] or self.status != self.Status.APPROVED or self.token_delta >= 0:
+            return False
+        try:
+            self.reversal
+        except LedgerRequest.DoesNotExist:
+            return True
+        return False
 
     def approve(self, guardian=None):
         from django.utils import timezone
@@ -419,7 +438,7 @@ class LedgerRequest(models.Model):
                 raise ValidationError("Wallet cash cannot be converted back into tokens.")
             request.child.refresh_grounding()
             changes_balance = bool(request.token_delta or request.cash_delta_cents or request.spending_delta_cents)
-            if request.child.grounded and changes_balance and request.kind != self.Kind.BALANCE:
+            if request.child.grounded and changes_balance and request.kind not in [self.Kind.BALANCE, self.Kind.REVERSAL]:
                 raise ValidationError("This account is in Grounded Mode. Unlock it before posting rewards or spending.")
             if request.reserves_spending_immediately:
                 Wallet.objects.select_for_update().get(child=request.child)
@@ -460,6 +479,7 @@ class LedgerRequest(models.Model):
                 self.Kind.SPEND: Notification.Kind.WALLET,
                 self.Kind.BALANCE: Notification.Kind.WALLET,
                 self.Kind.CHORE: Notification.Kind.REWARD,
+                self.Kind.CALL: Notification.Kind.CALL,
             }.get(request.kind, Notification.Kind.REWARD)
             notification_title = {
                 self.Kind.CHORE: "Chore approved - tokens earned",
@@ -468,6 +488,7 @@ class LedgerRequest(models.Model):
                 self.Kind.AWARD: "New parent reward",
                 self.Kind.BEHAVIOR: "Token balance updated",
                 self.Kind.BALANCE: "Wallet balance updated",
+                self.Kind.REVERSAL: "Punishment removed",
             }.get(request.kind, "Reward approved")
             Notification.objects.create(
                 recipient=request.child,
@@ -680,6 +701,9 @@ class FamilyCall(models.Model):
     call_type = models.CharField(max_length=8, choices=Type.choices)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.RINGING)
     room_name = models.CharField(max_length=80, unique=True, default=new_call_room_name, editable=False)
+    allowance_day = models.DateField(null=True, blank=True)
+    token_cost = models.PositiveSmallIntegerField(default=0)
+    access_expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     answered_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)

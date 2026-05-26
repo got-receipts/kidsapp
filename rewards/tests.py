@@ -576,6 +576,8 @@ class LedgerApprovalTests(TestCase):
         inbox = self.client.get(reverse("messages_inbox"))
         self.assertContains(inbox, "Mom")
         self.assertContains(inbox, "Dinner is at six.")
+        self.assertContains(inbox, "Refresh")
+        self.assertContains(inbox, "Updated just now")
 
         thread = self.client.get(reverse("message_thread", args=[mom.pk]))
         self.assertContains(thread, "Dinner is at six.")
@@ -700,6 +702,68 @@ class LedgerApprovalTests(TestCase):
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(self.client.get(reverse("call_status", args=[call.pk])).status_code, 403)
         token_builder.assert_called_once()
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+        FREE_CHILD_CALLS_PER_DAY=6,
+        CHILD_CALL_TOKEN_COST=1,
+    )
+    def test_child_gets_six_free_calls_then_new_calls_cost_one_token(self):
+        sibling_user = User.objects.create_user(username="call-sibling", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        self.client.force_login(self.child.user)
+
+        for _ in range(6):
+            self.client.post(reverse("start_family_call", args=[sibling.pk, "audio"]))
+            call = FamilyCall.objects.filter(caller=self.child).first()
+            self.client.post(reverse("end_family_call", args=[call.pk]))
+
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertFalse(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.CALL).exists())
+
+        self.client.post(reverse("start_family_call", args=[sibling.pk, "video"]))
+        self.wallet.refresh_from_db()
+        paid_call = FamilyCall.objects.filter(caller=self.child).first()
+        self.assertEqual(paid_call.token_cost, 1)
+        self.assertEqual(self.wallet.tokens, 19)
+        self.assertTrue(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.CALL, token_delta=-1).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+        FREE_CHILD_CALLS_PER_DAY=0,
+        CHILD_CALL_TOKEN_COST=1,
+        CALL_RECONNECT_MINUTES=5,
+    )
+    @patch("rewards.views._make_livekit_token", return_value="short-lived-token")
+    def test_paid_call_reconnects_without_second_charge_until_window_expires(self, token_builder):
+        sibling_user = User.objects.create_user(username="reconnect-sibling", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        self.client.force_login(self.child.user)
+
+        self.client.post(reverse("start_family_call", args=[sibling.pk, "audio"]))
+        call = FamilyCall.objects.get(caller=self.child)
+        self.client.get(reverse("call_token", args=[call.pk]))
+        self.client.get(reverse("call_token", args=[call.pk]))
+        self.wallet.refresh_from_db()
+        call.refresh_from_db()
+        self.assertIsNotNone(call.access_expires_at)
+        self.assertEqual(self.wallet.tokens, 19)
+        self.assertEqual(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.CALL).count(), 1)
+
+        call.access_expires_at = timezone.now() - timedelta(seconds=1)
+        call.save(update_fields=["access_expires_at"])
+        self.assertEqual(self.client.get(reverse("call_token", args=[call.pk])).status_code, 409)
+        self.client.post(reverse("start_family_call", args=[sibling.pk, "audio"]))
+        self.wallet.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 18)
+        self.assertEqual(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.CALL).count(), 2)
 
     def test_guardian_daily_plan_and_rules_appear_in_child_morning_message(self):
         self.client.force_login(self.guardian.user)
@@ -866,6 +930,46 @@ class LedgerApprovalTests(TestCase):
         self.wallet.refresh_from_db()
         self.assertEqual(self.wallet.tokens, 20)
         self.assertFalse(LedgerRequest.objects.filter(kind=LedgerRequest.Kind.BEHAVIOR).exists())
+
+    def test_guardian_can_remove_active_grounding_punishment_record(self):
+        self.client.force_login(self.guardian.user)
+        self.client.post(
+            reverse("guardian_lockdown"),
+            {"child_id": self.child.pk, "action": "lock", "reason": "Incorrect test consequence."},
+        )
+        note = BehaviorNote.objects.get(child=self.child)
+
+        self.client.post(reverse("guardian_remove_behavior_note", args=[note.pk]))
+
+        self.child.refresh_from_db()
+        self.assertFalse(self.child.grounded)
+        self.assertFalse(BehaviorNote.objects.filter(pk=note.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(child=self.child, action="behavior_note_removed").exists())
+
+    def test_guardian_can_reverse_token_punishment_once_without_deleting_history(self):
+        self.client.force_login(self.guardian.user)
+        self.client.post(
+            reverse("guardian_behavior_deduction"),
+            {"child_id": self.child.pk, "reason": "Test deduction", "tokens": "4"},
+        )
+        punishment = LedgerRequest.objects.get(kind=LedgerRequest.Kind.BEHAVIOR)
+        self.child.last_recap_at = timezone.now() - timedelta(days=1)
+        self.child.last_recap_day = timezone.localdate() - timedelta(days=1)
+        self.child.save(update_fields=["last_recap_at", "last_recap_day"])
+
+        self.client.post(reverse("guardian_reverse_punishment", args=[punishment.pk]))
+        self.client.post(reverse("guardian_reverse_punishment", args=[punishment.pk]))
+
+        self.wallet.refresh_from_db()
+        punishment.refresh_from_db()
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertTrue(LedgerRequest.objects.filter(reversal_of=punishment, kind=LedgerRequest.Kind.REVERSAL).exists())
+        self.assertEqual(LedgerRequest.objects.filter(reversal_of=punishment).count(), 1)
+        self.assertTrue(AuditLog.objects.filter(child=self.child, action="punishment_reversed").exists())
+        self.client.force_login(self.child.user)
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(response.context["recap_token_loss"], 0)
+        self.assertEqual(response.context["recap_token_total"], 0)
 
     def test_gg_sees_calendar_but_only_dad_can_create_or_publish_schedule(self):
         gg_user = User.objects.create_user(username="gg", password="test")

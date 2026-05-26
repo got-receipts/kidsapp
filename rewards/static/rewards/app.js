@@ -255,6 +255,16 @@ document.querySelectorAll(".ios-composer textarea").forEach((field) => {
     field.style.height = `${Math.min(field.scrollHeight, 104)}px`;
   });
 });
+const conversationRefresh = document.querySelector("[data-refresh-conversations]");
+if (conversationRefresh) {
+  const status = document.querySelector("[data-refresh-status]");
+  conversationRefresh.addEventListener("click", () => {
+    conversationRefresh.disabled = true;
+    conversationRefresh.classList.add("refreshing");
+    if (status) status.textContent = "Checking for new messages...";
+    window.setTimeout(() => window.location.reload(), 240);
+  });
+}
 
 const messagingApp = document.querySelector("[data-incoming-call-url]");
 if (messagingApp) {
@@ -324,7 +334,16 @@ if (callScreen) {
     try {
       const tokenResponse = await fetch(callScreen.dataset.tokenUrl, {headers: {"Accept": "application/json"}});
       const connection = await tokenResponse.json();
-      if (!tokenResponse.ok) throw new Error(connection.error || "Could not join the call.");
+      if (!tokenResponse.ok) {
+        if (tokenResponse.status === 409) {
+          toast(connection.error || "Start a new call to reconnect.");
+          window.setTimeout(() => {
+            window.location.href = callScreen.dataset.returnUrl;
+          }, 800);
+          return;
+        }
+        throw new Error(connection.error || "Could not join the call.");
+      }
       const {Room, RoomEvent, Track} = await import("https://cdn.jsdelivr.net/npm/livekit-client@2.15.7/+esm");
       room = new Room({adaptiveStream: true, dynacast: true});
       room.on(RoomEvent.TrackSubscribed, (track) => {
@@ -364,32 +383,70 @@ if (callScreen) {
   connectLiveKitCall();
 }
 
-const guardianGrid = document.querySelector(".guardian .grid");
-if (guardianGrid) {
-  const modules = Array.from(guardianGrid.querySelectorAll("[data-dashboard-module]"));
-  if (modules.length) {
-    const launcher = document.createElement("article");
-    launcher.className = "card module-launcher";
-    launcher.innerHTML = '<div class="card-head"><h2>Dashboard Modules</h2><span class="badge">Open a view</span></div><div class="module-grid"></div>';
-    const buttonGrid = launcher.querySelector(".module-grid");
-    modules.forEach((module, index) => {
-      const title = module.dataset.dashboardModule;
-      const id = `dashboard-module-${index}`;
-      const dialog = document.createElement("dialog");
-      dialog.className = "review-dialog feature-dialog guardian-feature-dialog";
-      dialog.id = id;
-      dialog.innerHTML = '<form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>';
-      module.before(dialog);
-      dialog.appendChild(module);
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "module-tile";
-      button.textContent = title;
-      button.addEventListener("click", () => dialog.showModal());
-      buttonGrid.appendChild(button);
-    });
-    guardianGrid.prepend(launcher);
+const guardianOS = document.querySelector("[data-guardian-os]");
+if (guardianOS) {
+  const homeScreen = guardianOS.querySelector("[data-guardian-home]");
+  const appPages = Array.from(guardianOS.querySelectorAll(".guardian-native-app[data-parent-app]"));
+  const appTriggers = Array.from(guardianOS.querySelectorAll("[data-parent-open]"));
+  const baseURL = `${window.location.pathname}${window.location.search}`;
+  const selectedChild = guardianOS.dataset.selectedChild || "default";
+  const appMemoryKey = `family-circle-parent-app-${selectedChild}`;
+
+  // Keep focused create/edit sheets usable from any native parent app.
+  guardianOS.querySelectorAll(".guardian-native-app dialog").forEach((dialog) => guardianOS.appendChild(dialog));
+
+  function showParentHome(updateURL) {
+    if (homeScreen) homeScreen.hidden = false;
+    appPages.forEach((page) => page.classList.remove("active"));
+    guardianOS.classList.remove("parent-app-open");
+    appTriggers.forEach((trigger) => trigger.removeAttribute("aria-current"));
+    try {
+      window.sessionStorage.removeItem(appMemoryKey);
+    } catch (error) {
+      // The parent home remains available even when browser storage is restricted.
+    }
+    if (updateURL) window.history.replaceState({}, "", baseURL);
+    window.scrollTo({top: 0, behavior: "smooth"});
   }
+
+  function openParentApp(name, updateURL) {
+    const page = appPages.find((candidate) => candidate.dataset.parentApp === name);
+    if (!page) return;
+    if (homeScreen) homeScreen.hidden = true;
+    appPages.forEach((candidate) => candidate.classList.toggle("active", candidate === page));
+    guardianOS.classList.add("parent-app-open");
+    appTriggers.forEach((trigger) => {
+      if (trigger.dataset.parentOpen === name) trigger.setAttribute("aria-current", "page");
+      else trigger.removeAttribute("aria-current");
+    });
+    try {
+      window.sessionStorage.setItem(appMemoryKey, name);
+    } catch (error) {
+      // A page refresh returns home when browser storage is restricted.
+    }
+    if (updateURL) window.history.pushState({parentApp: name}, "", `${baseURL}#parent-${name}`);
+    window.scrollTo({top: 0, behavior: "smooth"});
+  }
+
+  appTriggers.forEach((trigger) => trigger.addEventListener("click", () => openParentApp(trigger.dataset.parentOpen, true)));
+  guardianOS.querySelectorAll("[data-parent-home-button]").forEach((button) => {
+    button.addEventListener("click", () => showParentHome(true));
+  });
+  window.addEventListener("popstate", () => {
+    const appName = window.location.hash.replace("#parent-", "");
+    if (appName && window.location.hash.startsWith("#parent-")) openParentApp(appName, false);
+    else showParentHome(false);
+  });
+
+  const initialApp = window.location.hash.replace("#parent-", "");
+  let rememberedApp = "";
+  try {
+    rememberedApp = window.sessionStorage.getItem(appMemoryKey) || "";
+  } catch (error) {
+    // No remembered app is required to use the parent dashboard.
+  }
+  if (initialApp && window.location.hash.startsWith("#parent-")) openParentApp(initialApp, false);
+  else if (rememberedApp) openParentApp(rememberedApp, false);
 }
 
 document.querySelectorAll("[data-auto-open-dialog]").forEach((dialog) => {
@@ -399,6 +456,11 @@ document.querySelectorAll("[data-auto-open-dialog]").forEach((dialog) => {
 document.querySelectorAll("[data-confirm-deduction]").forEach((form) => {
   form.addEventListener("submit", (event) => {
     if (!window.confirm("Remove these tokens for the recorded behavior reason?")) event.preventDefault();
+  });
+});
+document.querySelectorAll("[data-confirm-punishment-removal]").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    if (!window.confirm("Remove this punishment and record the correction?")) event.preventDefault();
   });
 });
 

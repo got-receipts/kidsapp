@@ -116,7 +116,10 @@ VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:family-circle@examp
 LIVEKIT_WS_URL = os.getenv("LIVEKIT_WS_URL", "").strip()
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "").strip()
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "").strip()
-APP_VERSION = os.getenv("APP_VERSION", "2.3.0")
+FREE_CHILD_CALLS_PER_DAY = int(os.getenv("FREE_CHILD_CALLS_PER_DAY", "6"))
+CHILD_CALL_TOKEN_COST = int(os.getenv("CHILD_CALL_TOKEN_COST", "1"))
+CALL_RECONNECT_MINUTES = int(os.getenv("CALL_RECONNECT_MINUTES", "5"))
+APP_VERSION = os.getenv("APP_VERSION", "2.5.0")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
