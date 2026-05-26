@@ -857,7 +857,7 @@ class LedgerApprovalTests(TestCase):
         self.assertFalse(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.AWARD).exists())
         self.client.force_login(self.child.user)
         discover = self.client.get(reverse("discover_page"))
-        self.assertContains(discover, "youtube.com/embed/videoseries?list=PL1234567890animals")
+        self.assertContains(discover, 'data-playlist-id="PL1234567890animals"')
         self.assertContains(discover, "origin=http%3A%2F%2Ftestserver")
 
     def test_messages_icon_shows_unread_and_opening_thread_marks_message_read(self):
@@ -1047,7 +1047,7 @@ class LedgerApprovalTests(TestCase):
             self.client.force_login(child.user)
             response = self.client.get(reverse("discover_page"))
             for playlist_id in playlist_ids:
-                self.assertContains(response, f"youtube.com/embed/videoseries?list={playlist_id}")
+                self.assertContains(response, f'data-playlist-id="{playlist_id}"')
 
     @override_settings(
         LIVEKIT_WS_URL="wss://family.livekit.cloud",

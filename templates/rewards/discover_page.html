@@ -21,13 +21,12 @@
       {% for playlist in source_playlists %}
       <article class="discover-reel" data-discover-slide data-discover-playlist>
         <div class="discover-player">
-          <iframe
-            title="{{ playlist.title }}"
-            data-discover-player
-            data-src="https://www.youtube.com/embed/videoseries?list={{ playlist.youtube_playlist_id }}&amp;enablejsapi=1&amp;origin={{ youtube_embed_origin }}&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;autoplay=1&amp;mute=1"
-            allow="autoplay; encrypted-media; picture-in-picture"
-            referrerpolicy="strict-origin-when-cross-origin"
-            allowfullscreen></iframe>
+          <div
+            class="discover-playlist-mount"
+            id="discover-playlist-{{ playlist.pk }}"
+            data-discover-playlist-mount
+            data-playlist-id="{{ playlist.youtube_playlist_id }}"
+            data-player-title="{{ playlist.title }}"></div>
         </div>
         <div class="discover-shade"></div>
         <div class="discover-video-copy">
@@ -35,7 +34,7 @@
           <h1>{{ playlist.title }}</h1>
           <p>{{ playlist.description|default:"Approved by your family" }}</p>
         </div>
-        <div class="discover-swipe-hint">Tap arrows for previous or next video</div>
+        <div class="discover-swipe-hint">Tap arrows to move through this playlist</div>
       </article>
       {% endfor %}
       {% for clip in clips %}

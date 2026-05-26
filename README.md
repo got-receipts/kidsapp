@@ -36,7 +36,7 @@ This is private family software. All rights reserved; it is not intended for red
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.9.1`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.9.2`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning
@@ -121,7 +121,7 @@ Discover is a separate native child OS app modeled on the parent-curated short-v
 
 Dad, GG, and Mom can open **Video Library** on the parent home screen to publish playlists to every child, paste a reviewed public YouTube playlist link for playback as a complete source, add individual reviewed YouTube video or Shorts links, reorder or hide individual clips, and add per-child Discover lock hours. Grounded Mode blocks Discover automatically in addition to those schedules.
 
-YouTube videos are played through YouTube's embedded player with the app origin and referrer identity required by YouTube's embed policy. The Family Circle interface provides no child-facing open search, comments, or direct video links, but an embedded YouTube player and a linked public playlist remain subject to YouTube's playback behavior, playlist contents, and policies.
+YouTube videos are played through YouTube's embedded player with the app origin and referrer identity required by YouTube's embed policy. Linked playlists use YouTube's iframe player API so the Discover arrow controls advance through the playlist and wrap continuously. The Family Circle interface provides no child-facing open search, comments, or direct video links, but an embedded YouTube player and a linked public playlist remain subject to YouTube's playback behavior, playlist contents, and policies.
 
 ## Family Calling
 

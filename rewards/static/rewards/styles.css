@@ -2552,6 +2552,12 @@ a { color: inherit; text-decoration: none; }
   border: 0;
   background: #050711;
 }
+.discover-playlist-mount {
+  width: min(100vw, 560px);
+  height: min(100dvh, calc(100vw * 16 / 9));
+  min-height: min(100dvh, 55vw);
+  background: #050711;
+}
 .discover-shade {
   position: absolute;
   inset: 0;

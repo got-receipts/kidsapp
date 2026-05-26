@@ -248,7 +248,28 @@ document.querySelectorAll("[data-go-back]").forEach((button) => {
 const discoverFeed = document.querySelector("[data-discover-feed]");
 if (discoverFeed) {
   const slides = Array.from(discoverFeed.querySelectorAll("[data-discover-slide]"));
+  const playlistPlayers = new Map();
   let activeSlide = null;
+  let youtubeAPI;
+
+  function youtubePlayerAPI() {
+    if (window.YT?.Player) return Promise.resolve(window.YT);
+    if (youtubeAPI) return youtubeAPI;
+    youtubeAPI = new Promise((resolve) => {
+      const previousReady = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof previousReady === "function") previousReady();
+        resolve(window.YT);
+      };
+      if (!document.querySelector("[data-youtube-player-api]")) {
+        const script = document.createElement("script");
+        script.src = "https://www.youtube.com/iframe_api";
+        script.dataset.youtubePlayerApi = "yes";
+        document.head.appendChild(script);
+      }
+    });
+    return youtubeAPI;
+  }
 
   function commandPlayer(frame, command) {
     if (!frame || !frame.contentWindow || !frame.src) return;
@@ -256,17 +277,73 @@ if (discoverFeed) {
     frame.contentWindow.postMessage(JSON.stringify({event: "command", func: command, args: []}), playerOrigin);
   }
 
+  function playlistPlayer(slide) {
+    if (playlistPlayers.has(slide)) return playlistPlayers.get(slide);
+    const mount = slide.querySelector("[data-discover-playlist-mount]");
+    const creating = youtubePlayerAPI().then((YT) => new Promise((resolve) => {
+      const player = new YT.Player(mount.id, {
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          autoplay: 1,
+          controls: 1,
+          enablejsapi: 1,
+          fs: 0,
+          list: mount.dataset.playlistId,
+          listType: "playlist",
+          loop: 1,
+          mute: 1,
+          origin: window.location.origin,
+          playsinline: 1,
+          rel: 0,
+        },
+        events: {
+          onReady(event) {
+            const iframe = event.target.getIframe();
+            iframe.title = mount.dataset.playerTitle;
+            iframe.referrerPolicy = "strict-origin-when-cross-origin";
+            iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+            event.target.setLoop(true);
+            if (slide === activeSlide) event.target.playVideo();
+            resolve(event.target);
+          },
+        },
+      });
+    }));
+    playlistPlayers.set(slide, creating);
+    return creating;
+  }
+
+  function pauseSlide(slide) {
+    if (slide.hasAttribute("data-discover-playlist")) {
+      const player = playlistPlayers.get(slide);
+      if (player) player.then((instance) => instance.pauseVideo());
+      return;
+    }
+    commandPlayer(slide.querySelector("[data-discover-player]"), "pauseVideo");
+  }
+
+  function playSlide(slide) {
+    if (slide.hasAttribute("data-discover-playlist")) {
+      playlistPlayer(slide).then((player) => {
+        player.setLoop(true);
+        player.playVideo();
+      });
+      return;
+    }
+    const frame = slide.querySelector("[data-discover-player]");
+    if (frame && !frame.src) frame.src = frame.dataset.src;
+    commandPlayer(frame, "playVideo");
+  }
+
   function activateDiscoverSlide(slide) {
     if (!slide || slide === activeSlide) return;
     activeSlide = slide;
     slides.forEach((candidate) => {
-      const frame = candidate.querySelector("[data-discover-player]");
       candidate.classList.toggle("playing", candidate === slide);
-      if (candidate !== slide) commandPlayer(frame, "pauseVideo");
+      if (candidate !== slide) pauseSlide(candidate);
     });
-    const frame = slide.querySelector("[data-discover-player]");
-    if (frame && !frame.src) frame.src = frame.dataset.src;
-    commandPlayer(frame, "playVideo");
+    playSlide(slide);
     if (!slide.dataset.viewRecorded && slide.dataset.watchUrl) {
       slide.dataset.viewRecorded = "yes";
       fetch(slide.dataset.watchUrl, {
@@ -278,9 +355,12 @@ if (discoverFeed) {
 
   function moveDiscover(direction) {
     if (!activeSlide) return;
-    const frame = activeSlide.querySelector("[data-discover-player]");
     if (activeSlide.hasAttribute("data-discover-playlist")) {
-      commandPlayer(frame, direction === "next" ? "nextVideo" : "previousVideo");
+      playlistPlayer(activeSlide).then((player) => {
+        player.setLoop(true);
+        if (direction === "next") player.nextVideo();
+        else player.previousVideo();
+      });
       return;
     }
     const activeIndex = slides.indexOf(activeSlide);
@@ -314,7 +394,7 @@ if (discoverFeed) {
         if (!response.ok) return;
         const status = await response.json();
         if (!status.locked) return;
-        slides.forEach((slide) => commandPlayer(slide.querySelector("[data-discover-player]"), "pauseVideo"));
+        slides.forEach((slide) => pauseSlide(slide));
         toast(status.reason === "grounded" ? "Discover has been locked by Grounded Mode." : "Discover viewing hours are over.");
         window.setTimeout(() => window.location.reload(), 500);
       } catch (error) {
