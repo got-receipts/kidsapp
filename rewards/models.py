@@ -64,6 +64,7 @@ class Wallet(models.Model):
 
 class FamilySettings(models.Model):
     tokens_per_dollar = models.PositiveIntegerField(default=10)
+    free_calls_after_6pm_enabled = models.BooleanField(default=True)
     updated_by = models.ForeignKey(
         Profile,
         null=True,

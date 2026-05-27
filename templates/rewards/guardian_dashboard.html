@@ -446,6 +446,15 @@
       <article class="card communication-schedules" data-dashboard-module="Message & Call Limits">
         <div class="card-head"><h2>Messages &amp; call limits</h2><span class="badge">{% if livekit_configured %}Calls ready{% else %}LiveKit setup pending{% endif %}</span></div>
         <p class="control-note">Schedules restrict {{ selected.display_name }} during the listed hours. Open Guardian Actions to add another schedule.</p>
+        <div class="planner-row">
+          <div><strong>Free calling after 6:00 PM</strong><small>{% if family_settings.free_calls_after_6pm_enabled %}All child calls stay free after 6 PM, even after the daily free-call limit is used.{% else %}The daily free-call limit still applies after 6 PM.{% endif %}</small></div>
+          <span class="badge {% if not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_calls_after_6pm_enabled %}Enabled{% else %}Off{% endif %}</span>
+        </div>
+        <form class="form" method="post" action="{% url 'update_family_call_settings' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+          <p><label>{{ call_settings_form.free_calls_after_6pm_enabled }} {{ call_settings_form.free_calls_after_6pm_enabled.label }}</label></p>
+          <button class="primary">Save calling setting</button>
+        </form>
         {% for schedule in selected_communication_schedules %}
           <div class="planner-row">
             <div><strong>{{ schedule.get_feature_display }}</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} - {{ schedule.end_time|time:"g:i A" }}</small></div>

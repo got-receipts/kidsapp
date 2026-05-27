@@ -28,6 +28,7 @@ from .forms import (
     CommunicationScheduleForm,
     DailyScheduleEventForm,
     DiscoverScheduleForm,
+    FamilyCallSettingsForm,
     FamilyMessageForm,
     FamilySettingsForm,
     GoalForm,
@@ -305,17 +306,26 @@ def _livekit_configured():
     return bool(settings.LIVEKIT_WS_URL and settings.LIVEKIT_API_KEY and settings.LIVEKIT_API_SECRET)
 
 
+def _child_calls_are_free_now(moment=None):
+    if not FamilySettings.load().free_calls_after_6pm_enabled:
+        return False
+    local_moment = timezone.localtime(moment or timezone.now())
+    return local_moment.time().replace(tzinfo=None) >= time(18, 0)
+
+
 def _child_call_allowance(profile):
     if profile.role != Profile.Role.CHILD:
         return None
     used = FamilyCall.objects.filter(caller=profile, allowance_day=timezone.localdate()).count()
     free_limit = max(settings.FREE_CHILD_CALLS_PER_DAY, 0)
+    calls_free_now = _child_calls_are_free_now()
     return {
         "used": used,
         "free_limit": free_limit,
         "remaining": max(free_limit - used, 0),
         "token_cost": max(settings.CHILD_CALL_TOKEN_COST, 0),
         "reconnect_minutes": max(settings.CALL_RECONNECT_MINUTES, 1),
+        "calls_free_now": calls_free_now,
     }
 
 
@@ -642,6 +652,7 @@ def dashboard(request):
             "child_rule_form": ChildRuleForm(),
             "house_rule_form": HouseRuleForm(),
             "settings_form": FamilySettingsForm(instance=family_settings),
+            "call_settings_form": FamilyCallSettingsForm(instance=family_settings),
             "family_settings": family_settings,
             "award_form": AwardForm(),
             "behavior_deduction_form": BehaviorDeductionForm(),
@@ -788,7 +799,8 @@ def start_family_call(request, recipient_pk, call_type):
             prior_calls = FamilyCall.objects.filter(caller=caller, allowance_day=allowance_day).count()
             free_limit = max(settings.FREE_CHILD_CALLS_PER_DAY, 0)
             call_number = prior_calls + 1
-            token_cost = 0 if prior_calls < free_limit else max(settings.CHILD_CALL_TOKEN_COST, 0)
+            calls_free_now = _child_calls_are_free_now(now)
+            token_cost = 0 if calls_free_now or prior_calls < free_limit else max(settings.CHILD_CALL_TOKEN_COST, 0)
             if token_cost and caller.grounded:
                 messages.error(request, "Grounded Mode is active. Paid calls cannot use tokens right now.")
                 return redirect("message_thread", recipient_pk=recipient.pk)
@@ -825,6 +837,8 @@ def start_family_call(request, recipient_pk, call_type):
         if token_cost:
             token_label = "token" if token_cost == 1 else "tokens"
             messages.info(request, f"This call used {token_cost} {token_label}. Reconnect within {max(settings.CALL_RECONNECT_MINUTES, 1)} minutes without another charge.")
+        elif calls_free_now:
+            messages.info(request, "Calls are free after 6:00 PM.")
         else:
             messages.info(request, f"Free family call {call_number} of {max(settings.FREE_CHILD_CALLS_PER_DAY, 0)} today.")
     return redirect("call_room", pk=call.pk)
@@ -2233,6 +2247,26 @@ def update_family_settings(request):
     settings_record.save()
     _audit(guardian, None, "exchange_rate_updated", str(settings_record))
     messages.success(request, f"Wallet exchange rate updated: {settings_record}.")
+    return redirect(f"/?child={request.POST.get('child_id', '')}")
+
+
+@login_required
+@require_POST
+def update_family_call_settings(request):
+    guardian = _guardian(request)
+    if guardian is None:
+        return redirect("dashboard")
+    settings_record = FamilySettings.load()
+    form = FamilyCallSettingsForm(request.POST, instance=settings_record)
+    if not form.is_valid():
+        messages.error(request, "Check the free calling setting and try again.")
+        return redirect(f"/?child={request.POST.get('child_id', '')}")
+    settings_record = form.save(commit=False)
+    settings_record.updated_by = guardian
+    settings_record.save()
+    state = "enabled" if settings_record.free_calls_after_6pm_enabled else "disabled"
+    _audit(guardian, None, "free_calling_updated", f"Free calling after 6:00 PM {state}.")
+    messages.success(request, f"Free calling after 6:00 PM {state}.")
     return redirect(f"/?child={request.POST.get('child_id', '')}")
 
 

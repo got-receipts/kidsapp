@@ -198,6 +198,13 @@ class FamilySettingsForm(forms.ModelForm):
         labels = {"tokens_per_dollar": "Tokens equal to $1.00"}
 
 
+class FamilyCallSettingsForm(forms.ModelForm):
+    class Meta:
+        model = FamilySettings
+        fields = ["free_calls_after_6pm_enabled"]
+        labels = {"free_calls_after_6pm_enabled": "Make all child calls free after 6:00 PM"}
+
+
 class GroundingForm(forms.Form):
     reason = forms.CharField(max_length=180, required=False, label="Message for the child (optional)")
     lift_at = forms.DateTimeField(

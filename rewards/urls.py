@@ -70,6 +70,7 @@ urlpatterns = [
     path("fulfillment/<int:pk>/cancel/", views.fulfillment_cancel, name="fulfillment_cancel"),
     path("fulfillment/<int:pk>/delivered/", views.fulfillment_delivered, name="fulfillment_delivered"),
     path("guardian/settings/", views.update_family_settings, name="update_family_settings"),
+    path("guardian/settings/calls/", views.update_family_call_settings, name="update_family_call_settings"),
     path("guardian/communications/schedule/", views.guardian_communication_schedule, name="guardian_communication_schedule"),
     path("guardian/communications/<int:pk>/toggle/", views.guardian_toggle_communication_schedule, name="guardian_toggle_communication_schedule"),
     path("guardian/communications/<int:pk>/remove/", views.guardian_remove_communication_schedule, name="guardian_remove_communication_schedule"),

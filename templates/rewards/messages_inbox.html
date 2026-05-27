@@ -19,8 +19,12 @@
   {% if calling_lock %}<p class="communication-lock-note">Calls are locked by your family schedule right now.</p>{% endif %}
   {% if call_allowance %}
   <p class="ios-call-budget">
+    {% if call_allowance.calls_free_now %}
+    All calls are free after 6:00 PM.
+    {% else %}
     <strong>{{ call_allowance.remaining }}</strong> of {{ call_allowance.free_limit }} free calls left today.
     {% if not call_allowance.remaining %}New calls cost {{ call_allowance.token_cost }} token{{ call_allowance.token_cost|pluralize }}.{% endif %}
+    {% endif %}
   </p>
   {% endif %}
   <section class="ios-conversation-list" aria-label="Family conversations">

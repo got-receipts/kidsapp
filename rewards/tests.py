@@ -349,6 +349,16 @@ class LedgerApprovalTests(TestCase):
         self.assertTrue(Notification.objects.filter(recipient=self.child, kind=Notification.Kind.WALLET).exists())
         self.assertTrue(AuditLog.objects.filter(action="token_cashout_completed").exists())
 
+    def test_guardian_can_turn_off_free_calling_after_6pm(self):
+        self.client.force_login(self.guardian.user)
+
+        response = self.client.post(reverse("update_family_call_settings"), {"child_id": self.child.pk})
+
+        self.assertRedirects(response, f"/?child={self.child.pk}")
+        settings_record = FamilySettings.load()
+        self.assertFalse(settings_record.free_calls_after_6pm_enabled)
+        self.assertTrue(AuditLog.objects.filter(action="free_calling_updated").exists())
+
     def test_converted_cash_can_be_sent_and_spent_from_cash_app_immediately(self):
         sibling_user = User.objects.create_user(username="astoria", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
@@ -1075,6 +1085,64 @@ class LedgerApprovalTests(TestCase):
         self.wallet.refresh_from_db()
         paid_call = FamilyCall.objects.filter(caller=self.child).first()
         self.assertEqual(paid_call.token_cost, 1)
+        self.assertEqual(self.wallet.tokens, 19)
+        self.assertTrue(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.CALL, token_delta=-1).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+        FREE_CHILD_CALLS_PER_DAY=6,
+        CHILD_CALL_TOKEN_COST=1,
+    )
+    def test_calls_are_free_after_6pm_even_after_daily_limit(self):
+        sibling_user = User.objects.create_user(username="evening-call-sibling", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        self.client.force_login(self.child.user)
+
+        for _ in range(6):
+            self.client.post(reverse("start_family_call", args=[sibling.pk, "audio"]))
+            call = FamilyCall.objects.filter(caller=self.child).first()
+            self.client.post(reverse("end_family_call", args=[call.pk]))
+
+        evening = timezone.make_aware(datetime(2026, 5, 27, 18, 30))
+        with patch("rewards.views.timezone.localtime", return_value=evening):
+            response = self.client.post(reverse("start_family_call", args=[sibling.pk, "video"]))
+
+        self.assertRedirects(response, reverse("call_room", args=[FamilyCall.objects.filter(caller=self.child).first().pk]))
+        self.wallet.refresh_from_db()
+        evening_call = FamilyCall.objects.filter(caller=self.child).first()
+        self.assertEqual(evening_call.token_cost, 0)
+        self.assertEqual(self.wallet.tokens, 20)
+        self.assertFalse(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.CALL).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+        FREE_CHILD_CALLS_PER_DAY=6,
+        CHILD_CALL_TOKEN_COST=1,
+    )
+    def test_calls_still_cost_tokens_after_6pm_when_free_calling_setting_is_off(self):
+        sibling_user = User.objects.create_user(username="evening-paid-call-sibling", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+        FamilySettings.objects.update_or_create(pk=1, defaults={"free_calls_after_6pm_enabled": False, "updated_by": self.guardian})
+        self.client.force_login(self.child.user)
+
+        for _ in range(6):
+            self.client.post(reverse("start_family_call", args=[sibling.pk, "audio"]))
+            call = FamilyCall.objects.filter(caller=self.child).first()
+            self.client.post(reverse("end_family_call", args=[call.pk]))
+
+        evening = timezone.make_aware(datetime(2026, 5, 27, 18, 30))
+        with patch("rewards.views.timezone.localtime", return_value=evening):
+            self.client.post(reverse("start_family_call", args=[sibling.pk, "video"]))
+
+        self.wallet.refresh_from_db()
+        evening_call = FamilyCall.objects.filter(caller=self.child).first()
+        self.assertEqual(evening_call.token_cost, 1)
         self.assertEqual(self.wallet.tokens, 19)
         self.assertTrue(LedgerRequest.objects.filter(child=self.child, kind=LedgerRequest.Kind.CALL, token_delta=-1).exists())
 
