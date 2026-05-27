@@ -113,6 +113,7 @@
           <button class="action-tile" type="button" data-open-dialog="action-profile">Store Eligibility</button>
           <button class="action-tile gold" type="button" data-open-dialog="action-balance">Wallet Funds</button>
           <button class="action-tile gold" type="button" data-open-dialog="action-rate">Exchange Rate</button>
+          <button class="action-tile" type="button" data-open-dialog="action-free-calling">Free Calling</button>
           <button class="action-tile" type="button" data-open-dialog="action-communications">Message &amp; Call Limits</button>
         </div>
       </article>
@@ -220,6 +221,16 @@
         <p>Children earn tokens from chores, then instantly convert tokens to wallet cash using this parent-controlled rate. Cash cannot convert back to tokens.</p>
         <form class="form" method="post" action="{% url 'update_family_settings' %}">
           {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ settings_form.as_p }}<button class="primary">Save exchange rate</button>
+        </form>
+      </dialog>
+      <dialog class="review-dialog action-dialog" id="action-free-calling">
+        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+        <p class="eyebrow">Calling access</p><h2>Free calling after 6:00 PM</h2>
+        <p>Turn the evening free-calling rule on or off for {{ selected.display_name }}. When enabled, daily call charges stop after 6:00 PM.</p>
+        <form class="form" method="post" action="{% url 'update_family_call_settings' %}">
+          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+          <p><label>{{ call_settings_form.free_calls_after_6pm_enabled }} {{ call_settings_form.free_calls_after_6pm_enabled.label }}</label></p>
+          <button class="primary">Save calling setting</button>
         </form>
       </dialog>
       <dialog class="review-dialog action-dialog" id="action-communications">
@@ -450,11 +461,7 @@
           <div><strong>Free calling after 6:00 PM</strong><small>{% if family_settings.free_calls_after_6pm_enabled %}All child calls stay free after 6 PM, even after the daily free-call limit is used.{% else %}The daily free-call limit still applies after 6 PM.{% endif %}</small></div>
           <span class="badge {% if not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_calls_after_6pm_enabled %}Enabled{% else %}Off{% endif %}</span>
         </div>
-        <form class="form" method="post" action="{% url 'update_family_call_settings' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-          <p><label>{{ call_settings_form.free_calls_after_6pm_enabled }} {{ call_settings_form.free_calls_after_6pm_enabled.label }}</label></p>
-          <button class="primary">Save calling setting</button>
-        </form>
+        <p class="control-note">Update this from Controls using the Free Calling action.</p>
         {% for schedule in selected_communication_schedules %}
           <div class="planner-row">
             <div><strong>{{ schedule.get_feature_display }}</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} - {{ schedule.end_time|time:"g:i A" }}</small></div>
