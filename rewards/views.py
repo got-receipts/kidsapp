@@ -59,6 +59,7 @@ from .models import (
     FamilyCall,
     FamilySettings,
     GrowthGoal,
+    HiddenMessageContact,
     HouseRule,
     LedgerRequest,
     Notification,
@@ -228,12 +229,26 @@ def _message_query(profile, contact):
     return Q(sender=profile, recipient=contact) | Q(sender=contact, recipient=profile)
 
 
+def _hidden_message_contact_ids(profile):
+    if profile.role != Profile.Role.CHILD:
+        return set()
+    return set(profile.hidden_message_contacts.values_list("contact_id", flat=True))
+
+
 def _unread_message_count(profile):
-    return profile.received_family_messages.filter(read_at__isnull=True).count()
+    unread_messages = profile.received_family_messages.filter(read_at__isnull=True)
+    hidden_contact_ids = _hidden_message_contact_ids(profile)
+    if hidden_contact_ids:
+        unread_messages = unread_messages.exclude(sender_id__in=hidden_contact_ids)
+    return unread_messages.count()
 
 
 def _message_contacts(profile):
-    contacts = list(Profile.objects.exclude(pk=profile.pk).order_by("display_name"))
+    contacts_query = Profile.objects.exclude(pk=profile.pk).order_by("display_name")
+    hidden_contact_ids = _hidden_message_contact_ids(profile)
+    if hidden_contact_ids:
+        contacts_query = contacts_query.exclude(pk__in=hidden_contact_ids)
+    contacts = list(contacts_query)
     for contact in contacts:
         contact.last_message = (
             FamilyMessage.objects.filter(_message_query(profile, contact))
@@ -242,6 +257,14 @@ def _message_contacts(profile):
             .first()
         )
         contact.unread_count = profile.received_family_messages.filter(sender=contact, read_at__isnull=True).count()
+    return contacts
+
+
+def _message_settings_contacts(child):
+    hidden_contact_ids = set(child.hidden_message_contacts.values_list("contact_id", flat=True))
+    contacts = list(Profile.objects.exclude(pk=child.pk).order_by("display_name"))
+    for contact in contacts:
+        contact.hidden_for_child = contact.pk in hidden_contact_ids
     return contacts
 
 
@@ -711,6 +734,7 @@ def dashboard(request):
             "dad_controls": dad_controls,
             "unread_message_count": _unread_message_count(profile),
             "selected_communication_schedules": selected.communication_schedules.all() if selected and can_manage else [],
+            "message_settings_contacts": _message_settings_contacts(selected) if selected and dad_controls else [],
             "communication_schedule_form": CommunicationScheduleForm(),
             "livekit_configured": _livekit_configured(),
             "shopping_orders": (
@@ -778,6 +802,9 @@ def message_thread(request, recipient_pk):
     recipient = get_object_or_404(Profile, pk=recipient_pk)
     if recipient.pk == profile.pk:
         messages.error(request, "Choose another family member to send a message.")
+        return redirect("messages_inbox")
+    if profile.role == Profile.Role.CHILD and HiddenMessageContact.objects.filter(child=profile, contact=recipient).exists():
+        messages.error(request, "That conversation is hidden in your message settings.")
         return redirect("messages_inbox")
     messaging_lock = _communication_lock(profile, CommunicationSchedule.Feature.MESSAGING)
     calling_lock = _communication_lock(profile, CommunicationSchedule.Feature.CALLING)
@@ -2387,6 +2414,32 @@ def update_family_call_settings(request):
     _audit(guardian, None, "free_calling_updated", f"Free calling after 6:00 PM {state}.")
     messages.success(request, f"Free calling after 6:00 PM {state}.")
     return redirect(f"/?child={request.POST.get('child_id', '')}")
+
+
+@login_required
+@require_POST
+def dad_toggle_hidden_message_contact(request, contact_pk):
+    dad = _dad(request)
+    child = get_object_or_404(Profile, pk=request.POST.get("child_id"), role=Profile.Role.CHILD)
+    contact = get_object_or_404(Profile, pk=contact_pk)
+    if dad is None:
+        return redirect(f"/?child={child.pk}")
+    if contact.pk == child.pk:
+        messages.error(request, "Choose another family member to hide or show.")
+        return redirect(f"/?child={child.pk}")
+    hidden_contact, created = HiddenMessageContact.objects.get_or_create(
+        child=child,
+        contact=contact,
+        defaults={"hidden_by": dad},
+    )
+    if created:
+        _audit(dad, child, "message_contact_hidden", f"{contact.display_name} hidden from child messages.")
+        messages.success(request, f"{contact.display_name} is now hidden from {child.display_name}'s messages.")
+    else:
+        hidden_contact.delete()
+        _audit(dad, child, "message_contact_shown", f"{contact.display_name} restored to child messages.")
+        messages.success(request, f"{contact.display_name} is visible again in {child.display_name}'s messages.")
+    return redirect(f"/?child={child.pk}")
 
 
 @login_required

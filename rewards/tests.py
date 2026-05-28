@@ -19,6 +19,7 @@ from .models import (
     FamilySettings,
     FamilyMessage,
     FamilyCall,
+    HiddenMessageContact,
     HouseRule,
     LedgerRequest,
     Notification,
@@ -970,6 +971,52 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(dashboard, "Messages")
         self.client.post(reverse("message_thread", args=[self.child.pk]), {"body": "Hi back!"})
         self.assertTrue(FamilyMessage.objects.filter(sender=mom, recipient=self.child, body="Hi back!").exists())
+
+    def test_dad_can_hide_contact_and_messages_from_child(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        FamilyMessage.objects.create(sender=mom, recipient=self.child, body="Dinner is at six.")
+
+        self.client.force_login(self.guardian.user)
+        dad_dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dad_dashboard, "Message Settings")
+
+        response = self.client.post(
+            reverse("dad_toggle_hidden_message_contact", args=[mom.pk]),
+            {"child_id": self.child.pk},
+        )
+
+        self.assertRedirects(response, f"/?child={self.child.pk}")
+        self.assertTrue(HiddenMessageContact.objects.filter(child=self.child, contact=mom).exists())
+
+        self.client.force_login(self.child.user)
+        home = self.client.get(reverse("dashboard"))
+        self.assertNotContains(home, "1 new")
+        inbox = self.client.get(reverse("messages_inbox"))
+        self.assertNotContains(inbox, "Mom")
+        hidden_thread = self.client.get(reverse("message_thread", args=[mom.pk]), follow=True)
+        self.assertRedirects(hidden_thread, reverse("messages_inbox"))
+        self.assertNotContains(hidden_thread, "Dinner is at six.")
+        self.assertTrue(FamilyMessage.objects.filter(sender=mom, recipient=self.child, body="Dinner is at six.").exists())
+
+    def test_only_dad_can_use_message_settings(self):
+        mom_user = User.objects.create_user(username="mom", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        sibling_user = User.objects.create_user(username="astoria", password="test")
+        sibling = Profile.objects.create(user=sibling_user, display_name="Astoria", role=Profile.Role.CHILD)
+        Wallet.objects.create(child=sibling)
+
+        self.client.force_login(mom.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertNotContains(dashboard, "Message Settings")
+
+        response = self.client.post(
+            reverse("dad_toggle_hidden_message_contact", args=[sibling.pk]),
+            {"child_id": self.child.pk},
+        )
+
+        self.assertRedirects(response, f"/?child={self.child.pk}")
+        self.assertFalse(HiddenMessageContact.objects.filter(child=self.child, contact=sibling).exists())
 
     def test_messages_reject_self_recipient(self):
         with self.assertRaises(ValidationError):

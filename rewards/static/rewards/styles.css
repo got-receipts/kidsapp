@@ -3735,4 +3735,77 @@ button.calendar-day:active { transform: scale(.93); }
   .guardian-dock { display: none; }
   .guardian-os { padding-bottom: calc(env(safe-area-inset-bottom) + 32px); }
   .guardian-os ~ .app-footer { padding-bottom: calc(22px + env(safe-area-inset-bottom)); }
+  .discover-topbar {
+    top: max(18px, env(safe-area-inset-top));
+    right: max(24px, env(safe-area-inset-right));
+    left: max(24px, env(safe-area-inset-left));
+    width: min(calc(100% - 48px), 1100px);
+    margin: 0 auto;
+  }
+  .discover-nav-control {
+    padding: 11px 15px;
+    font-size: 13px;
+  }
+  .discover-brand {
+    padding: 7px 14px 7px 9px;
+  }
+  .discover-brand b {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+    font-size: 15px;
+  }
+  .discover-brand small { font-size: 10px; }
+  .discover-brand strong { font-size: 14px; }
+  .discover-reel {
+    padding: 88px 44px 36px;
+  }
+  .discover-player iframe,
+  .discover-playlist-mount {
+    width: min(calc(100vw - 132px), 860px);
+    height: min(calc(100dvh - 148px), calc((100vw - 132px) * 9 / 16), 920px);
+    min-height: 520px;
+    border-radius: 30px;
+    box-shadow: 0 26px 70px rgb(0 0 0 / 42%);
+  }
+  .discover-video-copy {
+    max-width: min(720px, calc(100% - 170px));
+    margin: 0 auto calc(70px + env(safe-area-inset-bottom));
+  }
+  .discover-video-copy h1 {
+    font-size: clamp(28px, 4vw, 42px);
+  }
+  .discover-video-copy p {
+    font-size: 14px;
+  }
+  .discover-reactions {
+    right: max(34px, calc((100vw - min(calc(100vw - 132px), 860px)) / 2 - 82px));
+    bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+  .discover-step-controls {
+    right: max(28px, calc((100vw - min(calc(100vw - 132px), 860px)) / 2 - 78px));
+  }
+  .discover-swipe-hint {
+    bottom: calc(28px + env(safe-area-inset-bottom));
+    font-size: 11px;
+  }
+}
+@media (min-width: 1024px) and (orientation: landscape) {
+  .discover-reel {
+    padding-top: 92px;
+    padding-bottom: 26px;
+  }
+  .discover-player iframe,
+  .discover-playlist-mount {
+    width: min(calc(100vw - 240px), 960px);
+    height: min(calc(100dvh - 136px), 72vh);
+    min-height: 460px;
+  }
+  .discover-video-copy {
+    max-width: min(760px, calc(100% - 210px));
+    margin-bottom: calc(42px + env(safe-area-inset-bottom));
+  }
+  .discover-reactions {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+  }
 }

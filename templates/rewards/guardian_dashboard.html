@@ -85,6 +85,7 @@
       <button class="parent-app app-rules" type="button" data-parent-open="rules"><b>&#167;</b><strong>Rules</strong><small>House &amp; personal</small></button>
       <button class="parent-app app-store" type="button" data-parent-open="store"><b>&#127873;</b><strong>Store</strong><small>Inventory</small></button>
       <button class="parent-app app-limits" type="button" data-parent-open="limits"><b>&#128274;</b><strong>Limits</strong><small>Messages &amp; calls</small></button>
+      {% if dad_controls %}<button class="parent-app app-limits" type="button" data-parent-open="message-settings"><b>&#9993;</b><strong>Message Settings</strong><small>Hide child contacts</small></button>{% endif %}
       {% endif %}
       {% if can_fulfill %}
       <button class="parent-app app-fulfillment" type="button" data-parent-open="fulfillment"><b>&#128722;</b><strong>Fulfillment</strong><small>{{ open_shopping_order_count }} waiting</small></button>
@@ -480,6 +481,22 @@
             <form method="post" action="{% url 'guardian_remove_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">Delete</button></form>
           </div>
         {% empty %}<p class="empty">No message or calling limits are scheduled for this child.</p>{% endfor %}
+      </article>
+      </section>
+      {% endif %}
+      {% if dad_controls %}
+      <section class="guardian-native-app" data-parent-app="message-settings" aria-label="Message settings">
+        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Message Settings</h1></div></header>
+      <article class="card communication-schedules" data-dashboard-module="Message Settings">
+        <div class="card-head"><h2>Hidden contacts</h2><span class="badge gold">Dad only</span></div>
+        <p class="control-note">Hide specific contacts and their existing message history from {{ selected.display_name }}. Hidden conversations remain stored and visible to adults.</p>
+        {% for contact in message_settings_contacts %}
+          <div class="planner-row">
+            <div><strong>{{ contact.display_name }}</strong><small>{{ contact.get_role_display }}</small></div>
+            <span class="badge {% if contact.hidden_for_child %}waiting{% endif %}">{% if contact.hidden_for_child %}Hidden{% else %}Visible{% endif %}</span>
+            <form method="post" action="{% url 'dad_toggle_hidden_message_contact' contact.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button">{% if contact.hidden_for_child %}Show{% else %}Hide{% endif %}</button></form>
+          </div>
+        {% empty %}<p class="empty">No contacts available for this child.</p>{% endfor %}
       </article>
       </section>
       {% endif %}

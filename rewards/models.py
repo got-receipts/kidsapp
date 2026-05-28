@@ -806,6 +806,25 @@ class Notification(models.Model):
         ordering = ["-created_at"]
 
 
+class HiddenMessageContact(models.Model):
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="hidden_message_contacts")
+    contact = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="hidden_for_children")
+    hidden_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="message_contacts_hidden")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.child_id and self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Only child accounts can have hidden message contacts.")
+        if self.child_id and self.contact_id and self.child_id == self.contact_id:
+            raise ValidationError("A child cannot hide their own profile.")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["child", "contact"], name="one_hidden_message_contact_per_child")
+        ]
+        ordering = ["contact__display_name"]
+
+
 class FamilyMessage(models.Model):
     sender = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="sent_family_messages")
     recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="received_family_messages")
