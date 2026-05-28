@@ -32,6 +32,16 @@
     </div>
   </dialog>
   {% endif %}
+  {% if unread_notifications %}
+    <dialog class="review-dialog child-notifications" id="guardian-notifications" data-auto-open-dialog>
+      <p class="eyebrow">New updates</p>
+      <h2>Parent notifications</h2>
+      {% for notice in unread_notifications %}
+        <div class="notification-row"><span class="badge">{{ notice.get_kind_display }}</span><div><strong>{{ notice.title }}</strong><small>{{ notice.message }}</small></div></div>
+      {% endfor %}
+      <form method="post" action="{% url 'read_notifications' %}">{% csrf_token %}<button class="primary acknowledge" type="submit">Got it</button></form>
+    </dialog>
+  {% endif %}
   {% if star_reminder_due %}
     <section class="reminder-callout"><strong>Star check-in time!</strong> It is after 7:30 PM. Still waiting on stars for: {% for child in unstarred %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
   {% endif %}
@@ -752,10 +762,10 @@
         </article>
         <article class="card discover-insights">
           <div class="card-head"><h2>{{ selected.display_name }}'s activity</h2><span class="badge">Private</span></div>
-          <h3>Favorites</h3>
-          {% for favorite in selected_video_favorites %}
-            <div class="row"><div><strong>{{ favorite.clip.title }}</strong><small>{{ favorite.clip.playlist.title }}</small></div><b>&#9829;</b></div>
-          {% empty %}<p class="empty">No liked videos yet.</p>{% endfor %}
+          <h3>Reactions</h3>
+          {% for reaction in selected_video_reactions %}
+            <div class="row"><div><strong>{{ reaction.video_title }}</strong><small>{% if reaction.clip %}{{ reaction.clip.playlist.title }}{% elif reaction.playlist %}{{ reaction.playlist.title }}{% else %}Discover{% endif %}</small></div><b>{% if reaction.value == "like" %}&#9829;{% else %}&#128078;{% endif %}</b></div>
+          {% empty %}<p class="empty">No Discover reactions yet.</p>{% endfor %}
           <h3>Recently watched</h3>
           {% for event in selected_video_watch_events %}
             <div class="row"><div><strong>{{ event.clip.title }}</strong><small>{{ event.clip.playlist.title }} &middot; last watched {{ event.last_watched_at|date:"M j, g:i A" }}</small></div><b>{{ event.view_count }} view{{ event.view_count|pluralize }}</b></div>

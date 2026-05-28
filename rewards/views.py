@@ -75,6 +75,7 @@ from .models import (
     VideoClip,
     VideoFavorite,
     VideoPlaylist,
+    VideoReaction,
     VideoWatchEvent,
     Wallet,
 )
@@ -204,6 +205,11 @@ def _notify(child, kind, title, message):
         Notification.objects.create(recipient=child, kind=kind, title=title, message=message[:240])
 
 
+def _notify_family_viewers(kind, title, message):
+    for family_viewer in Profile.objects.filter(role__in=[Profile.Role.GUARDIAN, Profile.Role.VIEWER]):
+        Notification.objects.create(recipient=family_viewer, kind=kind, title=title[:80], message=message[:240])
+
+
 def _notify_all_children(kind, title, message):
     for child in Profile.objects.filter(role=Profile.Role.CHILD):
         _notify(child, kind, title, message)
@@ -277,6 +283,50 @@ def _active_discover_playlists():
         .exclude(youtube_playlist_id="")
         .order_by("title")
     )
+
+
+def _discover_reaction_lookup(profile):
+    return dict(profile.video_reactions.values_list("youtube_id", "value"))
+
+
+def _discover_feed_items(clips, source_playlists):
+    items = []
+    for playlist in source_playlists:
+        items.append({"kind": "playlist", "playlist": playlist})
+    for clip in clips:
+        items.append({"kind": "clip", "clip": clip})
+    return items
+
+
+def _save_discover_reaction(profile, *, youtube_id, value, video_title, clip=None, playlist=None):
+    reaction, created = VideoReaction.objects.get_or_create(
+        child=profile,
+        youtube_id=youtube_id,
+        defaults={
+            "clip": clip,
+            "playlist": playlist,
+            "video_title": video_title[:120],
+            "value": value,
+        },
+    )
+    if not created and reaction.value == value:
+        favorite_clip = clip or reaction.clip
+        reaction.delete()
+        if favorite_clip:
+            VideoFavorite.objects.filter(child=profile, clip=favorite_clip).delete()
+        return None
+    if not created:
+        reaction.clip = clip or reaction.clip
+        reaction.playlist = playlist or reaction.playlist
+        reaction.video_title = video_title[:120]
+        reaction.value = value
+        reaction.save(update_fields=["clip", "playlist", "video_title", "value", "updated_at"])
+    favorite_clip = clip or reaction.clip
+    if favorite_clip and value == VideoReaction.Value.LIKE:
+        VideoFavorite.objects.get_or_create(child=profile, clip=favorite_clip)
+    elif favorite_clip:
+        VideoFavorite.objects.filter(child=profile, clip=favorite_clip).delete()
+    return reaction
 
 
 def _youtube_id(url):
@@ -690,6 +740,11 @@ def dashboard(request):
             ),
             "video_playlist_form": VideoPlaylistForm() if can_manage_video else None,
             "discover_schedule_form": DiscoverScheduleForm() if can_manage_video else None,
+            "unread_notifications": profile.notifications.filter(read_at__isnull=True)[:10],
+            "selected_video_reactions": (
+                selected.video_reactions.select_related("clip", "playlist")[:12]
+                if selected and can_manage_video else []
+            ),
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
@@ -1061,9 +1116,11 @@ def discover_page(request):
     schedule_lock = _discover_lock(profile)
     clips = [] if schedule_lock else list(_active_discover_clips())
     source_playlists = [] if schedule_lock else list(_active_discover_playlists())
+    reaction_lookup = {} if schedule_lock else _discover_reaction_lookup(profile)
     favorites = set(profile.video_favorites.filter(clip__in=clips).values_list("clip_id", flat=True))
     for clip in clips:
-        clip.favorited = clip.pk in favorites
+        clip.reaction_value = reaction_lookup.get(clip.youtube_id, "")
+        clip.favorited = clip.reaction_value == VideoReaction.Value.LIKE or (not clip.reaction_value and clip.pk in favorites)
     return render(
         request,
         "rewards/discover_page.html",
@@ -1071,7 +1128,9 @@ def discover_page(request):
             "profile": profile,
             "clips": clips,
             "source_playlists": source_playlists,
+            "discover_items": _discover_feed_items(clips, source_playlists),
             "discover_lock": schedule_lock,
+            "reaction_lookup": reaction_lookup,
             "youtube_embed_origin": quote(f"{request.scheme}://{request.get_host()}", safe=""),
         },
     )
@@ -1098,13 +1157,73 @@ def discover_favorite(request, pk):
     if profile.role != Profile.Role.CHILD or profile.grounded or _discover_lock(profile):
         return JsonResponse({"error": "Discover is not available right now."}, status=403)
     clip = get_object_or_404(_active_discover_clips(), pk=pk)
-    favorite, created = VideoFavorite.objects.get_or_create(child=profile, clip=clip)
-    if not created:
-        favorite.delete()
-    payload = {"favorited": created}
+    reaction = _save_discover_reaction(
+        profile,
+        youtube_id=clip.youtube_id,
+        value=VideoReaction.Value.LIKE,
+        video_title=clip.title,
+        clip=clip,
+        playlist=clip.playlist,
+    )
+    if reaction:
+        _notify_family_viewers(
+            Notification.Kind.DISCOVER,
+            f"{profile.display_name} liked a Discover video",
+            f"{profile.display_name} liked {clip.title}.",
+        )
+    payload = {
+        "favorited": bool(reaction and reaction.value == VideoReaction.Value.LIKE),
+        "reaction": reaction.value if reaction else "",
+    }
     if request.headers.get("Accept") == "application/json":
         return JsonResponse(payload)
     return redirect("discover_page")
+
+
+@login_required
+@require_POST
+def discover_react(request):
+    profile = _profile(request)
+    if profile.role != Profile.Role.CHILD or profile.grounded or _discover_lock(profile):
+        return JsonResponse({"error": "Discover is not available right now."}, status=403)
+    value = request.POST.get("value", "")
+    if value not in VideoReaction.Value.values:
+        return JsonResponse({"error": "Choose a valid reaction."}, status=400)
+    clip = None
+    playlist = None
+    youtube_id = ""
+    video_title = ""
+    clip_id = request.POST.get("clip_id")
+    if clip_id:
+        clip = get_object_or_404(_active_discover_clips(), pk=clip_id)
+        playlist = clip.playlist
+        youtube_id = clip.youtube_id
+        video_title = clip.title
+    else:
+        playlist_id = request.POST.get("playlist_id")
+        youtube_id = (request.POST.get("youtube_id") or "").strip()
+        video_title = (request.POST.get("video_title") or "").strip()[:120]
+        if playlist_id:
+            playlist = get_object_or_404(_active_discover_playlists(), pk=playlist_id)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", youtube_id):
+            return JsonResponse({"error": "Choose a valid video first."}, status=400)
+        if not video_title:
+            return JsonResponse({"error": "Choose a valid video first."}, status=400)
+    reaction = _save_discover_reaction(
+        profile,
+        youtube_id=youtube_id,
+        value=value,
+        video_title=video_title,
+        clip=clip,
+        playlist=playlist,
+    )
+    if reaction:
+        _notify_family_viewers(
+            Notification.Kind.DISCOVER,
+            f"{profile.display_name} {reaction.get_value_display().lower()}d a Discover video",
+            f"{profile.display_name} {reaction.get_value_display().lower()}d {reaction.video_title}.",
+        )
+    return JsonResponse({"reaction": reaction.value if reaction else "", "active": bool(reaction)})
 
 
 @login_required
@@ -2394,12 +2513,11 @@ def acknowledge_rule(request, model, pk):
 @login_required
 @require_POST
 def read_notifications(request):
-    child = _profile(request)
-    if child.role == Profile.Role.CHILD:
-        visible_notice_ids = list(
-            child.notifications.filter(read_at__isnull=True).values_list("pk", flat=True)[:10]
-        )
-        child.notifications.filter(pk__in=visible_notice_ids).update(read_at=timezone.now())
+    profile = _profile(request)
+    visible_notice_ids = list(
+        profile.notifications.filter(read_at__isnull=True).values_list("pk", flat=True)[:10]
+    )
+    profile.notifications.filter(pk__in=visible_notice_ids).update(read_at=timezone.now())
     return redirect("dashboard")
 
 

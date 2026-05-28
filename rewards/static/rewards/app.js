@@ -249,8 +249,44 @@ const discoverFeed = document.querySelector("[data-discover-feed]");
 if (discoverFeed) {
   const slides = Array.from(discoverFeed.querySelectorAll("[data-discover-slide]"));
   const playlistPlayers = new Map();
+  const reactionState = (() => {
+    const reactionData = document.getElementById("discover-reaction-data");
+    if (!reactionData) return {};
+    try {
+      return JSON.parse(reactionData.textContent || "{}");
+    } catch (error) {
+      return {};
+    }
+  })();
   let activeSlide = null;
   let youtubeAPI;
+
+  function setReactionUI(form, value) {
+    if (!form) return;
+    form.classList.toggle("liked", value === "like");
+    form.classList.toggle("disliked", value === "dislike");
+    form.querySelectorAll("[data-reaction-value]").forEach((button) => {
+      const active = button.dataset.reactionValue === value;
+      button.classList.toggle("active", active);
+      const label = button.querySelector("span");
+      if (!label) return;
+      if (button.dataset.reactionValue === "like") label.textContent = active ? "Liked" : "Like";
+      else label.textContent = active ? "Disliked" : "Dislike";
+    });
+  }
+
+  function syncPlaylistReactionState(slide, player) {
+    const form = slide.querySelector("[data-playlist-reaction]");
+    if (!form || !player?.getVideoData) return;
+    const data = player.getVideoData() || {};
+    const youtubeId = data.video_id || "";
+    const videoTitle = data.title || slide.querySelector("[data-discover-playlist-mount]")?.dataset.playerTitle || "";
+    const youtubeField = form.querySelector('input[name="youtube_id"]');
+    const titleField = form.querySelector('input[name="video_title"]');
+    if (youtubeField) youtubeField.value = youtubeId;
+    if (titleField) titleField.value = videoTitle;
+    setReactionUI(form, reactionState[youtubeId] || "");
+  }
 
   function youtubePlayerAPI() {
     if (window.YT?.Player) return Promise.resolve(window.YT);
@@ -304,8 +340,12 @@ if (discoverFeed) {
             iframe.referrerPolicy = "strict-origin-when-cross-origin";
             iframe.allow = "autoplay; encrypted-media; picture-in-picture";
             event.target.setLoop(true);
+            syncPlaylistReactionState(slide, event.target);
             if (slide === activeSlide) event.target.playVideo();
             resolve(event.target);
+          },
+          onStateChange(event) {
+            syncPlaylistReactionState(slide, event.target);
           },
         },
       });
@@ -355,14 +395,6 @@ if (discoverFeed) {
 
   function moveDiscover(direction) {
     if (!activeSlide) return;
-    if (activeSlide.hasAttribute("data-discover-playlist")) {
-      playlistPlayer(activeSlide).then((player) => {
-        player.setLoop(true);
-        if (direction === "next") player.nextVideo();
-        else player.previousVideo();
-      });
-      return;
-    }
     const activeIndex = slides.indexOf(activeSlide);
     const target = slides[activeIndex + (direction === "next" ? 1 : -1)];
     if (target) target.scrollIntoView({behavior: "smooth", block: "start"});
@@ -403,22 +435,35 @@ if (discoverFeed) {
     }, 30000);
   }
 
-  discoverFeed.querySelectorAll("[data-discover-favorite]").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      try {
-        const response = await fetch(form.action, {
-          method: "POST",
-          headers: {"X-CSRFToken": cookieValue("csrftoken"), "Accept": "application/json"},
-        });
-        if (!response.ok) throw new Error("favorite rejected");
-        const result = await response.json();
-        form.classList.toggle("liked", result.favorited);
-        const label = form.querySelector("span");
-        if (label) label.textContent = result.favorited ? "Liked" : "Like";
-      } catch (error) {
-        toast("Could not update that favorite right now.");
-      }
+  discoverFeed.querySelectorAll("[data-discover-reaction]").forEach((form) => {
+    setReactionUI(form, form.classList.contains("liked") ? "like" : form.classList.contains("disliked") ? "dislike" : "");
+    form.querySelectorAll("[data-reaction-value]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const youtubeIdField = form.querySelector('input[name="youtube_id"]');
+        if (youtubeIdField && !youtubeIdField.value) {
+          toast("Wait for the video to load before reacting.");
+          return;
+        }
+        try {
+          const requestData = new FormData(form);
+          requestData.set("value", button.dataset.reactionValue);
+          const response = await fetch(form.action, {
+            method: "POST",
+            headers: {"X-CSRFToken": cookieValue("csrftoken"), "Accept": "application/json"},
+            body: requestData,
+          });
+          if (!response.ok) throw new Error("reaction rejected");
+          const result = await response.json();
+          const youtubeId = youtubeIdField?.value || "";
+          if (youtubeId) {
+            if (result.reaction) reactionState[youtubeId] = result.reaction;
+            else delete reactionState[youtubeId];
+          }
+          setReactionUI(form, result.reaction || "");
+        } catch (error) {
+          toast("Could not update that reaction right now.");
+        }
+      });
     });
   });
 }

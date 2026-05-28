@@ -33,6 +33,7 @@ from .models import (
     VideoClip,
     VideoFavorite,
     VideoPlaylist,
+    VideoReaction,
     VideoWatchEvent,
     Wallet,
 )
@@ -764,6 +765,7 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(response, "origin=http%3A%2F%2Ftestserver")
         self.assertContains(response, "data-discover-prev")
         self.assertContains(response, "data-discover-next")
+        self.assertContains(response, "data-discover-reaction")
         self.assertContains(response, "Back")
         self.assertContains(response, "Home")
         self.assertNotContains(response, "Paused video")
@@ -776,11 +778,68 @@ class LedgerApprovalTests(TestCase):
         self.assertTrue(favorite.json()["favorited"])
         self.assertTrue(VideoWatchEvent.objects.filter(child=self.child, clip=clip).exists())
         self.assertTrue(VideoFavorite.objects.filter(child=self.child, clip=clip).exists())
+        self.assertTrue(VideoReaction.objects.filter(child=self.child, youtube_id=clip.youtube_id, value=VideoReaction.Value.LIKE).exists())
         sibling_user = User.objects.create_user(username="sibling", password="test")
         sibling = Profile.objects.create(user=sibling_user, display_name="Sibling", role=Profile.Role.CHILD)
         Wallet.objects.create(child=sibling)
         self.client.force_login(sibling_user)
         self.assertContains(self.client.get(reverse("discover_page")), "Explore the Moon")
+
+    def test_discover_reactions_notify_guardians_and_can_be_marked_read(self):
+        playlist = VideoPlaylist.objects.create(title="Ocean Life", created_by=self.guardian)
+        clip = VideoClip.objects.create(
+            playlist=playlist,
+            youtube_id="dQw4w9WgXcQ",
+            title="Deep sea explorers",
+            position=1,
+            added_by=self.guardian,
+        )
+        self.client.force_login(self.child.user)
+
+        reaction = self.client.post(
+            reverse("discover_react"),
+            {"clip_id": clip.pk, "youtube_id": clip.youtube_id, "video_title": clip.title, "value": "dislike"},
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(reaction.json()["reaction"], "dislike")
+        self.assertTrue(VideoReaction.objects.filter(child=self.child, youtube_id=clip.youtube_id, value=VideoReaction.Value.DISLIKE).exists())
+        guardian_notice = Notification.objects.get(recipient=self.guardian, kind=Notification.Kind.DISCOVER)
+        self.assertIn("disliked", guardian_notice.title)
+
+        self.client.force_login(self.guardian.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Parent notifications")
+        self.assertContains(dashboard, "Deep sea explorers")
+
+        self.client.post(reverse("read_notifications"))
+        guardian_notice.refresh_from_db()
+        self.assertIsNotNone(guardian_notice.read_at)
+
+    def test_discover_reactions_support_playlist_videos_without_saved_clips(self):
+        playlist = VideoPlaylist.objects.create(
+            title="Science Picks",
+            youtube_playlist_id="PL1234567890science",
+            created_by=self.guardian,
+        )
+        self.client.force_login(self.child.user)
+
+        reaction = self.client.post(
+            reverse("discover_react"),
+            {
+                "playlist_id": playlist.pk,
+                "youtube_id": "M7lc1UVf-VE",
+                "video_title": "Volcano facts",
+                "value": "like",
+            },
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(reaction.json()["reaction"], "like")
+        stored_reaction = VideoReaction.objects.get(child=self.child, youtube_id="M7lc1UVf-VE")
+        self.assertEqual(stored_reaction.playlist, playlist)
+        self.assertIsNone(stored_reaction.clip)
+        self.assertEqual(stored_reaction.value, VideoReaction.Value.LIKE)
 
     def test_grounding_and_discover_schedule_each_lock_the_child_feed(self):
         playlist = VideoPlaylist.objects.create(title="Cooking Fun", created_by=self.guardian)

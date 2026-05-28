@@ -29,6 +29,7 @@ urlpatterns = [
     path("wallet/", views.wallet_page, name="wallet_page"),
     path("discover/", views.discover_page, name="discover_page"),
     path("discover/status/", views.discover_status, name="discover_status"),
+    path("discover/react/", views.discover_react, name="discover_react"),
     path("discover/<int:pk>/favorite/", views.discover_favorite, name="discover_favorite"),
     path("discover/<int:pk>/watch/", views.discover_watch, name="discover_watch"),
     path("shopping/", views.shopping_page, name="shopping_page"),

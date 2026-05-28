@@ -509,6 +509,31 @@ class VideoWatchEvent(models.Model):
         ordering = ["-last_watched_at"]
 
 
+class VideoReaction(models.Model):
+    class Value(models.TextChoices):
+        LIKE = "like", "Like"
+        DISLIKE = "dislike", "Dislike"
+
+    child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="video_reactions")
+    clip = models.ForeignKey(VideoClip, null=True, blank=True, on_delete=models.SET_NULL, related_name="reactions")
+    playlist = models.ForeignKey(VideoPlaylist, null=True, blank=True, on_delete=models.SET_NULL, related_name="reactions")
+    youtube_id = models.CharField(max_length=11)
+    video_title = models.CharField(max_length=120)
+    value = models.CharField(max_length=8, choices=Value.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        if self.child_id and self.child.role != Profile.Role.CHILD:
+            raise ValidationError("Only child accounts may react to Discover videos.")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["child", "youtube_id"], name="one_video_reaction_per_child_video")
+        ]
+        ordering = ["-updated_at"]
+
+
 class BehaviorStar(models.Model):
     child = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="behavior_stars")
     awarded_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="stars_awarded")

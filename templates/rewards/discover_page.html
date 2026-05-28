@@ -16,57 +16,77 @@
       <p>Your family schedule closes videos during this time. Come back when viewing hours open again.</p>
       <a href="{% url 'dashboard' %}">Return Home</a>
     </section>
-  {% elif source_playlists or clips %}
+  {% elif discover_items %}
     <div class="discover-reels" aria-label="Parent approved videos">
-      {% for playlist in source_playlists %}
+      {% for item in discover_items %}
+      {% if item.kind == "playlist" %}
       <article class="discover-reel" data-discover-slide data-discover-playlist>
         <div class="discover-player">
           <div
             class="discover-playlist-mount"
-            id="discover-playlist-{{ playlist.pk }}"
+            id="discover-playlist-{{ item.playlist.pk }}"
             data-discover-playlist-mount
-            data-playlist-id="{{ playlist.youtube_playlist_id }}"
-            data-player-title="{{ playlist.title }}"></div>
+            data-playlist-id="{{ item.playlist.youtube_playlist_id }}"
+            data-player-title="{{ item.playlist.title }}"
+            data-playlist-pk="{{ item.playlist.pk }}"></div>
         </div>
         <div class="discover-shade"></div>
         <div class="discover-video-copy">
           <span>Playlist</span>
-          <h1>{{ playlist.title }}</h1>
-          <p>{{ playlist.description|default:"Approved by your family" }}</p>
+          <h1>{{ item.playlist.title }}</h1>
+          <p>{{ item.playlist.description|default:"Approved by your family" }}</p>
         </div>
-        <div class="discover-swipe-hint">Tap arrows to move through this playlist</div>
+        <form class="discover-reactions" method="post" action="{% url 'discover_react' %}" data-discover-reaction data-playlist-reaction>
+          {% csrf_token %}
+          <input type="hidden" name="playlist_id" value="{{ item.playlist.pk }}">
+          <input type="hidden" name="youtube_id" value="">
+          <input type="hidden" name="video_title" value="">
+          <button type="button" class="discover-reaction-button" data-reaction-value="like" aria-label="Like current video">
+            <b>&#9829;</b><span>Like</span>
+          </button>
+          <button type="button" class="discover-reaction-button dislike" data-reaction-value="dislike" aria-label="Dislike current video">
+            <b>&#128078;</b><span>Dislike</span>
+          </button>
+        </form>
+        <div class="discover-swipe-hint">Scroll for more approved videos</div>
       </article>
-      {% endfor %}
-      {% for clip in clips %}
-      <article class="discover-reel" data-discover-slide data-watch-url="{% url 'discover_watch' clip.pk %}">
+      {% else %}
+      <article class="discover-reel" data-discover-slide data-watch-url="{% url 'discover_watch' item.clip.pk %}">
         <div class="discover-player">
           <iframe
-            title="{{ clip.title }}"
+            title="{{ item.clip.title }}"
             data-discover-player
-            data-src="https://www.youtube.com/embed/{{ clip.youtube_id }}?enablejsapi=1&amp;origin={{ youtube_embed_origin }}&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;iv_load_policy=3&amp;autoplay=1&amp;mute=1"
+            data-src="https://www.youtube.com/embed/{{ item.clip.youtube_id }}?enablejsapi=1&amp;origin={{ youtube_embed_origin }}&amp;playsinline=1&amp;controls=1&amp;rel=0&amp;fs=0&amp;iv_load_policy=3&amp;autoplay=1&amp;mute=1"
             allow="autoplay; encrypted-media; picture-in-picture"
             referrerpolicy="strict-origin-when-cross-origin"
             allowfullscreen></iframe>
         </div>
         <div class="discover-shade"></div>
         <div class="discover-video-copy">
-          {% if clip.subject_tag %}<span>{{ clip.subject_tag }}</span>{% endif %}
-          <h1>{{ clip.title }}</h1>
-          <p>{{ clip.playlist.title }} &middot; Approved by your family</p>
+          {% if item.clip.subject_tag %}<span>{{ item.clip.subject_tag }}</span>{% endif %}
+          <h1>{{ item.clip.title }}</h1>
+          <p>{{ item.clip.playlist.title }} &middot; Approved by your family</p>
         </div>
-        <form class="discover-favorite {% if clip.favorited %}liked{% endif %}" method="post" action="{% url 'discover_favorite' clip.pk %}" data-discover-favorite>
+        <form class="discover-reactions {% if item.clip.reaction_value == 'like' %}liked{% elif item.clip.reaction_value == 'dislike' %}disliked{% endif %}" method="post" action="{% url 'discover_react' %}" data-discover-reaction>
           {% csrf_token %}
-          <button type="submit" aria-label="{% if clip.favorited %}Remove favorite{% else %}Favorite video{% endif %}">
-            <b>&#9829;</b><span>{% if clip.favorited %}Liked{% else %}Like{% endif %}</span>
+          <input type="hidden" name="clip_id" value="{{ item.clip.pk }}">
+          <input type="hidden" name="youtube_id" value="{{ item.clip.youtube_id }}">
+          <input type="hidden" name="video_title" value="{{ item.clip.title }}">
+          <button type="button" class="discover-reaction-button" data-reaction-value="like" aria-label="Like video">
+            <b>&#9829;</b><span>{% if item.clip.reaction_value == 'like' %}Liked{% else %}Like{% endif %}</span>
+          </button>
+          <button type="button" class="discover-reaction-button dislike" data-reaction-value="dislike" aria-label="Dislike video">
+            <b>&#128078;</b><span>{% if item.clip.reaction_value == 'dislike' %}Disliked{% else %}Dislike{% endif %}</span>
           </button>
         </form>
-        <div class="discover-swipe-hint">Swipe for the next video</div>
+        <div class="discover-swipe-hint">Scroll for the next video</div>
       </article>
+      {% endif %}
       {% endfor %}
     </div>
     <nav class="discover-step-controls" aria-label="Video navigation">
-      <button type="button" data-discover-prev aria-label="Previous video"><span>&uarr;</span></button>
-      <button type="button" data-discover-next aria-label="Next video"><span>&darr;</span></button>
+      <button type="button" data-discover-prev aria-label="Scroll to previous video"><span>&uarr;</span></button>
+      <button type="button" data-discover-next aria-label="Scroll to next video"><span>&darr;</span></button>
     </nav>
   {% else %}
     <section class="discover-unavailable empty-feed">
@@ -78,4 +98,5 @@
     </section>
   {% endif %}
 </main>
+{{ reaction_lookup|json_script:"discover-reaction-data" }}
 {% endblock %}
