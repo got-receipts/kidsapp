@@ -9,18 +9,31 @@
       <strong>{{ recipient.display_name }}</strong>
       <small>{{ recipient.get_role_display }}</small>
     </div>
-    <a class="ios-home-link" href="{% url 'dashboard' %}">Home</a>
+    <div class="ios-thread-actions">
+      <details class="ios-call-menu">
+        <summary aria-label="Call options for {{ recipient.display_name }}">
+          <span class="ios-call-symbol">&#128222;</span>
+        </summary>
+        <div class="ios-call-menu-sheet">
+          {% if livekit_configured and not calling_lock %}
+            <form method="post" action="{% url 'start_family_call' recipient.pk 'audio' %}">
+              {% csrf_token %}
+              <button type="submit"><b>&#9742;</b><span>Voice Call</span></button>
+            </form>
+            <form method="post" action="{% url 'start_family_call' recipient.pk 'video' %}">
+              {% csrf_token %}
+              <button type="submit"><b>&#128249;</b><span>Video Call</span></button>
+            </form>
+          {% elif calling_lock %}
+            <div class="ios-call-menu-note">Calls locked by schedule</div>
+          {% else %}
+            <div class="ios-call-menu-note">Calling setup pending</div>
+          {% endif %}
+        </div>
+      </details>
+      <a class="ios-home-link" href="{% url 'dashboard' %}">Home</a>
+    </div>
   </header>
-  <nav class="ios-call-actions" aria-label="Call {{ recipient.display_name }}">
-    {% if livekit_configured and not calling_lock %}
-      <form method="post" action="{% url 'start_family_call' recipient.pk 'audio' %}">{% csrf_token %}<button type="submit" aria-label="Audio call {{ recipient.display_name }}">&#9742; Audio</button></form>
-      <form method="post" action="{% url 'start_family_call' recipient.pk 'video' %}">{% csrf_token %}<button type="submit" aria-label="Video call {{ recipient.display_name }}">&#128247; Video</button></form>
-    {% elif calling_lock %}
-      <span>Calls locked by schedule</span>
-    {% else %}
-      <span>Calling setup pending</span>
-    {% endif %}
-  </nav>
   {% if call_allowance and not calling_lock %}
   <p class="ios-call-budget">
     {% if call_allowance.calls_free_now %}
