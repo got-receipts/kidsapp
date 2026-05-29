@@ -90,24 +90,20 @@
     <form class="ios-composer" method="post" enctype="multipart/form-data" action="{% url 'message_thread' recipient.pk %}" data-message-composer>
       {% csrf_token %}
       <details class="ios-compose-menu" data-compose-menu>
-        <summary class="ios-attachment-picker" aria-label="Add a photo, video, or audio recording">
+        <summary class="ios-attachment-picker" aria-label="Add a photo or video">
           <span>+</span>
         </summary>
         <div class="ios-compose-menu-sheet">
           <button type="button" class="ios-compose-action" data-attachment-target="media" aria-label="Add photo or video">
             <span aria-hidden="true">&#128247;</span>
           </button>
-          <button type="button" class="ios-compose-action" data-attachment-target="audio" aria-label="Add audio recording">
-            <span aria-hidden="true">&#127908;</span>
-          </button>
         </div>
       </details>
       {{ message_form.body }}
       <input id="id_attachment_media" name="attachment" type="file" accept="image/*,video/*" hidden>
-      <input id="id_attachment_audio" name="attachment" type="file" accept="audio/*" hidden>
       <button type="submit" aria-label="Send message">&uarr;</button>
     </form>
-    <p class="ios-composer-note">Use + for photos, videos, and audio recordings.</p>
+    <p class="ios-composer-note">Use + for photos and videos.</p>
   {% endif %}
 </main>
 {% endblock %}
