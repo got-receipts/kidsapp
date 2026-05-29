@@ -8,6 +8,7 @@ urlpatterns = [
     path("apps/<str:section>/", views.child_section, name="child_section"),
     path("messages/", views.messages_inbox, name="messages_inbox"),
     path("messages/<int:recipient_pk>/", views.message_thread, name="message_thread"),
+    path("messages/attachment/<int:pk>/", views.message_attachment, name="message_attachment"),
     path("calls/incoming/", views.incoming_call_status, name="incoming_call_status"),
     path("calls/start/<int:recipient_pk>/<str:call_type>/", views.start_family_call, name="start_family_call"),
     path("calls/<int:pk>/", views.call_room, name="call_room"),

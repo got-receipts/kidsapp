@@ -1,5 +1,6 @@
 import re
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from django import forms
@@ -221,9 +222,33 @@ class GroundingForm(forms.Form):
 
 
 class FamilyMessageForm(forms.ModelForm):
+    MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+    ATTACHMENT_RULES = {
+        "photo": {
+            "mime_prefixes": ("image/",),
+            "mime_types": {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"},
+            "extensions": {"jpg", "jpeg", "png", "webp", "heic", "heif"},
+        },
+        "gif": {
+            "mime_prefixes": tuple(),
+            "mime_types": {"image/gif"},
+            "extensions": {"gif"},
+        },
+        "video": {
+            "mime_prefixes": ("video/",),
+            "mime_types": {"application/octet-stream"},
+            "extensions": {"mp4", "mov", "m4v", "webm", "mpeg", "mpg", "3gp", "quicktime"},
+        },
+        "audio": {
+            "mime_prefixes": ("audio/",),
+            "mime_types": {"application/octet-stream"},
+            "extensions": {"m4a", "aac", "mp3", "wav", "ogg", "webm", "mp4"},
+        },
+    }
+
     class Meta:
         model = FamilyMessage
-        fields = ["body"]
+        fields = ["body", "attachment", "gif_url"]
         widgets = {
             "body": forms.Textarea(
                 attrs={
@@ -232,14 +257,100 @@ class FamilyMessageForm(forms.ModelForm):
                     "placeholder": "iMessage",
                     "aria-label": "Message",
                 }
-            )
+            ),
+            "attachment": forms.ClearableFileInput(
+                attrs={
+                    "accept": "image/*,video/*,audio/*",
+                }
+            ),
+            "gif_url": forms.URLInput(
+                attrs={
+                    "placeholder": "Paste a GIF link",
+                    "inputmode": "url",
+                    "autocomplete": "off",
+                }
+            ),
         }
 
     def clean_body(self):
-        body = self.cleaned_data["body"].strip()
-        if not body:
-            raise forms.ValidationError("Write a message before sending.")
+        body = (self.cleaned_data.get("body") or "").strip()
         return body
+
+    def clean(self):
+        cleaned = super().clean()
+        body = cleaned.get("body") or ""
+        attachment = cleaned.get("attachment")
+        gif_url = self._normalize_gif_url(cleaned.get("gif_url") or "")
+        cleaned["gif_url"] = gif_url
+        if attachment and gif_url:
+            raise forms.ValidationError("Choose a file or a GIF link, not both in the same message.")
+        if not body and not attachment and not gif_url:
+            raise forms.ValidationError("Write a message or choose a photo, GIF, video, or audio recording.")
+        if attachment:
+            cleaned["attachment_kind"] = self._detect_attachment_kind(attachment)
+            cleaned["attachment_name"] = attachment.name[:120]
+            cleaned["attachment_mime"] = (getattr(attachment, "content_type", "") or "").lower()[:80]
+        elif gif_url:
+            cleaned["attachment_kind"] = FamilyMessage.AttachmentKind.GIF
+            cleaned["attachment_name"] = "GIF"
+            cleaned["attachment_mime"] = "image/gif"
+        return cleaned
+
+    def save(self, commit=True):
+        message = super().save(commit=False)
+        attachment = self.cleaned_data.get("attachment")
+        if attachment:
+            message.attachment_kind = self.cleaned_data["attachment_kind"]
+            message.attachment_name = self.cleaned_data["attachment_name"]
+            message.attachment_mime = self.cleaned_data["attachment_mime"]
+            message.gif_url = ""
+        elif self.cleaned_data.get("gif_url"):
+            message.attachment_kind = self.cleaned_data["attachment_kind"]
+            message.attachment_name = self.cleaned_data["attachment_name"]
+            message.attachment_mime = self.cleaned_data["attachment_mime"]
+            message.gif_url = self.cleaned_data["gif_url"]
+        else:
+            message.attachment_kind = ""
+            message.attachment_name = ""
+            message.attachment_mime = ""
+            message.gif_url = ""
+        if commit:
+            message.save()
+        return message
+
+    def _detect_attachment_kind(self, attachment):
+        content_type = (getattr(attachment, "content_type", "") or "").lower()
+        extension = Path(attachment.name).suffix.lower().lstrip(".")
+        if getattr(attachment, "size", 0) > self.MAX_ATTACHMENT_BYTES:
+            raise forms.ValidationError("Attachments must be 25 MB or smaller.")
+        for kind, rule in self.ATTACHMENT_RULES.items():
+            if content_type in rule["mime_types"] or extension in rule["extensions"]:
+                return kind
+            if any(content_type.startswith(prefix) for prefix in rule["mime_prefixes"]):
+                if kind == "photo" and extension == "gif":
+                    continue
+                return kind
+        raise forms.ValidationError("Choose a photo, GIF, video, or audio recording supported by your device.")
+
+    def _normalize_gif_url(self, raw_url):
+        url = (raw_url or "").strip()
+        if not url:
+            return ""
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise forms.ValidationError("Paste a full GIF link starting with http:// or https://.")
+        hostname = (parsed.hostname or "").lower().removeprefix("www.")
+        path = parsed.path.lower()
+        if path.endswith(".gif"):
+            return url
+        if hostname == "giphy.com":
+            slug = path.rstrip("/").split("/")[-1]
+            giphy_id = slug.rsplit("-", 1)[-1] if slug else ""
+            if giphy_id:
+                return f"https://media.giphy.com/media/{giphy_id}/giphy.gif"
+        if hostname in {"media.giphy.com", "i.giphy.com"}:
+            return url
+        raise forms.ValidationError("Paste a direct GIF image link or a public Giphy share link.")
 
 
 class CommunicationScheduleForm(forms.ModelForm):

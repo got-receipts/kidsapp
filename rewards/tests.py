@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from .models import (
     AuditLog,
@@ -971,6 +972,55 @@ class LedgerApprovalTests(TestCase):
         self.assertContains(dashboard, "Messages")
         self.client.post(reverse("message_thread", args=[self.child.pk]), {"body": "Hi back!"})
         self.assertTrue(FamilyMessage.objects.filter(sender=mom, recipient=self.child, body="Hi back!").exists())
+
+    def test_message_thread_accepts_photo_video_audio_and_gif_link_attachments(self):
+        mom_user = User.objects.create_user(username="mom_media", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        self.client.force_login(self.child.user)
+
+        uploads = [
+            ("photo", SimpleUploadedFile("photo.jpg", b"photo-bytes", content_type="image/jpeg")),
+            ("video", SimpleUploadedFile("clip.mp4", b"video-bytes", content_type="video/mp4")),
+            ("audio", SimpleUploadedFile("memo.m4a", b"audio-bytes", content_type="audio/mp4")),
+        ]
+
+        for expected_kind, upload in uploads:
+            response = self.client.post(reverse("message_thread", args=[mom.pk]), {"body": "", "attachment": upload})
+            self.assertRedirects(response, reverse("message_thread", args=[mom.pk]))
+            message = FamilyMessage.objects.filter(sender=self.child, recipient=mom).latest("created_at")
+            self.assertEqual(message.attachment_kind, expected_kind)
+            self.assertTrue(message.attachment)
+
+        gif_response = self.client.post(
+            reverse("message_thread", args=[mom.pk]),
+            {"body": "", "gif_url": "https://giphy.com/gifs/funny-cat-3oriO0OEd9QIDdllqo"},
+        )
+        self.assertRedirects(gif_response, reverse("message_thread", args=[mom.pk]))
+        gif_message = FamilyMessage.objects.filter(sender=self.child, recipient=mom).latest("created_at")
+        self.assertEqual(gif_message.attachment_kind, FamilyMessage.AttachmentKind.GIF)
+        self.assertEqual(gif_message.gif_url, "https://media.giphy.com/media/3oriO0OEd9QIDdllqo/giphy.gif")
+        self.assertFalse(gif_message.attachment)
+
+        inbox = self.client.get(reverse("messages_inbox"))
+        self.assertContains(inbox, "Sent a GIF")
+
+    def test_message_attachment_requires_thread_participation(self):
+        mom_user = User.objects.create_user(username="mom_secure", password="test")
+        mom = Profile.objects.create(user=mom_user, display_name="Mom", role=Profile.Role.VIEWER)
+        outsider_user = User.objects.create_user(username="uncle", password="test")
+        outsider = Profile.objects.create(user=outsider_user, display_name="Uncle", role=Profile.Role.VIEWER)
+        message = FamilyMessage.objects.create(
+            sender=self.child,
+            recipient=mom,
+            attachment=SimpleUploadedFile("photo.jpg", b"photo-bytes", content_type="image/jpeg"),
+            attachment_kind=FamilyMessage.AttachmentKind.PHOTO,
+            attachment_name="photo.jpg",
+            attachment_mime="image/jpeg",
+        )
+
+        self.client.force_login(outsider.user)
+        response = self.client.get(reverse("message_attachment", args=[message.pk]))
+        self.assertEqual(response.status_code, 404)
 
     def test_dad_can_hide_contact_and_messages_from_child(self):
         mom_user = User.objects.create_user(username="mom", password="test")

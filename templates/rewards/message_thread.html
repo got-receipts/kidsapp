@@ -49,7 +49,31 @@
   <section class="ios-chat-window" data-message-thread aria-label="Conversation with {{ recipient.display_name }}">
     {% for message in thread_messages %}
       <div class="ios-bubble-row {% if message.sender_id == profile.pk %}outgoing{% else %}incoming{% endif %}">
-        <div class="ios-bubble">{{ message.body|linebreaksbr }}</div>
+        <div class="ios-bubble {% if message.has_attachment %}has-attachment{% endif %}">
+          {% if message.attachment_kind == 'gif' and message.gif_url %}
+            <a class="ios-attachment-link" href="{{ message.gif_url }}" target="_blank" rel="noreferrer">
+              <img class="ios-attachment-image" src="{{ message.rendered_gif_url }}" alt="Shared GIF">
+            </a>
+          {% elif message.attachment_kind == 'photo' %}
+            <a class="ios-attachment-link" href="{% url 'message_attachment' message.pk %}" target="_blank" rel="noreferrer">
+              <img class="ios-attachment-image" src="{% url 'message_attachment' message.pk %}" alt="{{ message.attachment_name|default:'Shared image' }}">
+            </a>
+          {% elif message.attachment_kind == 'video' %}
+            <video class="ios-attachment-video" controls preload="metadata">
+              <source src="{% url 'message_attachment' message.pk %}" type="{{ message.attachment_mime|default:'video/mp4' }}">
+            </video>
+          {% elif message.attachment_kind == 'audio' %}
+            <audio class="ios-attachment-audio" controls preload="metadata">
+              <source src="{% url 'message_attachment' message.pk %}" type="{{ message.attachment_mime|default:'audio/mpeg' }}">
+            </audio>
+          {% endif %}
+          {% if message.body %}<div class="ios-bubble-copy">{{ message.body|linebreaksbr }}</div>{% endif %}
+          {% if message.has_attachment and message.attachment_kind == 'audio' and not message.body %}
+            <div class="ios-attachment-caption">Audio recording</div>
+          {% elif message.has_attachment and not message.body %}
+            <div class="ios-attachment-caption">{{ message.get_attachment_kind_display }}</div>
+          {% endif %}
+        </div>
         <time>{{ message.created_at|date:"M j, g:i A" }}{% if message.sender_id == profile.pk and message.read_at %} &middot; Read{% endif %}</time>
       </div>
     {% empty %}
@@ -63,11 +87,27 @@
   {% if messaging_lock %}
     <p class="communication-lock-note composer-locked">Messaging is locked by your family schedule right now. You can still read earlier messages.</p>
   {% else %}
-    <form class="ios-composer" method="post" action="{% url 'message_thread' recipient.pk %}">
+    <form class="ios-composer" method="post" enctype="multipart/form-data" action="{% url 'message_thread' recipient.pk %}" data-message-composer>
       {% csrf_token %}
       {{ message_form.body }}
+      <details class="ios-compose-menu" data-compose-menu>
+        <summary class="ios-attachment-picker" aria-label="Add a photo, video, audio recording, or GIF">
+          <span>+</span>
+        </summary>
+        <div class="ios-compose-menu-sheet">
+          <button type="button" data-attachment-target="media">Photo/Video</button>
+          <button type="button" data-attachment-target="audio">Audio</button>
+          <button type="button" data-gif-link-toggle>GIF</button>
+        </div>
+      </details>
+      <input id="id_attachment_media" name="attachment" type="file" accept="image/*,video/*" hidden>
+      <input id="id_attachment_audio" name="attachment" type="file" accept="audio/*" hidden>
+      <div class="ios-gif-link-panel{% if message_form.gif_url.value %} active{% endif %}" data-gif-link-panel>
+        {{ message_form.gif_url }}
+      </div>
       <button type="submit" aria-label="Send message">&uarr;</button>
     </form>
+    <p class="ios-composer-note">Use + for photo/video, audio, or a GIF link. GIFs currently use direct GIF or Giphy links.</p>
   {% endif %}
 </main>
 {% endblock %}

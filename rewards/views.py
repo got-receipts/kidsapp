@@ -12,7 +12,7 @@ from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Case, F, IntegerField, Max, Q, Sum, When
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.utils import timezone
@@ -810,7 +810,7 @@ def message_thread(request, recipient_pk):
     calling_lock = _communication_lock(profile, CommunicationSchedule.Feature.CALLING)
     profile.received_family_messages.filter(sender=recipient, read_at__isnull=True).update(read_at=timezone.now())
     if request.method == "POST":
-        form = FamilyMessageForm(request.POST)
+        form = FamilyMessageForm(request.POST, request.FILES)
         if messaging_lock:
             messages.error(request, "Messaging is locked by your family schedule right now.")
         elif form.is_valid():
@@ -818,10 +818,11 @@ def message_thread(request, recipient_pk):
             message.sender = profile
             message.recipient = recipient
             message.save()
-            _notify(recipient, Notification.Kind.MESSAGE, f"Message from {profile.display_name}", message.body)
+            _notify(recipient, Notification.Kind.MESSAGE, f"Message from {profile.display_name}", message.preview_text)
             return redirect("message_thread", recipient_pk=recipient.pk)
         else:
-            messages.error(request, "Write a message before sending.")
+            first_error = next(iter(form.errors.values()))[0] if form.errors else "Send a message or choose an attachment."
+            messages.error(request, first_error)
     else:
         form = FamilyMessageForm()
     return render(
@@ -840,6 +841,25 @@ def message_thread(request, recipient_pk):
             "call_allowance": _child_call_allowance(profile),
         },
     )
+
+
+@login_required
+@require_http_methods(["GET"])
+def message_attachment(request, pk):
+    profile = _profile(request)
+    message = get_object_or_404(FamilyMessage.objects.select_related("sender", "recipient"), pk=pk)
+    if profile.pk not in {message.sender_id, message.recipient_id}:
+        raise Http404
+    if profile.role == Profile.Role.CHILD:
+        other_party = message.recipient if message.sender_id == profile.pk else message.sender
+        if HiddenMessageContact.objects.filter(child=profile, contact=other_party).exists():
+            raise Http404
+    if not message.attachment:
+        raise Http404
+    response = FileResponse(message.attachment.open("rb"), content_type=message.attachment_mime or None)
+    filename = message.attachment_name or message.attachment.name.rsplit("/", 1)[-1]
+    response["Content-Disposition"] = f'inline; filename="{filename}"'
+    return response
 
 
 @login_required

@@ -35,7 +35,7 @@
           <strong>{{ contact.display_name }}</strong>
           <small>{{ contact.get_role_display }}</small>
           {% if contact.last_message %}
-            <p>{% if contact.last_message.sender_id == profile.pk %}You: {% endif %}{{ contact.last_message.body|truncatechars:52 }}</p>
+            <p>{% if contact.last_message.sender_id == profile.pk %}You: {% endif %}{{ contact.last_message.preview_text|truncatechars:52 }}</p>
           {% else %}
             <p>Start a conversation</p>
           {% endif %}

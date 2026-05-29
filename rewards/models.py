@@ -1,5 +1,6 @@
 from datetime import time
 import uuid
+from urllib.parse import urlparse
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -825,16 +826,74 @@ class HiddenMessageContact(models.Model):
         ordering = ["contact__display_name"]
 
 
+def family_message_attachment_upload_to(instance, filename):
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    return f"messages/{instance.sender_id or 'unknown'}/{uuid.uuid4().hex}.{extension}"
+
+
 class FamilyMessage(models.Model):
+    class AttachmentKind(models.TextChoices):
+        PHOTO = "photo", "Photo"
+        GIF = "gif", "GIF"
+        VIDEO = "video", "Video"
+        AUDIO = "audio", "Audio"
+
     sender = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="sent_family_messages")
     recipient = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="received_family_messages")
-    body = models.TextField(max_length=1000)
+    body = models.TextField(max_length=1000, blank=True)
+    attachment = models.FileField(upload_to=family_message_attachment_upload_to, blank=True)
+    gif_url = models.URLField(blank=True)
+    attachment_kind = models.CharField(max_length=10, choices=AttachmentKind.choices, blank=True)
+    attachment_name = models.CharField(max_length=120, blank=True)
+    attachment_mime = models.CharField(max_length=80, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     read_at = models.DateTimeField(null=True, blank=True)
 
     def clean(self):
         if self.sender_id and self.sender_id == self.recipient_id:
             raise ValidationError("You cannot send a message to yourself.")
+        if not (self.body or self.attachment or self.gif_url):
+            raise ValidationError("Send a message or choose an attachment.")
+        if self.attachment and not self.attachment_kind:
+            raise ValidationError("Choose a supported attachment type.")
+        if self.gif_url and self.attachment_kind != self.AttachmentKind.GIF:
+            raise ValidationError("GIF links must use the GIF attachment type.")
+        if self.attachment_kind and not (self.attachment or self.gif_url):
+            raise ValidationError("Attachment details require a file or GIF link.")
+
+    @property
+    def has_attachment(self):
+        return bool(self.attachment or self.gif_url)
+
+    @property
+    def rendered_gif_url(self):
+        if not self.gif_url:
+            return ""
+        parsed = urlparse(self.gif_url)
+        hostname = (parsed.hostname or "").lower().removeprefix("www.")
+        if hostname in {"giphy.com", "media.giphy.com", "i.giphy.com"}:
+            parts = [part for part in parsed.path.split("/") if part]
+            if "media" in parts:
+                media_index = parts.index("media")
+                if len(parts) > media_index + 1:
+                    return f"https://media.giphy.com/media/{parts[media_index + 1]}/giphy.gif"
+            slug = parts[-1] if parts else ""
+            giphy_id = slug.rsplit("-", 1)[-1] if slug else ""
+            if giphy_id:
+                return f"https://media.giphy.com/media/{giphy_id}/giphy.gif"
+        return self.gif_url
+
+    @property
+    def preview_text(self):
+        if self.body:
+            return self.body
+        labels = {
+            self.AttachmentKind.PHOTO: "Sent a photo",
+            self.AttachmentKind.GIF: "Sent a GIF",
+            self.AttachmentKind.VIDEO: "Sent a video",
+            self.AttachmentKind.AUDIO: "Sent an audio recording",
+        }
+        return labels.get(self.attachment_kind, "Sent an attachment")
 
     def save(self, *args, **kwargs):
         self.full_clean()
