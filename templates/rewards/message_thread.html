@@ -89,25 +89,25 @@
   {% else %}
     <form class="ios-composer" method="post" enctype="multipart/form-data" action="{% url 'message_thread' recipient.pk %}" data-message-composer>
       {% csrf_token %}
-      {{ message_form.body }}
       <details class="ios-compose-menu" data-compose-menu>
-        <summary class="ios-attachment-picker" aria-label="Add a photo, video, audio recording, or GIF">
+        <summary class="ios-attachment-picker" aria-label="Add a photo, video, or audio recording">
           <span>+</span>
         </summary>
         <div class="ios-compose-menu-sheet">
-          <button type="button" data-attachment-target="media">Photo/Video</button>
-          <button type="button" data-attachment-target="audio">Audio</button>
-          <button type="button" data-gif-link-toggle>GIF</button>
+          <button type="button" class="ios-compose-action" data-attachment-target="media" aria-label="Add photo or video">
+            <span aria-hidden="true">&#128247;</span>
+          </button>
+          <button type="button" class="ios-compose-action" data-attachment-target="audio" aria-label="Add audio recording">
+            <span aria-hidden="true">&#127908;</span>
+          </button>
         </div>
       </details>
+      {{ message_form.body }}
       <input id="id_attachment_media" name="attachment" type="file" accept="image/*,video/*" hidden>
       <input id="id_attachment_audio" name="attachment" type="file" accept="audio/*" hidden>
-      <div class="ios-gif-link-panel{% if message_form.gif_url.value %} active{% endif %}" data-gif-link-panel>
-        {{ message_form.gif_url }}
-      </div>
       <button type="submit" aria-label="Send message">&uarr;</button>
     </form>
-    <p class="ios-composer-note">Use + for photo/video, audio, or a GIF link. GIFs currently use direct GIF or Giphy links.</p>
+    <p class="ios-composer-note">Use + for photos, videos, and audio recordings.</p>
   {% endif %}
 </main>
 {% endblock %}

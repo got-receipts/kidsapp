@@ -480,9 +480,6 @@ document.querySelectorAll(".ios-composer textarea").forEach((field) => {
 });
 document.querySelectorAll("[data-message-composer]").forEach((composer) => {
   const menu = composer.querySelector("[data-compose-menu]");
-  const gifPanel = composer.querySelector("[data-gif-link-panel]");
-  const gifInput = gifPanel ? gifPanel.querySelector("input") : null;
-  const textArea = composer.querySelector("textarea");
   const mediaInput = composer.querySelector("#id_attachment_media");
   const audioInput = composer.querySelector("#id_attachment_audio");
 
@@ -491,28 +488,10 @@ document.querySelectorAll("[data-message-composer]").forEach((composer) => {
       const target = button.dataset.attachmentTarget === "audio" ? audioInput : mediaInput;
       const otherTarget = target === audioInput ? mediaInput : audioInput;
       if (menu) menu.open = false;
-      if (gifInput) gifInput.value = "";
-      if (gifPanel) gifPanel.classList.remove("active");
       if (otherTarget) otherTarget.value = "";
       target?.click();
     });
   });
-
-  const gifButton = composer.querySelector("[data-gif-link-toggle]");
-  if (gifButton && gifPanel && gifInput) {
-    gifButton.addEventListener("click", () => {
-      gifPanel.classList.toggle("active");
-      if (menu) menu.open = false;
-      if (mediaInput) mediaInput.value = "";
-      if (audioInput) audioInput.value = "";
-      if (gifPanel.classList.contains("active")) {
-        window.setTimeout(() => gifInput.focus(), 0);
-      } else {
-        gifInput.value = "";
-        textArea?.focus();
-      }
-    });
-  }
 });
 const conversationRefresh = document.querySelector("[data-refresh-conversations]");
 if (conversationRefresh) {

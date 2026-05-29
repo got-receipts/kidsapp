@@ -990,27 +990,32 @@ a { color: inherit; text-decoration: none; }
 }
 .ios-compose-menu-sheet {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: calc(100% + 10px);
   display: grid;
-  gap: 6px;
-  min-width: 148px;
+  grid-template-columns: repeat(2, 44px);
+  gap: 8px;
   padding: 8px;
   border: 1px solid rgb(255 255 255 / 35%);
-  border-radius: 20px;
+  border-radius: 22px;
   background: rgb(245 248 255 / 74%);
   box-shadow: 0 24px 55px rgb(20 38 61 / 18%);
   backdrop-filter: blur(22px);
 }
-.ios-compose-menu-sheet button {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 14px;
+.ios-compose-action {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 16px;
   background: rgb(255 255 255 / 58%);
   color: var(--navy);
-  font-size: 13px;
-  font-weight: 700;
-  text-align: left;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 2%);
+}
+.ios-compose-action span {
+  font-size: 20px;
+  line-height: 1;
 }
 .ios-attachment-picker {
   display: grid;
@@ -1031,22 +1036,6 @@ a { color: inherit; text-decoration: none; }
 }
 .ios-compose-menu[open] .ios-attachment-picker {
   background: rgb(255 255 255 / 92%);
-}
-.ios-gif-link-panel {
-  display: none;
-  flex: 1;
-}
-.ios-gif-link-panel.active {
-  display: block;
-}
-.ios-gif-link-panel input {
-  width: 100%;
-  min-height: 37px;
-  padding: 8px 12px;
-  border: 1px solid rgb(194 201 214 / 68%);
-  border-radius: 19px;
-  background: rgb(247 249 253 / 96%);
-  color: var(--navy);
 }
 .ios-composer textarea {
   flex: 1;
@@ -1102,11 +1091,11 @@ a { color: inherit; text-decoration: none; }
   color: #86beff;
 }
 [data-theme="dark"] .ios-compose-menu-sheet,
-[data-theme="dark"] .ios-compose-menu-sheet button {
+[data-theme="dark"] .ios-compose-action {
   background: rgb(24 33 49 / 72%);
   border-color: rgb(121 139 173 / 18%);
 }
-[data-theme="dark"] .ios-compose-menu-sheet button {
+[data-theme="dark"] .ios-compose-action {
   color: #dbe8ff;
 }
 [data-theme="dark"] .ios-attachment-image,
@@ -1120,11 +1109,6 @@ a { color: inherit; text-decoration: none; }
 }
 [data-theme="dark"] .ios-attachment-picker {
   background: rgb(20 28 44 / 86%);
-}
-[data-theme="dark"] .ios-gif-link-panel input {
-  background: rgb(13 19 31 / 88%);
-  border-color: rgb(121 139 173 / 20%);
-  color: #eef4ff;
 }
 [data-theme="dark"] .ios-composer textarea {
   background: rgb(13 19 31 / 88%);
