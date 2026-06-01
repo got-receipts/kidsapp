@@ -10,7 +10,7 @@
   <section class="call-stage">
     <video class="remote-video" data-remote-video autoplay playsinline></video>
     <div class="call-waiting" data-call-waiting>
-      <span class="ios-avatar">{{ contact.display_name|first }}</span>
+      {% include "rewards/_profile_avatar.html" with person=contact %}
       <h1>{{ contact.display_name }}</h1>
       {% if call.status == 'ringing' and call.recipient_id == profile.pk %}
         <p>Incoming {{ call.get_call_type_display|lower }} call</p>

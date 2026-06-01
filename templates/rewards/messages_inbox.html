@@ -3,7 +3,7 @@
 {% block content %}
 <main class="shell ios-messages-shell {% if profile.role == 'child' %}kid-shell{% endif %}">
   <header class="ios-messages-nav">
-    <a class="ios-back" href="{% url 'dashboard' %}"><span>&lsaquo;</span> Home</a>
+    <a class="ios-back ios-home-icon-link" href="{% url 'dashboard' %}" aria-label="Home"><span>&#8962;</span></a>
     <strong>Messages</strong>
     <span class="ios-nav-spacer"></span>
   </header>
@@ -15,12 +15,24 @@
     <small data-refresh-status>Updated just now</small>
     <button type="button" data-refresh-conversations aria-label="Refresh conversations"><span>&#8635;</span> Refresh</button>
   </div>
+  <section class="ios-profile-photo-card" aria-label="Your message profile photo">
+    {% include "rewards/_profile_avatar.html" with person=profile %}
+    <div>
+      <strong>{{ profile.display_name }}</strong>
+      <small>Your contact photo</small>
+    </div>
+    <form method="post" enctype="multipart/form-data" action="{% url 'update_profile_photo' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ profile_photo_next_url }}">
+      <label class="ios-photo-upload">Change photo {{ profile_photo_form.profile_photo }}</label>
+    </form>
+  </section>
   {% if messaging_lock %}<p class="communication-lock-note">Messaging is locked by your family schedule right now. You can still read conversations.</p>{% endif %}
   {% if calling_lock %}<p class="communication-lock-note">Calls are locked by your family schedule right now.</p>{% endif %}
   {% if call_allowance %}
   <p class="ios-call-budget">
     {% if call_allowance.calls_free_now %}
-    All calls are free after 6:00 PM.
+    Calls are free right now.
     {% else %}
     <strong>{{ call_allowance.remaining }}</strong> of {{ call_allowance.free_limit }} free calls left today.
     {% if not call_allowance.remaining %}New calls cost {{ call_allowance.token_cost }} token{{ call_allowance.token_cost|pluralize }}.{% endif %}
@@ -30,7 +42,7 @@
   <section class="ios-conversation-list" aria-label="Family conversations">
     {% for contact in contacts %}
       <a class="ios-conversation {% if contact.unread_count %}unread{% endif %}" href="{% url 'message_thread' contact.pk %}">
-        <span class="ios-avatar">{{ contact.display_name|first }}</span>
+        {% include "rewards/_profile_avatar.html" with person=contact %}
         <div>
           <strong>{{ contact.display_name }}</strong>
           <small>{{ contact.get_role_display }}</small>

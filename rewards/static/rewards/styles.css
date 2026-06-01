@@ -594,6 +594,20 @@ a { color: inherit; text-decoration: none; }
   font-size: 16px;
 }
 .ios-back span { margin-right: 2px; font-size: 34px; line-height: .7; }
+.ios-home-icon-link {
+  justify-self: start;
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 19px;
+  background: rgb(0 122 255 / 10%);
+}
+.ios-home-icon-link span {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1;
+}
 .ios-nav-spacer { width: 90px; }
 .ios-inbox-heading {
   display: flex;
@@ -651,6 +665,47 @@ a { color: inherit; text-decoration: none; }
 .ios-call-budget strong { color: #007aff; }
 [data-theme="dark"] .ios-refresh-bar button,
 [data-theme="dark"] .ios-call-budget { background: #172c49; color: #acc7e9; }
+.ios-profile-photo-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--paper);
+  box-shadow: 0 10px 26px rgb(20 38 61 / 7%);
+}
+.ios-profile-photo-card strong,
+.ios-profile-photo-card small { display: block; }
+.ios-profile-photo-card small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ios-photo-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9f2ff;
+  color: #007aff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ios-photo-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+[data-theme="dark"] .ios-profile-photo-card { background: #111e30; }
+[data-theme="dark"] .ios-photo-upload { background: #172c49; color: #acc7e9; }
 .ios-conversation-list {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -673,6 +728,7 @@ a { color: inherit; text-decoration: none; }
 .ios-avatar {
   display: inline-grid;
   place-items: center;
+  overflow: hidden;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -680,6 +736,13 @@ a { color: inherit; text-decoration: none; }
   color: white;
   font-size: 21px;
   font-weight: bold;
+}
+.ios-avatar.photo { background: #dce8f7; }
+.ios-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .ios-conversation div { min-width: 0; }
 .ios-conversation strong {
@@ -739,7 +802,7 @@ a { color: inherit; text-decoration: none; }
   z-index: 2;
   top: 0;
   display: grid;
-  grid-template-columns: minmax(0, 92px) 1fr minmax(0, 108px);
+  grid-template-columns: minmax(0, 96px) minmax(0, 1fr) minmax(0, 94px);
   align-items: center;
   gap: 8px;
   padding: calc(6px + env(safe-area-inset-top)) 0 10px;
@@ -748,15 +811,32 @@ a { color: inherit; text-decoration: none; }
   border-bottom: 1px solid rgb(138 150 176 / 18%);
 }
 .ios-thread-contact {
+  justify-self: center;
   display: grid;
-  justify-items: center;
-  gap: 2px;
+  grid-template-columns: 36px minmax(0, auto);
+  align-items: center;
+  gap: 8px;
+  max-width: min(230px, 100%);
+  padding: 5px 10px 5px 6px;
+  border: 1px solid rgb(138 150 176 / 18%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 58%);
+  box-shadow: 0 10px 24px rgb(20 38 61 / 8%);
+  backdrop-filter: blur(14px);
 }
 .ios-thread-contact .ios-avatar {
-  width: 42px;
-  height: 42px;
-  font-size: 18px;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
   box-shadow: 0 8px 20px rgb(20 38 61 / 10%);
+}
+.ios-thread-contact div { min-width: 0; }
+.ios-thread-contact strong,
+.ios-thread-contact small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ios-thread-contact strong { font-size: 13px; letter-spacing: -.02em; }
 .ios-thread-contact small { color: var(--muted); font-size: 10px; }
@@ -767,9 +847,15 @@ a { color: inherit; text-decoration: none; }
   gap: 10px;
 }
 .ios-home-link {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  background: rgb(0 122 255 / 10%);
   color: #007aff;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 19px;
+  font-weight: 800;
 }
 .ios-call-menu { position: relative; }
 .ios-call-menu summary {
@@ -1072,6 +1158,10 @@ a { color: inherit; text-decoration: none; }
 [data-theme="dark"] .ios-thread-header {
   background: rgb(14 20 33 / 86%);
   border-bottom-color: rgb(110 126 154 / 16%);
+}
+[data-theme="dark"] .ios-thread-contact {
+  background: rgb(24 33 49 / 72%);
+  border-color: rgb(121 139 173 / 18%);
 }
 [data-theme="dark"] .ios-call-menu summary,
 [data-theme="dark"] .ios-call-menu-sheet,
@@ -2724,7 +2814,9 @@ a { color: inherit; text-decoration: none; }
   height: 100dvh;
   overflow-y: auto;
   scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 .discover-reels::-webkit-scrollbar { display: none; }
 .discover-reel {
@@ -2747,16 +2839,14 @@ a { color: inherit; text-decoration: none; }
 }
 .discover-player iframe {
   display: block;
-  width: min(100vw, 560px);
-  height: min(100dvh, calc(100vw * 16 / 9));
-  min-height: min(100dvh, 55vw);
+  width: min(100vw, 56.25dvh, 560px);
+  height: min(100dvh, 177.78vw, 996px);
   border: 0;
   background: #050711;
 }
 .discover-playlist-mount {
-  width: min(100vw, 560px);
-  height: min(100dvh, calc(100vw * 16 / 9));
-  min-height: min(100dvh, 55vw);
+  width: min(100vw, 56.25dvh, 560px);
+  height: min(100dvh, 177.78vw, 996px);
   background: #050711;
 }
 .discover-shade {
@@ -3959,13 +4049,12 @@ button.calendar-day:active { transform: scale(.93); }
   .discover-brand small { font-size: 10px; }
   .discover-brand strong { font-size: 14px; }
   .discover-reel {
-    padding: 88px 44px 36px;
+    padding: 0;
   }
   .discover-player iframe,
   .discover-playlist-mount {
-    width: min(calc(100vw - 132px), 860px);
-    height: min(calc(100dvh - 148px), calc((100vw - 132px) * 9 / 16), 920px);
-    min-height: 520px;
+    width: min(calc(100vw - 132px), 56.25dvh, 560px);
+    height: min(100dvh, 177.78vw, 996px);
     border-radius: 30px;
     box-shadow: 0 26px 70px rgb(0 0 0 / 42%);
   }
@@ -3980,11 +4069,11 @@ button.calendar-day:active { transform: scale(.93); }
     font-size: 14px;
   }
   .discover-reactions {
-    right: max(34px, calc((100vw - min(calc(100vw - 132px), 860px)) / 2 - 82px));
+    right: max(34px, calc((100vw - min(calc(100vw - 132px), 56.25dvh, 560px)) / 2 - 82px));
     bottom: calc(120px + env(safe-area-inset-bottom));
   }
   .discover-step-controls {
-    right: max(28px, calc((100vw - min(calc(100vw - 132px), 860px)) / 2 - 78px));
+    right: max(28px, calc((100vw - min(calc(100vw - 132px), 56.25dvh, 560px)) / 2 - 78px));
   }
   .discover-swipe-hint {
     bottom: calc(28px + env(safe-area-inset-bottom));
@@ -3993,14 +4082,12 @@ button.calendar-day:active { transform: scale(.93); }
 }
 @media (min-width: 1024px) and (orientation: landscape) {
   .discover-reel {
-    padding-top: 92px;
-    padding-bottom: 26px;
+    padding: 0;
   }
   .discover-player iframe,
   .discover-playlist-mount {
-    width: min(calc(100vw - 240px), 960px);
-    height: min(calc(100dvh - 136px), 72vh);
-    min-height: 460px;
+    width: min(calc(100vw - 180px), 56.25dvh, 540px);
+    height: min(100dvh, 177.78vw, 960px);
   }
   .discover-video-copy {
     max-width: min(760px, calc(100% - 210px));

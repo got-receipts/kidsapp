@@ -36,7 +36,7 @@ This is private family software. All rights reserved; it is not intended for red
 - PWA manifest and service worker that cache only public app assets, not private dashboard data.
 - Selectable light/dark themes, a kid-focused adventure-board layout, and iPhone/iPad home-screen support in portrait or landscape.
 - A connected-home emblem identity, iOS Home Screen icon assets, and role-aware launch sequence designed for iPhone and iPad.
-- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.9.2`).
+- A visible footer carrying the private-use notice and configurable app version (`APP_VERSION`, currently `2.9.3`).
 - Docker and Railway configuration with PostgreSQL via `DATABASE_URL`.
 
 ## Versioning

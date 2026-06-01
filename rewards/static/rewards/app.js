@@ -478,6 +478,12 @@ document.querySelectorAll(".ios-composer textarea").forEach((field) => {
     field.style.height = `${Math.min(field.scrollHeight, 104)}px`;
   });
 });
+
+document.querySelectorAll("[data-profile-photo-input]").forEach((input) => {
+  input.addEventListener("change", () => {
+    if (input.files?.length) input.form?.submit();
+  });
+});
 document.querySelectorAll("[data-message-composer]").forEach((composer) => {
   const menu = composer.querySelector("[data-compose-menu]");
   const mediaInput = composer.querySelector("#id_attachment_media");

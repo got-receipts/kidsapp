@@ -202,8 +202,11 @@ class FamilySettingsForm(forms.ModelForm):
 class FamilyCallSettingsForm(forms.ModelForm):
     class Meta:
         model = FamilySettings
-        fields = ["free_calls_after_6pm_enabled"]
-        labels = {"free_calls_after_6pm_enabled": "Make all child calls free after 6:00 PM"}
+        fields = ["free_child_calls_anytime_enabled", "free_calls_after_6pm_enabled"]
+        labels = {
+            "free_child_calls_anytime_enabled": "Make child calls free anytime",
+            "free_calls_after_6pm_enabled": "Make child calls free after 6:00 PM",
+        }
 
 
 class GroundingForm(forms.Form):
@@ -290,10 +293,23 @@ class FamilyMessageForm(forms.ModelForm):
             cleaned["attachment_kind"] = self._detect_attachment_kind(attachment)
             cleaned["attachment_name"] = attachment.name[:120]
             cleaned["attachment_mime"] = (getattr(attachment, "content_type", "") or "").lower()[:80]
+            self.instance.attachment_kind = cleaned["attachment_kind"]
+            self.instance.attachment_name = cleaned["attachment_name"]
+            self.instance.attachment_mime = cleaned["attachment_mime"]
+            self.instance.gif_url = ""
         elif gif_url:
             cleaned["attachment_kind"] = FamilyMessage.AttachmentKind.GIF
             cleaned["attachment_name"] = "GIF"
             cleaned["attachment_mime"] = "image/gif"
+            self.instance.attachment_kind = cleaned["attachment_kind"]
+            self.instance.attachment_name = cleaned["attachment_name"]
+            self.instance.attachment_mime = cleaned["attachment_mime"]
+            self.instance.gif_url = gif_url
+        else:
+            self.instance.attachment_kind = ""
+            self.instance.attachment_name = ""
+            self.instance.attachment_mime = ""
+            self.instance.gif_url = ""
         return cleaned
 
     def save(self, commit=True):
@@ -340,8 +356,8 @@ class FamilyMessageForm(forms.ModelForm):
         if parsed.scheme not in {"http", "https"}:
             raise forms.ValidationError("Paste a full GIF link starting with http:// or https://.")
         hostname = (parsed.hostname or "").lower().removeprefix("www.")
-        path = parsed.path.lower()
-        if path.endswith(".gif"):
+        path = parsed.path
+        if path.lower().endswith(".gif"):
             return url
         if hostname == "giphy.com":
             slug = path.rstrip("/").split("/")[-1]
@@ -351,6 +367,37 @@ class FamilyMessageForm(forms.ModelForm):
         if hostname in {"media.giphy.com", "i.giphy.com"}:
             return url
         raise forms.ValidationError("Paste a direct GIF image link or a public Giphy share link.")
+
+
+class ProfilePhotoForm(forms.ModelForm):
+    MAX_PHOTO_BYTES = 6 * 1024 * 1024
+    PHOTO_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+    PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "heic", "heif"}
+
+    class Meta:
+        model = Profile
+        fields = ["profile_photo"]
+        widgets = {
+            "profile_photo": forms.FileInput(
+                attrs={
+                    "accept": "image/*",
+                    "data-profile-photo-input": "yes",
+                    "aria-label": "Choose profile photo",
+                }
+            )
+        }
+
+    def clean_profile_photo(self):
+        photo = self.cleaned_data.get("profile_photo")
+        if not photo:
+            return photo
+        extension = Path(photo.name).suffix.lower().lstrip(".")
+        content_type = (getattr(photo, "content_type", "") or "").lower()
+        if getattr(photo, "size", 0) > self.MAX_PHOTO_BYTES:
+            raise forms.ValidationError("Profile photos must be 6 MB or smaller.")
+        if content_type not in self.PHOTO_MIME_TYPES and extension not in self.PHOTO_EXTENSIONS:
+            raise forms.ValidationError("Choose a JPG, PNG, WebP, HEIC, or HEIF photo.")
+        return photo
 
 
 class CommunicationScheduleForm(forms.ModelForm):

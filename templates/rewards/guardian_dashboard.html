@@ -236,10 +236,11 @@
       </dialog>
       <dialog class="review-dialog action-dialog" id="action-free-calling">
         <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Calling access</p><h2>Free calling after 6:00 PM</h2>
-        <p>Turn the evening free-calling rule on or off for {{ selected.display_name }}. When enabled, daily call charges stop after 6:00 PM.</p>
+        <p class="eyebrow">Calling access</p><h2>Free calling rules</h2>
+        <p>Choose whether child calls are always free or only become free after 6:00 PM. Anytime free calling overrides the evening rule.</p>
         <form class="form" method="post" action="{% url 'update_family_call_settings' %}">
           {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
+          <p><label>{{ call_settings_form.free_child_calls_anytime_enabled }} {{ call_settings_form.free_child_calls_anytime_enabled.label }}</label></p>
           <p><label>{{ call_settings_form.free_calls_after_6pm_enabled }} {{ call_settings_form.free_calls_after_6pm_enabled.label }}</label></p>
           <button class="primary">Save calling setting</button>
         </form>
@@ -469,8 +470,8 @@
         <div class="card-head"><h2>Messages &amp; call limits</h2><span class="badge">{% if livekit_configured %}Calls ready{% else %}LiveKit setup pending{% endif %}</span></div>
         <p class="control-note">Schedules restrict {{ selected.display_name }} during the listed hours. Open Guardian Actions to add another schedule.</p>
         <div class="planner-row">
-          <div><strong>Free calling after 6:00 PM</strong><small>{% if family_settings.free_calls_after_6pm_enabled %}All child calls stay free after 6 PM, even after the daily free-call limit is used.{% else %}The daily free-call limit still applies after 6 PM.{% endif %}</small></div>
-          <span class="badge {% if not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_calls_after_6pm_enabled %}Enabled{% else %}Off{% endif %}</span>
+          <div><strong>Free calling</strong><small>{% if family_settings.free_child_calls_anytime_enabled %}All child calls are free at any time, even before 6 PM.{% elif family_settings.free_calls_after_6pm_enabled %}Child calls stay free after 6 PM, even after the daily free-call limit is used.{% else %}Only the daily free-call limit applies.{% endif %}</small></div>
+          <span class="badge {% if not family_settings.free_child_calls_anytime_enabled and not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_child_calls_anytime_enabled %}Anytime{% elif family_settings.free_calls_after_6pm_enabled %}After 6 PM{% else %}Allowance only{% endif %}</span>
         </div>
         <p class="control-note">Update this from Controls using the Free Calling action.</p>
         {% for schedule in selected_communication_schedules %}

@@ -16,6 +16,7 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.templatetags.static import static
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .forms import (
@@ -35,6 +36,7 @@ from .forms import (
     GradeForm,
     GroundingForm,
     HouseRuleForm,
+    ProfilePhotoForm,
     SavingsGoalForm,
     ShoppingFulfillmentForm,
     ShoppingProductForm,
@@ -100,7 +102,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v10';
+    source = """const CACHE = 'family-circle-v11';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -379,8 +381,15 @@ def _livekit_configured():
     return bool(settings.LIVEKIT_WS_URL and settings.LIVEKIT_API_KEY and settings.LIVEKIT_API_SECRET)
 
 
+def _local_day(moment=None):
+    return (moment or timezone.now()).astimezone(timezone.get_current_timezone()).date()
+
+
 def _child_calls_are_free_now(moment=None):
-    if not FamilySettings.load().free_calls_after_6pm_enabled:
+    settings_record = FamilySettings.load()
+    if settings_record.free_child_calls_anytime_enabled:
+        return True
+    if not settings_record.free_calls_after_6pm_enabled:
         return False
     local_moment = timezone.localtime(moment or timezone.now())
     return local_moment.time().replace(tzinfo=None) >= time(18, 0)
@@ -389,9 +398,10 @@ def _child_calls_are_free_now(moment=None):
 def _child_call_allowance(profile):
     if profile.role != Profile.Role.CHILD:
         return None
-    used = FamilyCall.objects.filter(caller=profile, allowance_day=timezone.localdate()).count()
+    used = FamilyCall.objects.filter(caller=profile, allowance_day=_local_day()).count()
     free_limit = max(settings.FREE_CHILD_CALLS_PER_DAY, 0)
     calls_free_now = _child_calls_are_free_now()
+    settings_record = FamilySettings.load()
     return {
         "used": used,
         "free_limit": free_limit,
@@ -399,6 +409,8 @@ def _child_call_allowance(profile):
         "token_cost": max(settings.CHILD_CALL_TOKEN_COST, 0),
         "reconnect_minutes": max(settings.CALL_RECONNECT_MINUTES, 1),
         "calls_free_now": calls_free_now,
+        "calls_free_anytime": settings_record.free_child_calls_anytime_enabled,
+        "calls_free_after_6pm": settings_record.free_calls_after_6pm_enabled,
     }
 
 
@@ -791,6 +803,8 @@ def messages_inbox(request):
             "incoming_call": incoming_call,
             "livekit_configured": _livekit_configured(),
             "call_allowance": _child_call_allowance(profile),
+            "profile_photo_form": ProfilePhotoForm(instance=profile),
+            "profile_photo_next_url": request.get_full_path(),
         },
     )
 
@@ -862,6 +876,52 @@ def message_attachment(request, pk):
     return response
 
 
+def _photo_content_type(filename):
+    extension = (filename or "").rsplit(".", 1)[-1].lower()
+    return {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+        "heic": "image/heic",
+        "heif": "image/heif",
+    }.get(extension, "application/octet-stream")
+
+
+@login_required
+@require_http_methods(["GET"])
+def profile_photo(request, pk):
+    viewer = _profile(request)
+    subject = get_object_or_404(Profile, pk=pk)
+    if viewer.role == Profile.Role.CHILD and HiddenMessageContact.objects.filter(child=viewer, contact=subject).exists():
+        raise Http404
+    if not subject.profile_photo:
+        raise Http404
+    try:
+        response = FileResponse(subject.profile_photo.open("rb"), content_type=_photo_content_type(subject.profile_photo.name))
+    except FileNotFoundError:
+        raise Http404
+    response["Content-Disposition"] = 'inline; filename="profile-photo"'
+    return response
+
+
+@login_required
+@require_POST
+def update_profile_photo(request):
+    profile = _profile(request)
+    form = ProfilePhotoForm(request.POST, request.FILES, instance=profile)
+    if form.is_valid():
+        form.save()
+        messages.success(request, "Profile photo updated.")
+    else:
+        first_error = next(iter(form.errors.values()))[0] if form.errors else "Choose a valid profile photo."
+        messages.error(request, first_error)
+    next_url = request.POST.get("next") or "/messages/"
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        next_url = "/messages/"
+    return redirect(next_url)
+
+
 @login_required
 @require_POST
 def start_family_call(request, recipient_pk, call_type):
@@ -897,7 +957,7 @@ def start_family_call(request, recipient_pk, call_type):
             return redirect("call_room", pk=existing.pk)
         allowance_day = None
         if caller.role == Profile.Role.CHILD:
-            allowance_day = timezone.localdate()
+            allowance_day = _local_day(now)
             prior_calls = FamilyCall.objects.filter(caller=caller, allowance_day=allowance_day).count()
             free_limit = max(settings.FREE_CHILD_CALLS_PER_DAY, 0)
             call_number = prior_calls + 1
@@ -940,7 +1000,10 @@ def start_family_call(request, recipient_pk, call_type):
             token_label = "token" if token_cost == 1 else "tokens"
             messages.info(request, f"This call used {token_cost} {token_label}. Reconnect within {max(settings.CALL_RECONNECT_MINUTES, 1)} minutes without another charge.")
         elif calls_free_now:
-            messages.info(request, "Calls are free after 6:00 PM.")
+            if FamilySettings.load().free_child_calls_anytime_enabled:
+                messages.info(request, "Calls are free right now.")
+            else:
+                messages.info(request, "Calls are free after 6:00 PM.")
         else:
             messages.info(request, f"Free family call {call_number} of {max(settings.FREE_CHILD_CALLS_PER_DAY, 0)} today.")
     return redirect("call_room", pk=call.pk)
@@ -2430,9 +2493,14 @@ def update_family_call_settings(request):
     settings_record = form.save(commit=False)
     settings_record.updated_by = guardian
     settings_record.save()
-    state = "enabled" if settings_record.free_calls_after_6pm_enabled else "disabled"
-    _audit(guardian, None, "free_calling_updated", f"Free calling after 6:00 PM {state}.")
-    messages.success(request, f"Free calling after 6:00 PM {state}.")
+    if settings_record.free_child_calls_anytime_enabled:
+        description = "Child calls are free anytime."
+    elif settings_record.free_calls_after_6pm_enabled:
+        description = "Child calls are free after 6:00 PM."
+    else:
+        description = "Child calls use the daily free-call allowance only."
+    _audit(guardian, None, "free_calling_updated", description)
+    messages.success(request, description)
     return redirect(f"/?child={request.POST.get('child_id', '')}")
 
 

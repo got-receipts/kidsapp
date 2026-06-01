@@ -9,6 +9,11 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 
+def profile_photo_upload_to(instance, filename):
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    return f"profiles/{instance.pk or 'new'}/{uuid.uuid4().hex}.{extension}"
+
+
 class Profile(models.Model):
     class Role(models.TextChoices):
         CHILD = "child", "Child"
@@ -18,6 +23,7 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     display_name = models.CharField(max_length=40)
     role = models.CharField(max_length=10, choices=Role.choices)
+    profile_photo = models.FileField(upload_to=profile_photo_upload_to, blank=True)
     birth_date = models.DateField(null=True, blank=True)
     last_recap_at = models.DateTimeField(null=True, blank=True)
     last_recap_day = models.DateField(null=True, blank=True)
@@ -65,6 +71,7 @@ class Wallet(models.Model):
 
 class FamilySettings(models.Model):
     tokens_per_dollar = models.PositiveIntegerField(default=10)
+    free_child_calls_anytime_enabled = models.BooleanField(default=False)
     free_calls_after_6pm_enabled = models.BooleanField(default=True)
     updated_by = models.ForeignKey(
         Profile,

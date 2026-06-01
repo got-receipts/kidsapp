@@ -1,0 +1,5 @@
+{% if person.profile_photo %}
+  <span class="ios-avatar photo"><img src="{% url 'profile_photo' person.pk %}" alt="{{ person.display_name }}"></span>
+{% else %}
+  <span class="ios-avatar">{{ person.display_name|first }}</span>
+{% endif %}

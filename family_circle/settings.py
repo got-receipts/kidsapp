@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -101,8 +102,15 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": (
+            "django.contrib.staticfiles.storage.StaticFilesStorage"
+            if DEBUG or "test" in sys.argv
+            else "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        ),
     }
 }
 
@@ -121,7 +129,7 @@ LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "").strip()
 FREE_CHILD_CALLS_PER_DAY = int(os.getenv("FREE_CHILD_CALLS_PER_DAY", "6"))
 CHILD_CALL_TOKEN_COST = int(os.getenv("CHILD_CALL_TOKEN_COST", "1"))
 CALL_RECONNECT_MINUTES = int(os.getenv("CALL_RECONNECT_MINUTES", "5"))
-APP_VERSION = os.getenv("APP_VERSION", "2.9.2")
+APP_VERSION = os.getenv("APP_VERSION", "2.9.3")
 
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

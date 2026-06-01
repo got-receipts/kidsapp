@@ -5,9 +5,11 @@
   <header class="ios-thread-header">
     <a class="ios-back" href="{% url 'messages_inbox' %}"><span>&lsaquo;</span> Messages</a>
     <div class="ios-thread-contact">
-      <span class="ios-avatar">{{ recipient.display_name|first }}</span>
-      <strong>{{ recipient.display_name }}</strong>
-      <small>{{ recipient.get_role_display }}</small>
+      {% include "rewards/_profile_avatar.html" with person=recipient %}
+      <div>
+        <strong>{{ recipient.display_name }}</strong>
+        <small>{{ recipient.get_role_display }}</small>
+      </div>
     </div>
     <div class="ios-thread-actions">
       <details class="ios-call-menu">
@@ -31,13 +33,13 @@
           {% endif %}
         </div>
       </details>
-      <a class="ios-home-link" href="{% url 'dashboard' %}">Home</a>
+      <a class="ios-home-link" href="{% url 'dashboard' %}" aria-label="Home">&#8962;</a>
     </div>
   </header>
   {% if call_allowance and not calling_lock %}
   <p class="ios-call-budget">
     {% if call_allowance.calls_free_now %}
-      All calls are free after 6:00 PM.
+      Calls are free right now.
     {% elif call_allowance.remaining %}
       {{ call_allowance.remaining }} free call{{ call_allowance.remaining|pluralize }} left today.
     {% else %}
@@ -78,7 +80,7 @@
       </div>
     {% empty %}
       <div class="ios-chat-welcome">
-        <span class="ios-avatar">{{ recipient.display_name|first }}</span>
+        {% include "rewards/_profile_avatar.html" with person=recipient %}
         <strong>{{ recipient.display_name }}</strong>
         <p>Send the first message in this family conversation.</p>
       </div>
