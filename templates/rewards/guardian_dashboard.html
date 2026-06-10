@@ -70,21 +70,64 @@
   </dialog>
   {% endif %}
 
-  <section class="comm-profile-card">
-    {% include "rewards/_profile_avatar.html" with person=profile %}
-    <div>
-      <strong>Your contact photo</strong>
-      <small>This shows to the children in messages and calls.</small>
-    </div>
-    <form method="post" enctype="multipart/form-data" action="{% url 'update_profile_photo' %}">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ profile_photo_next_url }}">
-      <label class="ios-photo-upload">Change {{ profile_photo_form.profile_photo }}</label>
-    </form>
+  <section class="comm-app-grid guardian-comm-app-grid" aria-label="Dashboard apps">
+    <button class="comm-app-tile app-contacts" type="button" data-open-dialog="family-contacts-panel">
+      <b>&#128101;</b>
+      <strong>Contacts</strong>
+      <small>Text, voice, or video</small>
+    </button>
+    <button class="comm-app-tile app-profile" type="button" data-open-dialog="guardian-profile-panel">
+      <b>&#9787;</b>
+      <strong>My Photo</strong>
+      <small>Contact picture</small>
+    </button>
+    <button class="comm-app-tile app-device" type="button" data-open-dialog="browser-access-panel">
+      <b>&#128187;</b>
+      <strong>Browser Access</strong>
+      <small>Kindle and mobile setup</small>
+    </button>
+    {% if can_manage %}
+      <button class="comm-app-tile app-rules" type="button" data-open-dialog="calling-rules-panel">
+        <b>&#128222;</b>
+        <strong>Calling Rules</strong>
+        <small>{% if family_settings.free_child_calls_anytime_enabled %}Free anytime{% elif family_settings.free_calls_after_6pm_enabled %}Free after 6 PM{% else %}Allowance only{% endif %}</small>
+      </button>
+      {% if children %}
+        <button class="comm-app-tile app-controls" type="button" data-open-dialog="child-controls-panel">
+          <b>&#9881;</b>
+          <strong>Child Controls</strong>
+          <small>Schedules and visibility</small>
+        </button>
+      {% endif %}
+    {% endif %}
+    <a class="comm-app-tile app-messages" href="{% url 'messages_inbox' %}">
+      <b>&#9993;</b>
+      <strong>Messages</strong>
+      <small>{% if unread_message_count %}{{ unread_message_count }} unread{% else %}Open inbox{% endif %}</small>
+    </a>
   </section>
 
-  <section class="comm-dashboard-grid">
-    <article class="card comm-card">
+  <dialog class="review-dialog comm-module-dialog" id="guardian-profile-panel">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <p class="eyebrow">Profile app</p>
+    <h2>Your contact photo</h2>
+    <section class="comm-profile-card in-dialog">
+      {% include "rewards/_profile_avatar.html" with person=profile %}
+      <div>
+        <strong>{{ profile.display_name }}</strong>
+        <small>This shows to the children in messages and calls.</small>
+      </div>
+      <form method="post" enctype="multipart/form-data" action="{% url 'update_profile_photo' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ profile_photo_next_url }}">
+        <label class="ios-photo-upload">Change {{ profile_photo_form.profile_photo }}</label>
+      </form>
+    </section>
+  </dialog>
+
+  <dialog class="review-dialog comm-module-dialog wide" id="family-contacts-panel">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <article class="card comm-card in-dialog">
       <div class="card-head"><h2>Family Contacts</h2><span class="badge">{% if livekit_configured %}Calls ready{% else %}Call setup needed{% endif %}</span></div>
       <div class="comm-contact-list">
         {% for contact in communication_contacts %}
@@ -104,8 +147,11 @@
         {% endfor %}
       </div>
     </article>
+  </dialog>
 
-    <article class="card comm-card">
+  <dialog class="review-dialog comm-module-dialog" id="browser-access-panel">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <article class="card comm-card in-dialog">
       <div class="card-head"><h2>Browser Access</h2><span class="badge gold">Kindle ready</span></div>
       <p class="control-note">Use the Railway website URL in Safari, Chrome, Edge, or Kindle Fire Silk Browser. No native Kindle app is needed.</p>
       <div class="comm-support-list">
@@ -115,9 +161,12 @@
         <span>Notifications: browser support varies by device</span>
       </div>
     </article>
+  </dialog>
 
-    {% if can_manage %}
-    <article class="card comm-card">
+  {% if can_manage %}
+  <dialog class="review-dialog comm-module-dialog" id="calling-rules-panel">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <article class="card comm-card in-dialog">
       <div class="card-head"><h2>Calling Rules</h2><span class="badge {% if not family_settings.free_child_calls_anytime_enabled and not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_child_calls_anytime_enabled %}Free anytime{% elif family_settings.free_calls_after_6pm_enabled %}Free after 6 PM{% else %}Allowance only{% endif %}</span></div>
       <form class="form compact-form" method="post" action="{% url 'update_family_call_settings' %}">
         {% csrf_token %}
@@ -127,11 +176,13 @@
         <button class="primary">Save calling rules</button>
       </form>
     </article>
-    {% endif %}
-  </section>
+  </dialog>
+  {% endif %}
 
   {% if children and can_manage %}
-  <section class="card comm-card">
+  <dialog class="review-dialog comm-module-dialog wide" id="child-controls-panel">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+  <section class="card comm-card in-dialog">
     <div class="card-head"><h2>Child Communication Controls</h2><span class="badge">Dad &amp; GG</span></div>
     <nav class="child-picker" aria-label="Select child">
       {% for child in children %}<a href="?child={{ child.pk }}" class="{% if selected and child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}</a>{% endfor %}
@@ -176,6 +227,7 @@
       </div>
     {% endif %}
   </section>
+  </dialog>
   {% endif %}
 </main>
 {% endblock %}

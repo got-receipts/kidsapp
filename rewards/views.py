@@ -102,7 +102,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v15';
+    source = """const CACHE = 'family-circle-v16';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));

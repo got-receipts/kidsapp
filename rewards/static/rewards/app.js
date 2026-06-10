@@ -60,7 +60,7 @@ if (connectionSequence) {
     document.body.classList.add("connecting");
     const liveStatus = connectionSequence.querySelector(".connection-live");
     const statusByVariant = {
-      child: ["Gathering today's quests", "Charging your star map", "Adventure board ready"],
+      child: ["Opening your family line", "Connecting safe contacts", "Family chat ready"],
       guardian: ["Validating protected access", "Syncing family schedules", "Command center ready"],
       welcome: ["Establishing private connection", "Linking the family network", "Connection ready"],
     };

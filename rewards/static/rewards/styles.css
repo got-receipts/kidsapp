@@ -3205,6 +3205,101 @@ a { color: inherit; text-decoration: none; }
   color: #fff;
   font-size: 11px;
 }
+.comm-app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.child-comm-app-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.guardian-comm-app-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.comm-app-tile {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  align-content: space-between;
+  min-height: 138px;
+  padding: 15px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 60%);
+  border-radius: 29px;
+  background:
+    radial-gradient(circle at 86% 13%, rgb(255 255 255 / 62%), transparent 28%),
+    linear-gradient(145deg, #ecf6ff, #dff3ff);
+  color: #113253;
+  text-align: left;
+  box-shadow: 0 14px 31px rgb(20 38 61 / 12%);
+  transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+button.comm-app-tile { width: 100%; }
+.comm-app-tile:hover,
+.comm-app-tile:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px rgb(20 38 61 / 18%);
+  filter: saturate(1.05);
+}
+.comm-app-tile b {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 14px;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 78%);
+  color: #007aff;
+  font-size: 25px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 60%), 0 8px 18px rgb(20 38 61 / 10%);
+}
+.comm-app-tile strong,
+.comm-app-tile small {
+  position: relative;
+  display: block;
+  z-index: 1;
+}
+.comm-app-tile strong {
+  align-self: end;
+  font-size: 17px;
+  letter-spacing: -.035em;
+}
+.comm-app-tile small {
+  margin-top: 4px;
+  color: rgb(17 50 83 / 68%);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.comm-app-tile.app-messages { background: linear-gradient(145deg, #e6f8ed, #d6f2ff); }
+.comm-app-tile.app-messages b { color: #24a24b; }
+.comm-app-tile.app-profile { background: linear-gradient(145deg, #f2e9ff, #e7edff); }
+.comm-app-tile.app-profile b { color: #7450d6; }
+.comm-app-tile.app-device { background: linear-gradient(145deg, #fff3d6, #e8fbf5); }
+.comm-app-tile.app-device b { color: #bd7d19; }
+.comm-app-tile.app-contacts { background: linear-gradient(145deg, #e8fbf5, #e9f2ff); }
+.comm-app-tile.app-contacts b { color: #238d73; }
+.comm-app-tile.app-rules { background: linear-gradient(145deg, #e9f2ff, #f1edff); }
+.comm-app-tile.app-rules b { color: #2473c8; }
+.comm-app-tile.app-controls { background: linear-gradient(145deg, #fff0cf, #ffe9e4); }
+.comm-app-tile.app-controls b { color: #bd6d18; }
+[data-theme="dark"] .comm-app-tile {
+  border-color: rgb(255 255 255 / 8%);
+  background:
+    radial-gradient(circle at 86% 13%, rgb(255 255 255 / 9%), transparent 28%),
+    linear-gradient(145deg, #142743, #102033);
+  color: #edf6ff;
+  box-shadow: 0 16px 36px rgb(0 0 0 / 26%);
+}
+[data-theme="dark"] .comm-app-tile small { color: rgb(237 246 255 / 63%); }
+[data-theme="dark"] .comm-app-tile b { background: rgb(255 255 255 / 9%); }
+[data-theme="dark"] .comm-app-tile.app-messages { background: linear-gradient(145deg, #143327, #132d44); }
+[data-theme="dark"] .comm-app-tile.app-profile { background: linear-gradient(145deg, #29213e, #172342); }
+[data-theme="dark"] .comm-app-tile.app-device { background: linear-gradient(145deg, #382d18, #17372f); }
+[data-theme="dark"] .comm-app-tile.app-contacts { background: linear-gradient(145deg, #16382f, #142844); }
+[data-theme="dark"] .comm-app-tile.app-rules { background: linear-gradient(145deg, #142844, #29213e); }
+[data-theme="dark"] .comm-app-tile.app-controls { background: linear-gradient(145deg, #382d18, #3a2420); }
 .comm-profile-card,
 .comm-device-card {
   display: grid;
@@ -3237,10 +3332,16 @@ a { color: inherit; text-decoration: none; }
   background: var(--mint-pale);
   font-size: 24px;
 }
+.comm-profile-card.in-dialog,
+.comm-device-card.in-dialog {
+  margin: 13px 0 0;
+  box-shadow: none;
+}
 .comm-contact-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 12px;
+  margin-top: 14px;
 }
 .comm-contact-card {
   display: grid;
@@ -3250,6 +3351,12 @@ a { color: inherit; text-decoration: none; }
   border-radius: 26px;
   background: var(--paper);
   box-shadow: var(--shadow);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.comm-contact-card:hover,
+.comm-contact-card:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 17px 38px rgb(20 38 61 / 15%);
 }
 .comm-contact-head,
 .comm-family-person {
@@ -3318,6 +3425,11 @@ a { color: inherit; text-decoration: none; }
 .comm-card {
   box-shadow: var(--shadow);
 }
+.comm-card.in-dialog {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
 .comm-contact-list {
   display: grid;
   gap: 10px;
@@ -3362,6 +3474,15 @@ a { color: inherit; text-decoration: none; }
 }
 .comm-update-dialog {
   max-width: 560px;
+}
+.comm-module-dialog {
+  width: min(calc(100% - 24px), 640px);
+  max-height: min(86vh, 760px);
+  overflow-y: auto;
+  padding: 18px;
+}
+.comm-module-dialog.wide {
+  width: min(calc(100% - 24px), 920px);
 }
 .comm-update-dialog > p:not(.eyebrow) {
   margin: 9px 0 12px;
@@ -4405,6 +4526,10 @@ button.calendar-day:active { transform: scale(.93); }
   .comm-profile-card {
     grid-template-columns: 52px minmax(0, 1fr);
   }
+  .child-comm-app-grid,
+  .guardian-comm-app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .comm-profile-card form {
     grid-column: 1 / -1;
   }
@@ -4429,6 +4554,24 @@ button.calendar-day:active { transform: scale(.93); }
   }
   .comm-hero {
     border-radius: 26px;
+  }
+  .comm-app-grid {
+    gap: 10px;
+  }
+  .comm-app-tile {
+    min-height: 124px;
+    padding: 12px;
+    border-radius: 23px;
+  }
+  .comm-app-tile b {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 10px;
+    border-radius: 16px;
+    font-size: 22px;
+  }
+  .comm-app-tile strong {
+    font-size: 15px;
   }
   .comm-contact-actions,
   .comm-row-actions {
