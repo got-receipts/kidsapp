@@ -564,6 +564,7 @@ if (callScreen) {
   let room;
   let microphoneEnabled = true;
   let cameraEnabled = callScreen.dataset.callType === "video";
+  let speakerEnabled = true;
 
   async function connectLiveKitCall() {
     try {
@@ -582,16 +583,18 @@ if (callScreen) {
       const {Room, RoomEvent, Track} = await import("https://cdn.jsdelivr.net/npm/livekit-client@2.15.7/+esm");
       room = new Room({adaptiveStream: true, dynacast: true});
       room.on(RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind === Track.Kind.Video) {
+        if (track.kind === Track.Kind.Video && remoteVideo) {
           track.attach(remoteVideo);
           waiting.classList.add("hidden");
         } else {
           const audioElement = track.attach();
           audioElement.hidden = true;
+          audioElement.dataset.callAudio = "yes";
           callScreen.appendChild(audioElement);
         }
       });
       await room.connect(connection.wsUrl, connection.token);
+      if (callScreen.dataset.callType === "audio") waiting.classList.add("hidden");
       await room.localParticipant.setMicrophoneEnabled(true);
       if (cameraEnabled) {
         const publication = await room.localParticipant.setCameraEnabled(true);
@@ -613,6 +616,19 @@ if (callScreen) {
     await room?.localParticipant.setCameraEnabled(cameraEnabled);
     event.currentTarget.textContent = cameraEnabled ? "Camera" : "Camera Off";
   });
+  callScreen.querySelector("[data-toggle-speaker]")?.addEventListener("click", async (event) => {
+    speakerEnabled = !speakerEnabled;
+    callScreen.querySelectorAll("[data-call-audio]").forEach((audio) => {
+      audio.muted = !speakerEnabled;
+    });
+    event.currentTarget.classList.toggle("active", speakerEnabled);
+    event.currentTarget.textContent = speakerEnabled ? "Speaker On" : "Speaker Off";
+  });
+  const speakerButton = callScreen.querySelector("[data-toggle-speaker]");
+  if (speakerButton) {
+    speakerButton.classList.add("active");
+    speakerButton.textContent = "Speaker On";
+  }
   callScreen.querySelector("[data-end-call]")?.addEventListener("submit", () => room?.disconnect());
   window.addEventListener("pagehide", () => room?.disconnect());
   connectLiveKitCall();

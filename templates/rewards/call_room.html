@@ -1,14 +1,14 @@
 {% extends "rewards/base.html" %}
 {% block title %}{{ call.get_call_type_display }} Call | Family Circle{% endblock %}
 {% block content %}
-<main class="family-call-screen" data-livekit-call="{% if can_join %}join{% else %}waiting{% endif %}" data-watch-call="{% if call.status == 'ringing' or call.status == 'active' %}yes{% else %}no{% endif %}" data-token-url="{% url 'call_token' call.pk %}" data-status-url="{% url 'call_status' call.pk %}" data-return-url="{% url 'message_thread' contact.pk %}" data-call-type="{{ call.call_type }}">
+<main class="family-call-screen call-mode-{{ call.call_type }}" data-livekit-call="{% if can_join %}join{% else %}waiting{% endif %}" data-watch-call="{% if call.status == 'ringing' or call.status == 'active' %}yes{% else %}no{% endif %}" data-token-url="{% url 'call_token' call.pk %}" data-status-url="{% url 'call_status' call.pk %}" data-return-url="{% url 'message_thread' contact.pk %}" data-call-type="{{ call.call_type }}">
   <header class="family-call-header">
     <a href="{% url 'message_thread' contact.pk %}">&lsaquo; Messages</a>
-    <strong>{{ call.get_call_type_display }} Call</strong>
+    <strong>{% if call.call_type == 'audio' %}Audio Board{% else %}Video Call{% endif %}</strong>
     <span></span>
   </header>
-  <section class="call-stage">
-    <video class="remote-video" data-remote-video autoplay playsinline></video>
+  <section class="call-stage {% if call.call_type == 'audio' %}audio-stage{% else %}video-stage{% endif %}">
+    {% if call.call_type == 'video' %}<video class="remote-video" data-remote-video autoplay playsinline></video>{% endif %}
     <div class="call-waiting" data-call-waiting>
       {% include "rewards/_profile_avatar.html" with person=contact %}
       <h1>{{ contact.display_name }}</h1>
@@ -24,9 +24,31 @@
         <p>Connecting...</p>
       {% endif %}
     </div>
-    {% if can_join %}<video class="local-video" data-local-video autoplay playsinline muted></video>{% endif %}
+    {% if call.call_type == 'audio' %}
+      <div class="audio-call-board">
+        <div class="audio-orbit">
+          <span></span><span></span><span></span>
+          <div class="audio-core">
+            {% include "rewards/_profile_avatar.html" with person=profile %}
+            <strong>Family audio</strong>
+            <small>{% if call.status == 'active' %}Connected{% elif call.status == 'ringing' %}Ringing{% else %}{{ call.get_status_display }}{% endif %}</small>
+          </div>
+        </div>
+        <div class="audio-participants">
+          {% for participant in participants %}
+            <div class="audio-participant {% if participant.pk == profile.pk %}you{% endif %}">
+              {% include "rewards/_profile_avatar.html" with person=participant %}
+              <span>{{ participant.display_name }}</span>
+              {% if participant.call_invite_status == 'invited' %}<small>Invited</small>{% elif participant.call_invite_status == 'declined' %}<small>Declined</small>{% elif participant.pk == call.caller_id %}<small>Started</small>{% else %}<small>Family</small>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% elif can_join %}
+      <video class="local-video" data-local-video autoplay playsinline muted></video>
+    {% endif %}
   </section>
-  {% if call.status == 'ringing' and call.recipient_id == profile.pk %}
+  {% if participation_status == 'invited' %}
   <div class="incoming-call-controls">
     <form method="post" action="{% url 'decline_family_call' call.pk %}">{% csrf_token %}<button class="call-decline" type="submit">Decline</button></form>
     <form method="post" action="{% url 'accept_family_call' call.pk %}">{% csrf_token %}<button class="call-accept" type="submit">Accept</button></form>
@@ -34,13 +56,40 @@
   {% elif can_join %}
   <div class="live-call-controls">
     <button type="button" data-toggle-mic>Mute</button>
-    {% if call.call_type == 'video' %}<button type="button" data-toggle-camera>Camera</button>{% endif %}
+    {% if call.call_type == 'audio' %}
+      <button type="button" data-toggle-speaker>Speaker</button>
+      <button type="button" data-open-dialog="add-call-member">Add Member</button>
+    {% else %}
+      <button type="button" data-toggle-camera>Camera</button>
+    {% endif %}
     <form method="post" action="{% url 'end_family_call' call.pk %}" data-end-call>{% csrf_token %}<button class="call-decline" type="submit">End</button></form>
   </div>
   {% else %}
   <div class="live-call-controls">
     <a class="call-return" href="{% url 'message_thread' contact.pk %}">Return to messages</a>
   </div>
+  {% endif %}
+  {% if call.call_type == 'audio' and can_join %}
+  <dialog class="review-dialog comm-module-dialog add-call-member-dialog" id="add-call-member">
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <p class="eyebrow">Audio group call</p>
+    <h2>Add family member</h2>
+    <div class="add-call-list">
+      {% for invitee in available_call_invitees %}
+        <form method="post" action="{% url 'add_call_member' call.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="profile_id" value="{{ invitee.pk }}">
+          <button type="submit">
+            {% include "rewards/_profile_avatar.html" with person=invitee %}
+            <span><strong>{{ invitee.display_name }}</strong><small>{{ invitee.get_role_display }}</small></span>
+            <b>Add</b>
+          </button>
+        </form>
+      {% empty %}
+        <p class="empty">Everyone available is already in this audio call.</p>
+      {% endfor %}
+    </div>
+  </dialog>
   {% endif %}
 </main>
 {% endblock %}

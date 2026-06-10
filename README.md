@@ -35,7 +35,7 @@ The footer version is controlled by `APP_VERSION`. Update it for every deployed 
 
 Keep `family_circle/settings.py`, `.env.example`, and the Railway `APP_VERSION` value aligned for each release.
 
-Current version: `3.1.2`.
+Current version: `3.1.3`.
 
 ## Run Locally
 

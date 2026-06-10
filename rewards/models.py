@@ -1052,7 +1052,11 @@ class FamilyCall(models.Model):
         return super().save(*args, **kwargs)
 
     def includes(self, profile):
-        return profile.pk in {self.caller_id, self.recipient_id}
+        if profile.pk in {self.caller_id, self.recipient_id}:
+            return True
+        if self.pk:
+            return self.participants.filter(profile=profile).exists()
+        return False
 
     class Meta:
         ordering = ["-created_at"]
@@ -1061,6 +1065,33 @@ class FamilyCall(models.Model):
                 condition=~Q(caller=F("recipient")),
                 name="family_call_recipient_differs_from_caller",
             )
+        ]
+
+
+class FamilyCallParticipant(models.Model):
+    class Status(models.TextChoices):
+        INVITED = "invited", "Invited"
+        JOINED = "joined", "Joined"
+        DECLINED = "declined", "Declined"
+
+    call = models.ForeignKey(FamilyCall, on_delete=models.CASCADE, related_name="participants")
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="call_participations")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.INVITED)
+    invited_by = models.ForeignKey(Profile, null=True, on_delete=models.SET_NULL, related_name="call_invites_sent")
+    invited_at = models.DateTimeField(auto_now_add=True)
+    joined_at = models.DateTimeField(null=True, blank=True)
+    declined_at = models.DateTimeField(null=True, blank=True)
+
+    def clean(self):
+        if self.call_id and self.profile_id and self.profile_id not in {self.call.caller_id, self.call.recipient_id}:
+            return
+        if self.call_id and self.profile_id and self.profile_id == self.call.caller_id and self.status == self.Status.INVITED:
+            raise ValidationError("The caller is already in the call.")
+
+    class Meta:
+        ordering = ["invited_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["call", "profile"], name="one_family_call_participant")
         ]
 
 

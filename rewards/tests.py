@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from django.urls import NoReverseMatch, reverse
 
-from .models import CommunicationSchedule, FamilyCall, FamilyMessage, FamilySettings, HiddenMessageContact, Profile, Wallet
+from .models import CommunicationSchedule, FamilyCall, FamilyCallParticipant, FamilyMessage, FamilySettings, HiddenMessageContact, Profile, Wallet
 
 
 class CommunicationAppTests(TestCase):
@@ -154,3 +154,78 @@ class CommunicationAppTests(TestCase):
         self.assertRedirects(response, reverse("call_room", args=[call.pk]), fetch_redirect_response=False)
         self.assertEqual(call.call_type, FamilyCall.Type.AUDIO)
         self.assertEqual(call.token_cost, 0)
+        self.assertTrue(call.participants.filter(profile=self.child, status=FamilyCallParticipant.Status.JOINED).exists())
+        self.assertTrue(call.participants.filter(profile=self.dad, status=FamilyCallParticipant.Status.INVITED).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+    )
+    def test_audio_call_room_has_audio_board_and_group_controls(self):
+        call = FamilyCall.objects.create(caller=self.child, recipient=self.dad, call_type=FamilyCall.Type.AUDIO)
+        FamilyCallParticipant.objects.create(call=call, profile=self.child, status=FamilyCallParticipant.Status.JOINED, invited_by=self.child)
+        FamilyCallParticipant.objects.create(call=call, profile=self.dad, status=FamilyCallParticipant.Status.INVITED, invited_by=self.child)
+        self.client.force_login(self.child_user)
+
+        response = self.client.get(reverse("call_room", args=[call.pk]))
+
+        self.assertContains(response, "Audio Board")
+        self.assertContains(response, "data-toggle-speaker")
+        self.assertContains(response, "Add Member")
+        self.assertContains(response, "audio-call-board")
+        self.assertContains(response, self.sibling.display_name)
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+    )
+    def test_child_can_add_member_to_audio_group_call(self):
+        call = FamilyCall.objects.create(caller=self.child, recipient=self.dad, call_type=FamilyCall.Type.AUDIO, status=FamilyCall.Status.ACTIVE)
+        FamilyCallParticipant.objects.create(call=call, profile=self.child, status=FamilyCallParticipant.Status.JOINED, invited_by=self.child)
+        FamilyCallParticipant.objects.create(call=call, profile=self.dad, status=FamilyCallParticipant.Status.JOINED, invited_by=self.child)
+        self.client.force_login(self.child_user)
+
+        response = self.client.post(reverse("add_call_member", args=[call.pk]), {"profile_id": self.sibling.pk})
+
+        self.assertRedirects(response, reverse("call_room", args=[call.pk]))
+        self.assertTrue(call.participants.filter(profile=self.sibling, status=FamilyCallParticipant.Status.INVITED).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+    )
+    def test_invited_group_member_accepts_before_joining(self):
+        call = FamilyCall.objects.create(caller=self.child, recipient=self.dad, call_type=FamilyCall.Type.AUDIO, status=FamilyCall.Status.ACTIVE)
+        FamilyCallParticipant.objects.create(call=call, profile=self.child, status=FamilyCallParticipant.Status.JOINED, invited_by=self.child)
+        FamilyCallParticipant.objects.create(call=call, profile=self.sibling, status=FamilyCallParticipant.Status.INVITED, invited_by=self.child)
+        self.client.force_login(self.sibling_user)
+
+        room = self.client.get(reverse("call_room", args=[call.pk]))
+        self.assertContains(room, "Accept")
+        self.assertNotContains(room, "data-livekit-call=\"join\"")
+
+        response = self.client.post(reverse("accept_family_call", args=[call.pk]))
+
+        self.assertRedirects(response, reverse("call_room", args=[call.pk]))
+        self.assertTrue(call.participants.filter(profile=self.sibling, status=FamilyCallParticipant.Status.JOINED).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+    )
+    def test_video_call_room_keeps_video_controls_separate(self):
+        call = FamilyCall.objects.create(caller=self.child, recipient=self.dad, call_type=FamilyCall.Type.VIDEO)
+        FamilyCallParticipant.objects.create(call=call, profile=self.child, status=FamilyCallParticipant.Status.JOINED, invited_by=self.child)
+        FamilyCallParticipant.objects.create(call=call, profile=self.dad, status=FamilyCallParticipant.Status.INVITED, invited_by=self.child)
+        self.client.force_login(self.child_user)
+
+        response = self.client.get(reverse("call_room", args=[call.pk]))
+
+        self.assertContains(response, "Video Call")
+        self.assertContains(response, "data-toggle-camera")
+        self.assertNotContains(response, "data-toggle-speaker")
+        self.assertNotContains(response, "Add Member")

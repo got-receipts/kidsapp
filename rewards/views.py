@@ -59,6 +59,7 @@ from .models import (
     DiscoverSchedule,
     FamilyMessage,
     FamilyCall,
+    FamilyCallParticipant,
     FamilySettings,
     GrowthGoal,
     HiddenMessageContact,
@@ -102,7 +103,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v17';
+    source = """const CACHE = 'family-circle-v18';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -367,7 +368,18 @@ def _youtube_id(url):
 
 
 def _call_schedule_lock(call):
-    for participant in (call.caller, call.recipient):
+    participants = [call.caller, call.recipient]
+    if call.pk:
+        extra_participants = [
+            invite.profile
+            for invite in call.participants.select_related("profile").exclude(status=FamilyCallParticipant.Status.DECLINED)
+        ]
+        participants.extend(extra_participants)
+    seen = set()
+    for participant in participants:
+        if participant.pk in seen:
+            continue
+        seen.add(participant.pk)
         schedule = _communication_lock(participant, CommunicationSchedule.Feature.CALLING)
         if schedule:
             return participant, schedule
@@ -430,11 +442,24 @@ def _communication_home_context(profile):
 def _incoming_call(profile):
     _expire_ringing_calls()
     cutoff = timezone.now() - timedelta(minutes=3)
-    return (
+    direct_call = (
         FamilyCall.objects.filter(recipient=profile, status=FamilyCall.Status.RINGING, created_at__gte=cutoff)
-        .select_related("caller")
+        .select_related("caller", "recipient")
         .first()
     )
+    participant_call = (
+        FamilyCall.objects.filter(
+            participants__profile=profile,
+            participants__status=FamilyCallParticipant.Status.INVITED,
+            status__in=[FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE],
+            participants__invited_at__gte=cutoff,
+        )
+        .select_related("caller", "recipient")
+        .first()
+    )
+    if direct_call and participant_call:
+        return direct_call if direct_call.created_at >= participant_call.created_at else participant_call
+    return direct_call or participant_call
 
 
 def _expire_ringing_calls():
@@ -443,6 +468,47 @@ def _expire_ringing_calls():
         status=FamilyCall.Status.RINGING,
         created_at__lt=now - timedelta(minutes=3),
     ).update(status=FamilyCall.Status.ENDED, ended_at=now)
+    FamilyCallParticipant.objects.filter(
+        status=FamilyCallParticipant.Status.INVITED,
+        invited_at__lt=now - timedelta(minutes=3),
+        call__status__in=[FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE],
+    ).update(status=FamilyCallParticipant.Status.DECLINED, declined_at=now)
+
+
+def _call_participation(call, profile):
+    if profile.pk == call.caller_id:
+        return FamilyCallParticipant.Status.JOINED
+    if profile.pk == call.recipient_id:
+        return FamilyCallParticipant.Status.INVITED if call.status == FamilyCall.Status.RINGING else FamilyCallParticipant.Status.JOINED
+    invite = call.participants.filter(profile=profile).first()
+    return invite.status if invite else None
+
+
+def _can_join_call(call, profile):
+    participation = _call_participation(call, profile)
+    if participation == FamilyCallParticipant.Status.DECLINED:
+        return False
+    if call.status == FamilyCall.Status.ACTIVE:
+        return profile.pk in {call.caller_id, call.recipient_id} or participation == FamilyCallParticipant.Status.JOINED
+    return call.status == FamilyCall.Status.RINGING and (
+        profile.pk == call.caller_id or participation == FamilyCallParticipant.Status.JOINED
+    )
+
+
+def _available_call_invitees(call, profile):
+    if call.call_type != FamilyCall.Type.AUDIO:
+        return []
+    contacts = _message_contacts(profile)
+    participant_ids = {call.caller_id, call.recipient_id}
+    participant_ids.update(call.participants.values_list("profile_id", flat=True))
+    invitees = []
+    for contact in contacts:
+        if contact.pk in participant_ids:
+            continue
+        if _communication_lock(contact, CommunicationSchedule.Feature.CALLING):
+            continue
+        invitees.append(contact)
+    return invitees
 
 
 def _make_livekit_token(profile, call):
@@ -1007,6 +1073,16 @@ def start_family_call(request, recipient_pk, call_type):
             allowance_day=allowance_day,
             token_cost=token_cost,
         )
+        FamilyCallParticipant.objects.get_or_create(
+            call=call,
+            profile=caller,
+            defaults={"status": FamilyCallParticipant.Status.JOINED, "invited_by": caller, "joined_at": now},
+        )
+        FamilyCallParticipant.objects.get_or_create(
+            call=call,
+            profile=recipient,
+            defaults={"status": FamilyCallParticipant.Status.INVITED, "invited_by": caller},
+        )
         label = call.get_call_type_display().lower()
         FamilyMessage.objects.create(sender=caller, recipient=recipient, body=f"Started a {label} call.")
         _notify(recipient, Notification.Kind.CALL, f"Incoming {label} call", f"{caller.display_name} is calling you.")
@@ -1028,7 +1104,10 @@ def start_family_call(request, recipient_pk, call_type):
 @require_http_methods(["GET"])
 def call_room(request, pk):
     profile = _profile(request)
-    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    call = get_object_or_404(
+        FamilyCall.objects.select_related("caller", "recipient").prefetch_related("participants__profile"),
+        pk=pk,
+    )
     if not call.includes(profile):
         return redirect("messages_inbox")
     contact = call.recipient if call.caller_id == profile.pk else call.caller
@@ -1036,9 +1115,12 @@ def call_room(request, pk):
     if call_lock:
         messages.error(request, "Calls are locked by your family schedule right now.")
         return redirect("message_thread", recipient_pk=contact.pk)
-    can_join = call.status == FamilyCall.Status.ACTIVE or (
-        call.caller_id == profile.pk and call.status == FamilyCall.Status.RINGING
-    )
+    can_join = _can_join_call(call, profile)
+    participants = [call.caller, call.recipient]
+    for invite in call.participants.all():
+        if invite.profile_id not in {call.caller_id, call.recipient_id}:
+            invite.profile.call_invite_status = invite.status
+            participants.append(invite.profile)
     return render(
         request,
         "rewards/call_room.html",
@@ -1047,6 +1129,9 @@ def call_room(request, pk):
             "call": call,
             "contact": contact,
             "can_join": can_join,
+            "participants": participants,
+            "available_call_invitees": _available_call_invitees(call, profile) if can_join else [],
+            "participation_status": _call_participation(call, profile),
             "livekit_configured": _livekit_configured(),
         },
     )
@@ -1056,14 +1141,22 @@ def call_room(request, pk):
 @require_POST
 def accept_family_call(request, pk):
     profile = _profile(request)
-    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk, recipient=profile)
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    if not call.includes(profile):
+        return redirect("messages_inbox")
     locked_participant, _ = _call_schedule_lock(call)
     if locked_participant:
         messages.error(request, f"Calls are locked for {locked_participant.display_name} by the family schedule right now.")
         return redirect("message_thread", recipient_pk=call.caller_id)
+    now = timezone.now()
+    FamilyCallParticipant.objects.update_or_create(
+        call=call,
+        profile=profile,
+        defaults={"status": FamilyCallParticipant.Status.JOINED, "invited_by": call.caller, "joined_at": now, "declined_at": None},
+    )
     if call.status == FamilyCall.Status.RINGING:
         call.status = FamilyCall.Status.ACTIVE
-        call.answered_at = timezone.now()
+        call.answered_at = now
         call.save(update_fields=["status", "answered_at"])
     return redirect("call_room", pk=call.pk)
 
@@ -1072,10 +1165,18 @@ def accept_family_call(request, pk):
 @require_POST
 def decline_family_call(request, pk):
     profile = _profile(request)
-    call = get_object_or_404(FamilyCall, pk=pk, recipient=profile)
-    if call.status == FamilyCall.Status.RINGING:
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    if not call.includes(profile) or profile.pk == call.caller_id:
+        return redirect("messages_inbox")
+    now = timezone.now()
+    FamilyCallParticipant.objects.update_or_create(
+        call=call,
+        profile=profile,
+        defaults={"status": FamilyCallParticipant.Status.DECLINED, "invited_by": call.caller, "declined_at": now},
+    )
+    if call.status == FamilyCall.Status.RINGING and profile.pk == call.recipient_id:
         call.status = FamilyCall.Status.DECLINED
-        call.ended_at = timezone.now()
+        call.ended_at = now
         call.save(update_fields=["status", "ended_at"])
         FamilyMessage.objects.create(sender=profile, recipient=call.caller, body=f"Declined {call.get_call_type_display().lower()} call.")
     return redirect("message_thread", recipient_pk=call.caller_id)
@@ -1098,6 +1199,41 @@ def end_family_call(request, pk):
 
 
 @login_required
+@require_POST
+def add_call_member(request, pk):
+    profile = _profile(request)
+    call = get_object_or_404(FamilyCall.objects.select_related("caller", "recipient"), pk=pk)
+    if not call.includes(profile):
+        return redirect("messages_inbox")
+    contact = call.recipient if call.caller_id == profile.pk else call.caller
+    if call.call_type != FamilyCall.Type.AUDIO:
+        messages.error(request, "Group members can only be added to audio calls.")
+        return redirect("call_room", pk=call.pk)
+    if call.status not in [FamilyCall.Status.RINGING, FamilyCall.Status.ACTIVE]:
+        messages.error(request, "This call has already ended.")
+        return redirect("message_thread", recipient_pk=contact.pk)
+    invitee = get_object_or_404(Profile, pk=request.POST.get("profile_id"))
+    if invitee.pk == profile.pk or invitee.pk in {call.caller_id, call.recipient_id}:
+        messages.error(request, "Choose another family member to add.")
+        return redirect("call_room", pk=call.pk)
+    if invitee not in _available_call_invitees(call, profile):
+        messages.error(request, "That family member cannot be added to this call right now.")
+        return redirect("call_room", pk=call.pk)
+    if _communication_lock(invitee, CommunicationSchedule.Feature.CALLING):
+        messages.error(request, f"Calling is locked for {invitee.display_name} by the family schedule right now.")
+        return redirect("call_room", pk=call.pk)
+    FamilyCallParticipant.objects.update_or_create(
+        call=call,
+        profile=invitee,
+        defaults={"status": FamilyCallParticipant.Status.INVITED, "invited_by": profile, "declined_at": None},
+    )
+    _notify(invitee, Notification.Kind.CALL, "Added to audio call", f"{profile.display_name} added you to a family audio call.")
+    FamilyMessage.objects.create(sender=profile, recipient=invitee, body=f"Added you to a family audio call.")
+    messages.success(request, f"{invitee.display_name} was added to the audio call.")
+    return redirect("call_room", pk=call.pk)
+
+
+@login_required
 @require_http_methods(["GET"])
 def call_token(request, pk):
     profile = _profile(request)
@@ -1110,9 +1246,7 @@ def call_token(request, pk):
         locked_participant, _ = _call_schedule_lock(call)
         if locked_participant:
             return JsonResponse({"error": "Calls are locked right now."}, status=403)
-        may_join = call.status == FamilyCall.Status.ACTIVE or (
-            call.caller_id == profile.pk and call.status == FamilyCall.Status.RINGING
-        )
+        may_join = _can_join_call(call, profile)
         if not may_join:
             return JsonResponse({"error": "This call is not available to join."}, status=403)
         if not call.access_expires_at:

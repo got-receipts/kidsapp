@@ -16,6 +16,7 @@ urlpatterns = [
     path("calls/<int:pk>/accept/", views.accept_family_call, name="accept_family_call"),
     path("calls/<int:pk>/decline/", views.decline_family_call, name="decline_family_call"),
     path("calls/<int:pk>/end/", views.end_family_call, name="end_family_call"),
+    path("calls/<int:pk>/add-member/", views.add_call_member, name="add_call_member"),
     path("calls/<int:pk>/token/", views.call_token, name="call_token"),
     path("calls/<int:pk>/status/", views.call_status, name="call_status"),
     path("login/", views.FamilyLoginView.as_view(), name="login"),
