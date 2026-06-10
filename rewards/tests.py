@@ -90,6 +90,10 @@ class CommunicationAppTests(TestCase):
         self.assertNotContains(inbox, "Mom")
         self.assertContains(dashboard, "Dad")
 
+        self.client.force_login(self.mom_user)
+        mom_dashboard = self.client.get(reverse("dashboard"))
+        self.assertNotContains(mom_dashboard, "KJ")
+
     def test_family_messages_still_send_and_mark_read(self):
         self.client.force_login(self.child_user)
 
@@ -156,6 +160,52 @@ class CommunicationAppTests(TestCase):
         self.assertEqual(call.token_cost, 0)
         self.assertTrue(call.participants.filter(profile=self.child, status=FamilyCallParticipant.Status.JOINED).exists())
         self.assertTrue(call.participants.filter(profile=self.dad, status=FamilyCallParticipant.Status.INVITED).exists())
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+        FREE_CHILD_CALLS_PER_DAY=6,
+        CHILD_CALL_TOKEN_COST=1,
+    )
+    def test_mom_and_child_can_call_each_other_when_dad_allows_contact(self):
+        self.client.force_login(self.mom_user)
+
+        mom_response = self.client.post(reverse("start_family_call", args=[self.child.pk, "audio"]))
+
+        mom_call = FamilyCall.objects.get(caller=self.mom, recipient=self.child)
+        self.assertRedirects(mom_response, reverse("call_room", args=[mom_call.pk]), fetch_redirect_response=False)
+        self.assertEqual(mom_call.call_type, FamilyCall.Type.AUDIO)
+
+        mom_call.status = FamilyCall.Status.ENDED
+        mom_call.save(update_fields=["status"])
+        self.client.force_login(self.child_user)
+
+        child_response = self.client.post(reverse("start_family_call", args=[self.mom.pk, "video"]))
+
+        child_call = FamilyCall.objects.get(caller=self.child, recipient=self.mom)
+        self.assertRedirects(child_response, reverse("call_room", args=[child_call.pk]), fetch_redirect_response=False)
+        self.assertEqual(child_call.call_type, FamilyCall.Type.VIDEO)
+
+    @override_settings(
+        LIVEKIT_WS_URL="wss://family.livekit.cloud",
+        LIVEKIT_API_KEY="key",
+        LIVEKIT_API_SECRET="secret",
+    )
+    def test_dad_hidden_mom_contact_blocks_calls_both_directions(self):
+        HiddenMessageContact.objects.create(child=self.child, contact=self.mom, hidden_by=self.dad)
+
+        self.client.force_login(self.child_user)
+        child_response = self.client.post(reverse("start_family_call", args=[self.mom.pk, "audio"]))
+
+        self.assertRedirects(child_response, reverse("messages_inbox"))
+        self.assertFalse(FamilyCall.objects.filter(caller=self.child, recipient=self.mom).exists())
+
+        self.client.force_login(self.mom_user)
+        mom_response = self.client.post(reverse("start_family_call", args=[self.child.pk, "audio"]))
+
+        self.assertRedirects(mom_response, reverse("messages_inbox"))
+        self.assertFalse(FamilyCall.objects.filter(caller=self.mom, recipient=self.child).exists())
 
     @override_settings(
         LIVEKIT_WS_URL="wss://family.livekit.cloud",

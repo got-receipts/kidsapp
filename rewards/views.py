@@ -103,7 +103,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v18';
+    source = """const CACHE = 'family-circle-v19';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -235,6 +235,14 @@ def _hidden_message_contact_ids(profile):
     return set(profile.hidden_message_contacts.values_list("contact_id", flat=True))
 
 
+def _communication_hidden_between(profile, contact):
+    if profile.role == Profile.Role.CHILD:
+        return HiddenMessageContact.objects.filter(child=profile, contact=contact).exists()
+    if contact.role == Profile.Role.CHILD:
+        return HiddenMessageContact.objects.filter(child=contact, contact=profile).exists()
+    return False
+
+
 def _unread_message_count(profile):
     unread_messages = profile.received_family_messages.filter(read_at__isnull=True)
     hidden_contact_ids = _hidden_message_contact_ids(profile)
@@ -248,7 +256,7 @@ def _message_contacts(profile):
     hidden_contact_ids = _hidden_message_contact_ids(profile)
     if hidden_contact_ids:
         contacts_query = contacts_query.exclude(pk__in=hidden_contact_ids)
-    contacts = list(contacts_query)
+    contacts = [contact for contact in contacts_query if not _communication_hidden_between(profile, contact)]
     for contact in contacts:
         contact.last_message = (
             FamilyMessage.objects.filter(_message_query(profile, contact))
@@ -898,8 +906,8 @@ def message_thread(request, recipient_pk):
     if recipient.pk == profile.pk:
         messages.error(request, "Choose another family member to send a message.")
         return redirect("messages_inbox")
-    if profile.role == Profile.Role.CHILD and HiddenMessageContact.objects.filter(child=profile, contact=recipient).exists():
-        messages.error(request, "That conversation is hidden in your message settings.")
+    if _communication_hidden_between(profile, recipient):
+        messages.error(request, "Dad has not enabled that family contact for this child account.")
         return redirect("messages_inbox")
     messaging_lock = _communication_lock(profile, CommunicationSchedule.Feature.MESSAGING)
     calling_lock = _communication_lock(profile, CommunicationSchedule.Feature.CALLING)
@@ -945,10 +953,9 @@ def message_attachment(request, pk):
     message = get_object_or_404(FamilyMessage.objects.select_related("sender", "recipient"), pk=pk)
     if profile.pk not in {message.sender_id, message.recipient_id}:
         raise Http404
-    if profile.role == Profile.Role.CHILD:
-        other_party = message.recipient if message.sender_id == profile.pk else message.sender
-        if HiddenMessageContact.objects.filter(child=profile, contact=other_party).exists():
-            raise Http404
+    other_party = message.recipient if message.sender_id == profile.pk else message.sender
+    if _communication_hidden_between(profile, other_party):
+        raise Http404
     if not message.attachment:
         raise Http404
     response = FileResponse(message.attachment.open("rb"), content_type=message.attachment_mime or None)
@@ -974,7 +981,7 @@ def _photo_content_type(filename):
 def profile_photo(request, pk):
     viewer = _profile(request)
     subject = get_object_or_404(Profile, pk=pk)
-    if viewer.role == Profile.Role.CHILD and HiddenMessageContact.objects.filter(child=viewer, contact=subject).exists():
+    if _communication_hidden_between(viewer, subject):
         raise Http404
     if not subject.profile_photo:
         raise Http404
@@ -1010,6 +1017,9 @@ def start_family_call(request, recipient_pk, call_type):
     recipient = get_object_or_404(Profile, pk=recipient_pk)
     if recipient.pk == caller.pk or call_type not in FamilyCall.Type.values:
         messages.error(request, "Choose a valid family member and call type.")
+        return redirect("messages_inbox")
+    if _communication_hidden_between(caller, recipient):
+        messages.error(request, "Dad has not enabled calling between these family accounts.")
         return redirect("messages_inbox")
     if not _livekit_configured():
         messages.error(request, "Video calling has not been configured by a parent yet.")
