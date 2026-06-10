@@ -1,130 +1,103 @@
 {% extends "rewards/base.html" %}
 {% load static %}
-{% load rewards_tags %}
 {% block title %}{{ profile.display_name }} | Family Circle{% endblock %}
 {% block content %}
-{% if show_recap %}
-<section class="recap-backdrop" role="dialog" aria-modal="true" aria-labelledby="recap-title">
-  <div class="recap-modal">
-    <div class="recap-stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div>
-    <p class="eyebrow">Welcome back, {{ profile.display_name }}!</p>
-    <h2 id="recap-title">{% if recap_first_visit %}Your adventure begins today!{% else %}Here's what happened while you were away{% endif %}</h2>
-    {% if profile.grounded %}
-      <p class="recap-penalty">Grounded Mode is active. Your balances and rewards are locked while you focus on today's chores.</p>
-      <div class="recap-wins"><div><strong>{{ recap_tasks_left }}</strong><span>quests left</span></div></div>
-    {% else %}
-      <div class="recap-wins">
-        <div><strong>{{ recap_star_count }}</strong><span>new stars</span></div>
-        <div><strong>+{{ recap_token_total }}</strong><span>tokens earned</span></div>
-        <div><strong>{{ recap_tasks_left }}</strong><span>quests left</span></div>
-      </div>
-      {% if recap_purchases %}<p class="recap-note">You unlocked {{ recap_purchases }} store reward{{ recap_purchases|pluralize }} since your last check-in!</p>{% endif %}
-      {% if recap_token_loss %}<p class="recap-penalty">{{ recap_token_loss }} token{{ recap_token_loss|pluralize }} removed since your last check-in. A guardian can talk with you about why.</p>{% endif %}
-    {% endif %}
-    {% if next_prize and not profile.grounded %}
-      <div class="next-prize"><span>Next adventure goal</span><strong>{{ next_prize.name }}</strong><small>Earn {{ tokens_to_next_prize }} more tokens to request it.</small></div>
-    {% endif %}
-    {% if unread_notifications %}
-      <div class="recap-notifications">
-        <h3>New updates</h3>
-        {% for notice in unread_notifications %}
-          <div class="notification-row"><span class="badge">{{ notice.get_kind_display }}</span><div><strong>{{ notice.title }}</strong><small>{{ notice.message }}</small></div></div>
-        {% endfor %}
-      </div>
-    {% endif %}
-    <div class="morning-briefing">
-      <h3>Today's Plan</h3>
-      {% for event in today_schedule %}
-        <div class="brief-event"><b>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Today{% endif %}</b><span><strong>{{ event.title }}</strong>{% if event.details %}<small>{{ event.details }}</small>{% endif %}</span></div>
-      {% empty %}<p>No special events planned today. Open Quests when you are ready!</p>{% endfor %}
-      <h3>Rules to Remember</h3>
-      <div class="brief-rules">
-        {% for rule in specific_rules %}<p><strong>{{ rule.title }}</strong>{% if rule.details %} - {{ rule.details }}{% endif %}</p>{% endfor %}
-        {% for rule in house_rules %}<p><strong>{{ rule.title }}</strong>{% if rule.details %} - {{ rule.details }}{% endif %}</p>{% endfor %}
-        {% if not specific_rules and not house_rules %}<p>Be kind, listen well, and have a great day.</p>{% endif %}
-      </div>
+<main class="shell comm-shell kid-shell">
+  <header class="comm-topbar">
+    <a class="comm-brand" href="{% url 'dashboard' %}">
+      <img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt="">
+      <span><small>Family Circle</small><strong>{{ profile.display_name }}</strong></span>
+    </a>
+    <div class="comm-actions">
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button>
+      <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form>
     </div>
-    <form method="post" action="{% url 'dismiss_recap' %}">
-      {% csrf_token %}<button class="recap-go" type="submit">Go To Home Screen</button>
-    </form>
-  </div>
-</section>
-{% endif %}
-<main class="shell kid-shell kid-home-screen">
-  <header class="topbar">
-    <div class="identity"><img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt=""><div><small>Home Screen</small><h1>{{ profile.display_name }}</h1></div></div>
-    <div class="top-actions"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
   </header>
-  {% if unread_notifications and not show_recap %}
+
+  {% if unread_notifications %}
     <dialog class="review-dialog child-notifications" id="child-notifications" data-auto-open-dialog>
-      <p class="eyebrow">New updates</p>
-      <h2>Family notifications</h2>
+      <p class="eyebrow">New family updates</p>
+      <h2>Before you start</h2>
       {% for notice in unread_notifications %}
         <div class="notification-row"><span class="badge">{{ notice.get_kind_display }}</span><div><strong>{{ notice.title }}</strong><small>{{ notice.message }}</small></div></div>
       {% endfor %}
       <form method="post" action="{% url 'read_notifications' %}">{% csrf_token %}<button class="primary acknowledge" type="submit">Got it</button></form>
     </dialog>
   {% endif %}
-  {% if profile.grounded %}
-    <dialog class="review-dialog grounded-child-dialog" id="grounded-alert" data-auto-open-dialog>
-      <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-      <p class="eyebrow">Important notice</p>
-      <h2>Grounded Mode is active</h2>
-      <p>Your wallet, token rewards, and store are locked for now. You can keep finishing chores for a guardian to verify.</p>
-      {% if profile.grounded_reason %}<p class="lockdown-reason">{{ profile.grounded_reason }}</p>{% endif %}
-      {% if profile.grounded_until %}
-        <p>Scheduled lift: <strong>{{ profile.grounded_until|date:"M j, Y \a\t g:i A" }}</strong></p>
-        <p>Time remaining: <strong data-grounding-deadline="{{ profile.grounded_until|date:'c' }}">Calculating...</strong></p>
-      {% else %}<p>A guardian will lift Grounded Mode when it is time.</p>{% endif %}
-      <form method="dialog"><button class="primary acknowledge" type="submit">I understand</button></form>
-    </dialog>
-    <section class="lockdown-child" role="status">
-      <strong>Grounded Mode</strong>
-      <p>Your wallet and rewards are locked for now. Complete your chores and a guardian will verify your work without adding tokens.</p>
-      {% if profile.grounded_reason %}<small>{{ profile.grounded_reason }}</small>{% endif %}
-    </section>
-  {% endif %}
-  <section class="wallet-card kid-hero">
-    <p class="eyebrow">My adventure board</p>
-    <h2>Let's shine today, {{ profile.display_name }}!</h2>
-    {% if profile.grounded %}
-      <p class="hero-copy">Today is about completing your chores and following your family plan.</p>
-      <div class="vault-locked"><strong>Balances locked</strong><span>Available again when Grounded Mode is lifted</span></div>
-    {% else %}
-      <p class="hero-copy">Pick an app to explore your quests, rewards, and wallet.</p>
-      <div class="balances">
-        <div class="treasure"><strong>{{ wallet.tokens }}</strong><span>Tokens</span></div>
-        <div class="piggy"><strong>{{ cash_app_balance_cents|dollars }}</strong><span>Cash</span></div>
-        <div class="star-balance"><strong>{{ star_count }}</strong><span>Stars</span></div>
-        <div class="streak-balance"><strong>{{ streak_count }}</strong><span>Day streak</span></div>
-      </div>
-    {% endif %}
+
+  <dialog class="review-dialog comm-update-dialog" id="communication-update-child" data-auto-open-dialog>
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <p class="eyebrow">Family Circle changed</p>
+    <h2>It is simpler now.</h2>
+    <p>Family Circle is now just for talking with your family.</p>
+    <div class="comm-update-list">
+      <span><b>1</b> Send messages.</span>
+      <span><b>2</b> Make audio calls.</span>
+      <span><b>3</b> Make video calls.</span>
+    </div>
+    <p>No wallet, shopping, videos, or quests are here anymore. Just pick a family person and choose Text, Voice, or Video.</p>
+    <form method="dialog"><button class="primary acknowledge" type="submit">Okay, got it</button></form>
+  </dialog>
+
+  <section class="comm-hero child-comm-hero">
+    <p class="eyebrow">Private family line</p>
+    <h1>Message, call, or video chat your family.</h1>
+    <p>Use this from iPhone, iPad, computer, Android, or the Kindle Fire web browser. Big buttons, simple choices, family only.</p>
+    <div class="comm-hero-actions">
+      <a class="primary comm-main-button" href="{% url 'messages_inbox' %}">Open Messages{% if unread_message_count %}<b>{{ unread_message_count }}</b>{% endif %}</a>
+    </div>
   </section>
-  <nav class="kid-map kid-app-grid" aria-label="Adventure board apps">
-    <a class="map-chores" href="{% url 'child_section' 'chores' %}"><b>&#10003;</b><strong>Quests</strong><small>{{ chore_verified }}/{{ chore_total }} verified</small></a>
-    {% if not profile.grounded %}
-    <a class="map-stars" href="{% url 'child_section' 'badges' %}"><b>&#9733;</b><strong>Badges</strong><small>{{ streak_count }} day streak</small></a>
-    <a class="map-school" href="{% url 'child_section' 'school' %}"><b>A+</b><strong>School</strong><small>My grades</small></a>
-    <a class="map-store" href="{% url 'child_section' 'store' %}"><b>&#127873;</b><strong>Store</strong><small>Rewards</small></a>
-    <a class="map-savings" href="{% url 'child_section' 'savings' %}"><b>$</b><strong>My Goal</strong><small>{% if savings_goal %}{{ savings_goal.percent }}% saved{% else %}Set a goal{% endif %}</small></a>
-    <a class="map-growth" href="{% url 'child_section' 'goals' %}"><b>&uarr;</b><strong>Grow</strong><small>My progress</small></a>
-    <a class="map-wallet" href="{% url 'wallet_page' %}"><b>&#8644;</b><strong>Wallet</strong><small>Cash out tokens</small></a>
-    <a class="map-shopping" href="{% url 'shopping_page' %}"><b>&#128722;</b><strong>Shopping</strong><small>Use my cash</small></a>
-    <a class="map-discover" href="{% url 'discover_page' %}"><b>&#9654;</b><strong>Discover</strong><small>{% if discover_lock %}Closed now{% else %}Watch &amp; learn{% endif %}</small></a>
-    {% endif %}
-    <a class="map-messages" href="{% url 'messages_inbox' %}"><b>&#9993;</b><strong>Messages</strong><small>{% if unread_message_count %}{{ unread_message_count }} new{% else %}Family chat{% endif %}</small></a>
-    <a class="map-plan" href="{% url 'child_section' 'today' %}"><b>&#9788;</b><strong>Today</strong><small>Plan &amp; rules</small></a>
-  </nav>
-  <nav class="kid-dock" aria-label="Quick navigation">
-    <a href="{% url 'child_section' 'today' %}"><span>&#9788;</span>Today</a>
-    <a class="dock-messages" href="{% url 'messages_inbox' %}"><span>&#9993;</span>Messages{% if unread_message_count %}<b class="dock-count">{{ unread_message_count }}</b>{% endif %}</a>
-    {% if not profile.grounded %}
-    <a href="{% url 'child_section' 'store' %}"><span>&#127873;</span>Store</a>
-    <a href="{% url 'wallet_page' %}"><span>&#8644;</span>Wallet</a>
-    <a href="{% url 'shopping_page' %}"><span>&#128722;</span>Shopping</a>
-    {% else %}
-    <a href="{% url 'child_section' 'chores' %}"><span>&#10003;</span>Quests</a>
-    {% endif %}
-  </nav>
+
+  {% if messaging_lock %}<p class="communication-lock-note">Messaging is locked by your family schedule right now. You can still read conversations.</p>{% endif %}
+  {% if calling_lock %}<p class="communication-lock-note">Calls are locked by your family schedule right now.</p>{% endif %}
+  {% if not livekit_configured %}<p class="communication-lock-note">Video and voice calling need LiveKit settings before calls can connect.</p>{% endif %}
+
+  <section class="comm-profile-card">
+    {% include "rewards/_profile_avatar.html" with person=profile %}
+    <div>
+      <strong>Your profile photo</strong>
+      <small>This picture shows above your messages and calls.</small>
+    </div>
+    <form method="post" enctype="multipart/form-data" action="{% url 'update_profile_photo' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ profile_photo_next_url }}">
+      <label class="ios-photo-upload">Change {{ profile_photo_form.profile_photo }}</label>
+    </form>
+  </section>
+
+  <section class="comm-contact-grid" aria-label="Family contacts">
+    {% for contact in communication_contacts %}
+      <article class="comm-contact-card">
+        <a class="comm-contact-head" href="{% url 'message_thread' contact.pk %}">
+          {% include "rewards/_profile_avatar.html" with person=contact %}
+          <span>
+            <strong>{{ contact.display_name }}</strong>
+            <small>{{ contact.get_role_display }}{% if contact.unread_count %} &middot; {{ contact.unread_count }} new{% endif %}</small>
+          </span>
+        </a>
+        <div class="comm-contact-actions">
+          <a href="{% url 'message_thread' contact.pk %}">Text</a>
+          <form method="post" action="{% url 'start_family_call' contact.pk 'audio' %}">
+            {% csrf_token %}
+            <button type="submit" {% if calling_lock or not livekit_configured %}disabled{% endif %}>Voice</button>
+          </form>
+          <form method="post" action="{% url 'start_family_call' contact.pk 'video' %}">
+            {% csrf_token %}
+            <button type="submit" {% if calling_lock or not livekit_configured %}disabled{% endif %}>Video</button>
+          </form>
+        </div>
+      </article>
+    {% empty %}
+      <p class="comm-empty">No family contacts are available yet. Dad can update message settings.</p>
+    {% endfor %}
+  </section>
+
+  <section class="comm-device-card">
+    <span>&#128187;</span>
+    <div>
+      <strong>Kindle Fire friendly</strong>
+      <p>Open this same website in the Kindle Silk browser. For calls, allow microphone and camera when the browser asks.</p>
+    </div>
+  </section>
 </main>
 {% endblock %}

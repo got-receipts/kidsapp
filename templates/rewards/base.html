@@ -37,7 +37,7 @@
       </div>
       <p class="connection-mode">{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Adventure Link{% elif request.user.is_authenticated %}Guardian Secure Link{% else %}Family Circle Network{% endif %}</p>
       <strong>{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Welcome back, explorer{% elif request.user.is_authenticated %}Command center secured{% else %}Connecting your family{% endif %}</strong>
-      <small class="connection-live">{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Gathering today's quests{% elif request.user.is_authenticated %}Validating protected access{% else %}Establishing private connection{% endif %}</small>
+      <small class="connection-live">{% if request.user.is_authenticated and request.user.profile.role == 'child' %}Opening your family line{% elif request.user.is_authenticated %}Validating protected access{% else %}Establishing private connection{% endif %}</small>
       <div class="connection-progress"><span></span></div>
       <div class="connection-packets"><i></i><i></i><i></i></div>
     </div>

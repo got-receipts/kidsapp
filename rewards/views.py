@@ -102,7 +102,7 @@ def csrf_failure(request, reason=""):
 
 
 def service_worker(request):
-    source = """const CACHE = 'family-circle-v11';
+    source = """const CACHE = 'family-circle-v15';
 const CORE = ['/static/rewards/styles.css', '/static/rewards/app.js', '/static/rewards/icon.svg', '/static/rewards/icon-192.png', '/static/rewards/icon-512.png', '/static/rewards/apple-touch-icon.png', '/static/rewards/catalog/building.svg', '/static/rewards/catalog/stem.svg', '/static/rewards/catalog/creative.svg', '/static/rewards/catalog/games.svg', '/static/rewards/catalog/outdoor.svg', '/static/rewards/catalog/electronics.svg', '/static/rewards/catalog/pretend.svg', '/static/rewards/catalog/gift.svg'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -181,9 +181,6 @@ def _block_grounded_child(request, profile):
 
 
 def _child_destination(request, default="dashboard"):
-    section = request.POST.get("return_section")
-    if section in CHILD_SECTIONS:
-        return redirect("child_section", section=section)
     return redirect(default)
 
 
@@ -414,6 +411,22 @@ def _child_call_allowance(profile):
     }
 
 
+def _communication_home_context(profile):
+    calling_lock = _communication_lock(profile, CommunicationSchedule.Feature.CALLING)
+    messaging_lock = _communication_lock(profile, CommunicationSchedule.Feature.MESSAGING)
+    incoming_call = None if calling_lock else _incoming_call(profile)
+    return {
+        "communication_contacts": _message_contacts(profile),
+        "messaging_lock": messaging_lock,
+        "calling_lock": calling_lock,
+        "incoming_call": incoming_call,
+        "livekit_configured": _livekit_configured(),
+        "call_allowance": _child_call_allowance(profile),
+        "profile_photo_form": ProfilePhotoForm(instance=profile),
+        "profile_photo_next_url": "/",
+    }
+
+
 def _incoming_call(profile):
     _expire_ringing_calls()
     cutoff = timezone.now() - timedelta(minutes=3)
@@ -633,6 +646,7 @@ def _child_context(profile, family_settings, include_welcome=True):
         "quest_badge": verified >= 3,
         "streak_badge": streak_count >= 3,
         "discover_lock": _discover_lock(profile),
+        **_communication_home_context(profile),
     }
 
 
@@ -781,6 +795,7 @@ def dashboard(request):
                 selected.video_reactions.select_related("clip", "playlist")[:12]
                 if selected and can_manage_video else []
             ),
+            **_communication_home_context(profile),
         }
         return render(request, "rewards/guardian_dashboard.html", context)
     return render(request, "rewards/child_dashboard.html", _child_context(profile, family_settings))
@@ -1153,96 +1168,6 @@ def incoming_call_status(request):
                 "url": f"/calls/{call.pk}/",
             }
         }
-    )
-
-
-@login_required
-def child_section(request, section):
-    if section not in CHILD_SECTIONS:
-        return redirect("dashboard")
-    ensure_today_chores()
-    _expire_rules()
-    profile = _profile(request)
-    if profile.can_view_family:
-        return redirect("dashboard")
-    if profile.grounded and section not in {"today", "chores"}:
-        messages.info(request, "That area is available again when Grounded Mode is lifted.")
-        return redirect("dashboard")
-    context = _child_context(profile, FamilySettings.load(), include_welcome=False)
-    context["active_section"] = section
-    return render(request, "rewards/child_section.html", context)
-
-
-@login_required
-def wallet_page(request):
-    profile = _profile(request)
-    if profile.can_view_family:
-        return redirect("dashboard")
-    if _block_grounded_child(request, profile):
-        return redirect("dashboard")
-    context = {"profile": profile}
-    context.update(_wallet_context(profile))
-    return render(request, "rewards/wallet_page.html", context)
-
-
-@login_required
-def shopping_page(request):
-    profile = _profile(request)
-    if profile.can_view_family:
-        return redirect("dashboard")
-    if _block_grounded_child(request, profile):
-        return redirect("dashboard")
-    products = ShoppingProduct.objects.filter(active=True, in_stock=True)
-    category = request.GET.get("category", "")
-    search = request.GET.get("q", "").strip()
-    if category in ShoppingProduct.Category.values:
-        products = products.filter(category=category)
-    if search:
-        products = products.filter(Q(name__icontains=search) | Q(description__icontains=search))
-    products = [product for product in products if product.available_to(profile)]
-    cart_items = list(profile.shopping_cart_items.select_related("product"))
-    context = {
-        "profile": profile,
-        "wallet": profile.wallet,
-        "products": products,
-        "categories": ShoppingProduct.Category.choices,
-        "selected_category": category,
-        "search": search,
-        "cart_items": cart_items,
-        "cart_total_cents": sum(item.subtotal_cents for item in cart_items),
-        "orders": profile.shopping_orders.prefetch_related("items")[:12],
-    }
-    return render(request, "rewards/shopping_page.html", context)
-
-
-@login_required
-def discover_page(request):
-    profile = _profile(request)
-    if profile.can_view_family:
-        return redirect("dashboard")
-    if profile.grounded:
-        messages.info(request, "Discover is locked while Grounded Mode is active.")
-        return redirect("dashboard")
-    schedule_lock = _discover_lock(profile)
-    clips = [] if schedule_lock else list(_active_discover_clips())
-    source_playlists = [] if schedule_lock else list(_active_discover_playlists())
-    reaction_lookup = {} if schedule_lock else _discover_reaction_lookup(profile)
-    favorites = set(profile.video_favorites.filter(clip__in=clips).values_list("clip_id", flat=True))
-    for clip in clips:
-        clip.reaction_value = reaction_lookup.get(clip.youtube_id, "")
-        clip.favorited = clip.reaction_value == VideoReaction.Value.LIKE or (not clip.reaction_value and clip.pk in favorites)
-    return render(
-        request,
-        "rewards/discover_page.html",
-        {
-            "profile": profile,
-            "clips": clips,
-            "source_playlists": source_playlists,
-            "discover_items": _discover_feed_items(clips, source_playlists),
-            "discover_lock": schedule_lock,
-            "reaction_lookup": reaction_lookup,
-            "youtube_embed_origin": quote(f"{request.scheme}://{request.get_host()}", safe=""),
-        },
     )
 
 

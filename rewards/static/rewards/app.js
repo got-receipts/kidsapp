@@ -318,17 +318,17 @@ if (discoverFeed) {
     const mount = slide.querySelector("[data-discover-playlist-mount]");
     const creating = youtubePlayerAPI().then((YT) => new Promise((resolve) => {
       const player = new YT.Player(mount.id, {
+        host: "https://www.youtube-nocookie.com",
         width: "100%",
         height: "100%",
         playerVars: {
-          autoplay: 1,
+          autoplay: 0,
           controls: 1,
           enablejsapi: 1,
           fs: 0,
           list: mount.dataset.playlistId,
           listType: "playlist",
           loop: 1,
-          mute: 1,
           origin: window.location.origin,
           playsinline: 1,
           rel: 0,
@@ -341,7 +341,6 @@ if (discoverFeed) {
             iframe.allow = "autoplay; encrypted-media; picture-in-picture";
             event.target.setLoop(true);
             syncPlaylistReactionState(slide, event.target);
-            if (slide === activeSlide) event.target.playVideo();
             resolve(event.target);
           },
           onStateChange(event) {
@@ -365,15 +364,11 @@ if (discoverFeed) {
 
   function playSlide(slide) {
     if (slide.hasAttribute("data-discover-playlist")) {
-      playlistPlayer(slide).then((player) => {
-        player.setLoop(true);
-        player.playVideo();
-      });
+      playlistPlayer(slide).then((player) => player.setLoop(true));
       return;
     }
     const frame = slide.querySelector("[data-discover-player]");
     if (frame && !frame.src) frame.src = frame.dataset.src;
-    commandPlayer(frame, "playVideo");
   }
 
   function activateDiscoverSlide(slide) {
@@ -406,7 +401,7 @@ if (discoverFeed) {
   slides.forEach((slide) => {
     const frame = slide.querySelector("[data-discover-player]");
     if (frame) frame.addEventListener("load", () => {
-      if (slide === activeSlide) commandPlayer(frame, "playVideo");
+      if (slide !== activeSlide) commandPlayer(frame, "pauseVideo");
     });
   });
 

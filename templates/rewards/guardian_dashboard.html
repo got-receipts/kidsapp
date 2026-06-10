@@ -1,843 +1,180 @@
 {% extends "rewards/base.html" %}
 {% load static %}
-{% load rewards_tags %}
 {% block title %}{{ profile.display_name }} | Family Circle{% endblock %}
 {% block content %}
-<main class="shell guardian guardian-os" data-guardian-os data-selected-child="{% if selected %}{{ selected.pk }}{% endif %}">
-  <header class="topbar">
-    <div class="identity"><img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt=""><div><small>{% if can_manage %}Parent Home Screen{% else %}Family Viewer Home Screen{% endif %}</small><h1>{{ profile.display_name }}</h1></div></div>
-    <div class="top-actions"><a class="top-message-link" href="{% url 'messages_inbox' %}">Messages{% if unread_message_count %}<b>{{ unread_message_count }}</b>{% endif %}</a><button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form></div>
-  </header>
-  <section class="guardian-home-screen" data-guardian-home>
-  <section class="wallet-card guardian-card">
-    <p class="eyebrow">{% if can_manage %}Family control center{% else %}Family progress view{% endif %}</p>
-    <h2>{% if can_manage %}Rewards and progress{% else %}See their growth and good moments{% endif %}</h2>
-    <p>{% if can_manage %}Dad and GG manage approvals, routines, rewards, and family accounts.{% elif can_fulfill and can_manage_video %}You can complete children's Shopping orders and manage their approved Discover video playlists.{% elif can_fulfill %}You can follow family progress and complete children's Shopping orders sent for purchase.{% else %}You can follow school progress, completed chores, stars, schedules, and encouraging milestones. This account is view-only.{% endif %}</p>
-    {% if can_manage %}
-    <button class="notify-button" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on reminders</button>
-    {% if not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable push notifications.</small>{% endif %}
-    {% endif %}
-  </section>
-  {% if can_manage and vapid_public_key %}
-  <dialog class="review-dialog notification-permission-dialog" id="notification-permission" data-notification-prompt>
-    <form method="dialog" class="dialog-close" data-dismiss-notification-prompt><button aria-label="Close">&times;</button></form>
-    <div class="permission-pulse"><span></span></div>
-    <p class="eyebrow">Stay in sync</p>
-    <h2>Turn on family reminders?</h2>
-    <p>Receive the daily 7:30 PM star check-in and the 9:00 PM next-day schedule planning reminder.</p>
-    <p class="ios-permission-note">For iPhone or iPad: install Family Circle to the Home Screen first, then tap Allow Notifications so iOS can display its permission prompt.</p>
-    <div class="permission-actions">
-      <button class="primary" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}">Allow Notifications</button>
-      <form method="dialog" data-dismiss-notification-prompt><button class="text" type="submit">Not now</button></form>
+<main class="shell comm-shell guardian-comm-shell">
+  <header class="comm-topbar">
+    <a class="comm-brand" href="{% url 'dashboard' %}">
+      <img class="app-emblem" src="{% static 'rewards/icon.svg' %}" alt="">
+      <span><small>{% if can_manage %}Family communication control{% else %}Family contact{% endif %}</small><strong>{{ profile.display_name }}</strong></span>
+    </a>
+    <div class="comm-actions">
+      <a class="top-message-link" href="{% url 'messages_inbox' %}">Messages{% if unread_message_count %}<b>{{ unread_message_count }}</b>{% endif %}</a>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"><span class="sun">&#9728;</span><span class="moon">&#9790;</span></button>
+      <form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text" type="submit">Sign out</button></form>
     </div>
-  </dialog>
-  {% endif %}
+  </header>
+
   {% if unread_notifications %}
     <dialog class="review-dialog child-notifications" id="guardian-notifications" data-auto-open-dialog>
       <p class="eyebrow">New updates</p>
-      <h2>Parent notifications</h2>
+      <h2>Family notifications</h2>
       {% for notice in unread_notifications %}
         <div class="notification-row"><span class="badge">{{ notice.get_kind_display }}</span><div><strong>{{ notice.title }}</strong><small>{{ notice.message }}</small></div></div>
       {% endfor %}
       <form method="post" action="{% url 'read_notifications' %}">{% csrf_token %}<button class="primary acknowledge" type="submit">Got it</button></form>
     </dialog>
   {% endif %}
-  {% if star_reminder_due %}
-    <section class="reminder-callout"><strong>Star check-in time!</strong> It is after 7:30 PM. Still waiting on stars for: {% for child in unstarred %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
-  {% endif %}
-  {% if schedule_reminder_due %}
-    <section class="reminder-callout schedule-callout"><strong>Tomorrow's schedule check!</strong> It is after 9:00 PM. Create and approve the {{ tomorrow|date:"F j" }} plan for: {% for child in schedule_waiting %}{{ child.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</section>
-  {% endif %}
-  <nav class="child-picker" aria-label="Select child">
-    {% for child in children %}<a href="?child={{ child.pk }}" class="{% if child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}{% if child.grounded %} <small>Locked</small>{% endif %}</a>{% endfor %}
-  </nav>
-  {% if selected %}
-    <section class="summary">
-      <h2>{{ selected.display_name }} {% if selected.grounded %}<span class="badge coral">Grounded Mode</span>{% endif %}</h2>
+
+  <dialog class="review-dialog comm-update-dialog" id="communication-update-family" data-auto-open-dialog>
+    <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
+    <p class="eyebrow">Version {{ app_version }} update</p>
+    <h2>Family Circle is now communication-only.</h2>
+    <p>The app has been narrowed to messaging, FaceTime-style audio calls, and FaceTime-style video calls through the browser.</p>
+    <div class="comm-update-list">
+      <span><b>Removed</b> Wallet, Shopping, Discover, Store, chores, quests, grades, rewards, and old child app sections.</span>
+      <span><b>Children</b> See family contacts and choose Text, Voice, or Video.</span>
+      <span><b>Dad &amp; GG</b> Manage child contacts, call rules, and message/call lock schedules.</span>
+      <span><b>Mom</b> Is now a family contact only, with messaging, audio calls, and video calls.</span>
+      <span><b>Kindle Fire</b> Use the Railway URL in the Silk Browser; no native Kindle app is required.</span>
+    </div>
+    <p>Actual Apple FaceTime cannot be embedded in this Django web app. The app provides a private FaceTime-style browser call experience using LiveKit.</p>
+    <form method="dialog"><button class="primary acknowledge" type="submit">Understood</button></form>
+  </dialog>
+
+  <section class="comm-hero parent-comm-hero">
+    <p class="eyebrow">Private family communication</p>
+    <h1>Texting, voice calls, and video chat. Nothing extra.</h1>
+    <p>{% if can_manage %}Dad and GG manage the controls. Children and family contacts use the app for messages, audio calls, and video calls.{% else %}You are set up as a family contact for messages, audio calls, and video calls.{% endif %}</p>
+    <div class="comm-hero-actions">
+      <a class="primary comm-main-button" href="{% url 'messages_inbox' %}">Open Messages{% if unread_message_count %}<b>{{ unread_message_count }}</b>{% endif %}</a>
       {% if can_manage %}
-      <div><strong>{{ selected.wallet.tokens }}</strong><small>tokens</small></div>
-      <div><strong>{{ selected.wallet.available_cash_cents|dollars }}</strong><small>Cash App balance</small></div>
-      <div><strong>{{ family_settings.tokens_per_dollar }}</strong><small>tokens = $1</small></div>
-      {% else %}
-      <div><strong>{{ selected.behavior_stars.count }}</strong><small>stars earned</small></div>
-      <div><strong>{{ selected_chores|length }}</strong><small>chores today</small></div>
-      <div><strong>{{ selected_grades|length }}</strong><small>recent grades</small></div>
+        <button class="notify-button" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}" {% if not vapid_public_key %}disabled{% endif %}>Turn on alerts</button>
       {% endif %}
-    </section>
-    {% if selected.grounded %}
-    <section class="grounded-status" role="status">
-      <div><p class="eyebrow">Grounded Mode active</p><strong>{{ selected.display_name }}'s wallet and rewards are locked.</strong></div>
-      <div class="grounded-meta">
-        <span><small>Issued</small>{{ selected.grounded_at|date:"M j, g:i A" }}</span>
-        <span><small>By</small>{% if selected.grounded_by %}{{ selected.grounded_by.display_name }}{% else %}Guardian{% endif %}</span>
-        <span><small>Scheduled lift</small>{% if selected.grounded_until %}{{ selected.grounded_until|date:"M j, g:i A" }}{% else %}Manual lift{% endif %}</span>
-        <span><small>Remaining</small>{% if selected.grounded_until %}<b data-grounding-deadline="{{ selected.grounded_until|date:'c' }}">Calculating...</b>{% else %}Until lifted{% endif %}</span>
-      </div>
-    </section>
-    {% endif %}
-    <nav class="guardian-app-grid" aria-label="{% if can_manage %}Parent apps{% else %}Family viewer apps{% endif %}">
-      {% if can_manage %}
-      <button class="parent-app app-controls" type="button" data-parent-open="actions"><b>&#9881;</b><strong>Controls</strong><small>Quick actions</small></button>
-      <button class="parent-app app-wallet" type="button" data-parent-open="wallet"><b>$</b><strong>Wallet</strong><small>Cash &amp; tokens</small></button>
-      <button class="parent-app app-approvals" type="button" data-parent-open="approvals"><b>&#10003;</b><strong>Approvals</strong><small>{{ pending_chore_reviews|length }} chore review{{ pending_chore_reviews|length|pluralize }}</small></button>
-      <button class="parent-app app-calendar" type="button" data-parent-open="calendar"><b>31</b><strong>Calendar</strong><small>{{ upcoming_event_queue|length }} upcoming</small></button>
-      <button class="parent-app app-routine" type="button" data-parent-open="routine"><b>&#9788;</b><strong>Routine</strong><small>Chores &amp; schedule</small></button>
-      <button class="parent-app app-rules" type="button" data-parent-open="rules"><b>&#167;</b><strong>Rules</strong><small>House &amp; personal</small></button>
-      <button class="parent-app app-store" type="button" data-parent-open="store"><b>&#127873;</b><strong>Store</strong><small>Inventory</small></button>
-      <button class="parent-app app-limits" type="button" data-parent-open="limits"><b>&#128274;</b><strong>Limits</strong><small>Messages &amp; calls</small></button>
-      {% if dad_controls %}<button class="parent-app app-limits" type="button" data-parent-open="message-settings"><b>&#9993;</b><strong>Message Settings</strong><small>Hide child contacts</small></button>{% endif %}
-      {% endif %}
-      {% if can_fulfill %}
-      <button class="parent-app app-fulfillment" type="button" data-parent-open="fulfillment"><b>&#128722;</b><strong>Fulfillment</strong><small>{{ open_shopping_order_count }} waiting</small></button>
-      {% endif %}
-      {% if can_manage_video %}
-      <button class="parent-app app-video-library" type="button" data-parent-open="video-library"><b>&#9654;</b><strong>Video Library</strong><small>Discover feed</small></button>
-      {% endif %}
-      {% if not can_manage %}
-      <button class="parent-app app-routine" type="button" data-parent-open="routine"><b>&#9788;</b><strong>Routine</strong><small>Chores &amp; schedule</small></button>
-      <button class="parent-app app-rules" type="button" data-parent-open="rules"><b>&#167;</b><strong>Rules</strong><small>Family expectations</small></button>
-      {% endif %}
-      <button class="parent-app app-behavior" type="button" data-parent-open="behavior"><b>&#9733;</b><strong>Behavior</strong><small>Notes &amp; stars</small></button>
-      <button class="parent-app app-progress" type="button" data-parent-open="progress"><b>A+</b><strong>Progress</strong><small>School &amp; goals</small></button>
-      {% if can_manage %}<button class="parent-app app-audit" type="button" data-parent-open="audit"><b>&#128737;</b><strong>Audit</strong><small>Rule &amp; reward log</small></button>{% endif %}
-      <button class="parent-app app-ledger" type="button" data-parent-open="ledger"><b>&#9776;</b><strong>{% if can_manage %}Ledger{% else %}Highlights{% endif %}</strong><small>Account history</small></button>
-      <a class="parent-app app-messages" href="{% url 'messages_inbox' %}"><b>&#9993;</b><strong>Messages</strong><small>{% if unread_message_count %}{{ unread_message_count }} new{% else %}Family chat{% endif %}</small></a>
-    </nav>
+    </div>
+    {% if can_manage and not vapid_public_key %}<small class="push-setup">Configure VAPID keys to enable browser push notifications.</small>{% endif %}
   </section>
-    <section class="guardian-app-pages">
-      {% if can_manage %}
-      <section class="guardian-native-app" data-parent-app="actions" aria-label="Parent controls">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Controls</h1></div></header>
-      <article class="card action-launcher">
-        <div class="card-head"><h2>Guardian Actions</h2><span class="badge gold">Dad &amp; GG</span></div>
-        <p class="control-note">Choose an action for {{ selected.display_name }}. Every balance change is recorded in history.</p>
-        <div class="action-grid">
-          <button class="action-tile coral" type="button" data-open-dialog="action-deduct">Take Points</button>
-          <button class="action-tile" type="button" data-open-dialog="action-award">Give Reward</button>
-          <button class="action-tile coral" type="button" data-open-dialog="action-grounded">{% if selected.grounded %}Lift Grounding{% else %}Grounded Mode{% endif %}</button>
-          <button class="action-tile" type="button" data-open-dialog="action-grade">Add Grade</button>
-          <button class="action-tile" type="button" data-open-dialog="action-chore">Assign Chore</button>
-          <button class="action-tile" type="button" data-open-dialog="action-goal">Add Goal</button>
-          <button class="action-tile" type="button" data-parent-open="calendar">Calendar</button>
-          <button class="action-tile" type="button" data-open-dialog="action-rule">Rules</button>
-          <button class="action-tile" type="button" data-open-dialog="action-store">Store Item</button>
-          <button class="action-tile" type="button" data-open-dialog="action-profile">Store Eligibility</button>
-          <button class="action-tile gold" type="button" data-open-dialog="action-balance">Wallet Funds</button>
-          <button class="action-tile gold" type="button" data-open-dialog="action-rate">Exchange Rate</button>
-          <button class="action-tile" type="button" data-open-dialog="action-free-calling">Free Calling</button>
-          <button class="action-tile" type="button" data-open-dialog="action-communications">Message &amp; Call Limits</button>
-        </div>
-      </article>
-      <dialog class="review-dialog action-dialog" id="action-deduct">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Behavior consequence</p>
-        <h2>Take points from {{ selected.display_name }}</h2>
-        {% if selected.grounded %}
-        <p>Grounded Mode is active, so this child's balance is already frozen. Lift Grounded Mode before changing points.</p>
-        {% else %}
-        <p>This deduction is recorded in account history and Tokens may go below zero.</p>
-        <form class="form" method="post" action="{% url 'guardian_behavior_deduction' %}" data-confirm-deduction>
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ behavior_deduction_form.as_p }}
-          <button class="danger" type="submit">Remove Tokens</button>
-        </form>
-        {% endif %}
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-award">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Celebrate progress</p><h2>Give reward</h2>
-        <form class="form" method="post" action="{% url 'guardian_award' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ award_form.as_p }}
-          <button class="primary">Add award</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-grounded">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Account restriction</p><h2>Grounded Mode</h2>
-        {% if selected.grounded %}
-          <p><strong>{{ selected.display_name }} is currently grounded.</strong> Balances and rewards are locked.</p>
-          {% if selected.grounded_reason %}<p class="lockdown-reason">{{ selected.grounded_reason }}</p>{% endif %}
-          <p>Issued by {% if selected.grounded_by %}{{ selected.grounded_by.display_name }}{% else %}a guardian{% endif %} on {{ selected.grounded_at|date:"M j, Y \a\t g:i A" }}.</p>
-          <p>{% if selected.grounded_until %}Scheduled to lift {{ selected.grounded_until|date:"M j, Y \a\t g:i A" }}. <strong data-grounding-deadline="{{ selected.grounded_until|date:'c' }}">Calculating...</strong>{% else %}This restriction stays active until manually lifted.{% endif %}</p>
-          <form method="post" action="{% url 'guardian_lockdown' %}">
-            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="action" value="unlock">
-            <button class="primary" type="submit">Lift Grounded Mode</button>
-          </form>
-        {% else %}
-          <p>Lock wallet visibility, spending, and rewards while chores remain available for verification.</p>
-          <form class="form" method="post" action="{% url 'guardian_lockdown' %}">
-            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="action" value="lock">{{ grounding_form.as_p }}
-            <button class="danger" type="submit">Activate Grounded Mode</button>
-          </form>
-        {% endif %}
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-grade">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">School progress</p><h2>Add grade</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'grade' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ grade_form.as_p }}<button class="primary">Save grade</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-chore">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Daily work</p><h2>Assign chore</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'chore' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ chore_form.as_p }}<button class="primary">Assign chore</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-goal">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Growing skills</p><h2>Add improvement goal</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'goal' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ goal_form.as_p }}<button class="primary">Add goal</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-rule">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Family expectations</p><h2>Add a rule</h2>
-        <h3>For {{ selected.display_name }}</h3>
-        <form class="form" method="post" action="{% url 'guardian_create' 'child_rule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ child_rule_form.as_p }}<button class="primary">Add personal rule</button>
-        </form>
-        <h3 class="dialog-section">For everyone</h3>
-        <form class="form" method="post" action="{% url 'guardian_create' 'house_rule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ house_rule_form.as_p }}<button class="primary">Add house rule</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-store">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Reward store</p><h2>Stock an item</h2>
-        <form class="form" method="post" action="{% url 'guardian_create' 'item' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ item_form.as_p }}<button class="primary">Add store item</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-profile">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Child profile</p><h2>Store eligibility</h2>
-        <p>Birth date is used only to apply age restrictions on Family Store items.</p>
-        <form class="form" method="post" action="{% url 'guardian_child_profile' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ child_profile_form.as_p }}<button class="primary">Save eligibility</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-balance">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Parent wallet control</p><h2>Wallet funds</h2>
-        <p>Award direct cash or remove Cash App funds after real-world use. Every change is audited.</p>
-        <form class="form" method="post" action="{% url 'guardian_wallet_adjustment' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ balance_form.as_p }}<button class="primary">Record balance change</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-rate">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Family economy</p><h2>Token cash-out rate</h2>
-        <p>Children earn tokens from chores, then instantly convert tokens to wallet cash using this parent-controlled rate. Cash cannot convert back to tokens.</p>
-        <form class="form" method="post" action="{% url 'update_family_settings' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ settings_form.as_p }}<button class="primary">Save exchange rate</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-free-calling">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Calling access</p><h2>Free calling rules</h2>
-        <p>Choose whether child calls are always free or only become free after 6:00 PM. Anytime free calling overrides the evening rule.</p>
-        <form class="form" method="post" action="{% url 'update_family_call_settings' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-          <p><label>{{ call_settings_form.free_child_calls_anytime_enabled }} {{ call_settings_form.free_child_calls_anytime_enabled.label }}</label></p>
-          <p><label>{{ call_settings_form.free_calls_after_6pm_enabled }} {{ call_settings_form.free_calls_after_6pm_enabled.label }}</label></p>
-          <button class="primary">Save calling setting</button>
-        </form>
-      </dialog>
-      <dialog class="review-dialog action-dialog" id="action-communications">
-        <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-        <p class="eyebrow">Digital hours</p><h2>Messages &amp; call schedule</h2>
-        <p>During locked hours, {{ selected.display_name }} can read existing messages but cannot send new messages or participate in calls.</p>
-        <form class="form communication-form" method="post" action="{% url 'guardian_communication_schedule' %}">
-          {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ communication_schedule_form.as_p }}
-          <button class="primary">Add lock schedule</button>
-        </form>
-      </dialog>
-      </section>
-      <section class="guardian-native-app" data-parent-app="wallet" aria-label="Wallet controls">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Wallet</h1></div></header>
-        <article class="wallet-card parent-wallet-card">
-          <p class="eyebrow">Cash App oversight</p>
-          <h2>{{ selected.display_name }}'s wallet</h2>
-          <div class="parent-wallet-balances">
-            <div><strong>{{ selected.wallet.tokens }}</strong><small>Tokens</small></div>
-            <div><strong>{{ selected.wallet.available_cash_cents|dollars }}</strong><small>Cash balance</small></div>
-            <div><strong>{{ family_settings.tokens_per_dollar }}</strong><small>Tokens = $1</small></div>
-          </div>
-        </article>
-        <article class="card parent-wallet-actions">
-          <div class="card-head"><h2>Money controls</h2><span class="badge gold">Audited</span></div>
-          <p class="control-note">Children convert tokens to cash instantly. Converted cash remains cash until it is sent or spent.</p>
-          <div class="action-grid">
-            <button class="action-tile" type="button" data-open-dialog="action-award">Give Reward</button>
-            <button class="action-tile gold" type="button" data-open-dialog="action-balance">Wallet Funds</button>
-            <button class="action-tile gold" type="button" data-open-dialog="action-rate">Exchange Rate</button>
-            <button class="action-tile coral" type="button" data-open-dialog="action-deduct">Take Points</button>
-            <button class="action-tile" type="button" data-parent-open="ledger">Open Ledger</button>
-          </div>
-        </article>
-      </section>
-      <section class="guardian-native-app" data-parent-app="approvals" aria-label="Approvals">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Approvals</h1></div></header>
-      <article class="card chore-reviews">
-        <div class="card-head"><h2>Quest verification</h2><span class="badge waiting">{{ pending_chore_reviews|length }} waiting</span></div>
-        <p class="control-note">Tap Review to approve completed work or deny it and apply the listed token penalty.</p>
-        {% for entry in pending_chore_reviews %}
-          <button class="review-chore-button" type="button" data-open-review="review-{{ entry.pk }}">
-            <span><strong>{{ entry.chore.title }}</strong><small>{{ entry.child.display_name }} marked this finished</small></span>
-            <b>{% if selected.grounded and entry.token_delta %}Frozen{% elif entry.token_delta %}Review +{{ entry.chore.token_reward }} t{% else %}Verify only{% endif %}</b>
-          </button>
-          <dialog class="review-dialog" id="review-{{ entry.pk }}">
-            <form method="dialog" class="dialog-close"><button aria-label="Close review">&times;</button></form>
-            <p class="eyebrow">Verify completed quest</p>
-            <h2>{{ entry.chore.title }}</h2>
-            <p><strong>{{ entry.child.display_name }}</strong> checked this quest as finished.</p>
-            {% if entry.chore.instructions %}<p class="review-instructions">{{ entry.chore.instructions }}</p>{% endif %}
-            <div class="review-impact"><strong>Approve</strong><span>{% if entry.token_delta and entry.child.grounded %}Unlock account to post original reward{% elif entry.token_delta %}Earn +{{ entry.chore.token_reward }} tokens{% else %}Verified; no tokens in Grounded Mode{% endif %}</span><strong>Deny</strong><span>{% if entry.token_delta and not entry.child.grounded %}Lose {{ entry.chore.token_reward }} tokens{% else %}Not verified; no balance change{% endif %}</span></div>
-            <div class="review-actions">
-              <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action" type="submit">Approve Completed</button></form>
-              <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger" type="submit">Deny Chore</button></form>
+
+  {% if can_manage and vapid_public_key %}
+  <dialog class="review-dialog notification-permission-dialog" id="notification-permission" data-notification-prompt>
+    <form method="dialog" class="dialog-close" data-dismiss-notification-prompt><button aria-label="Close">&times;</button></form>
+    <div class="permission-pulse"><span></span></div>
+    <p class="eyebrow">Stay reachable</p>
+    <h2>Turn on family notifications?</h2>
+    <p>Allow reminders for messages and calls when this browser supports notifications.</p>
+    <p class="ios-permission-note">On iPhone or iPad, install Family Circle to the Home Screen first. Kindle Fire can use the Silk browser directly.</p>
+    <div class="permission-actions">
+      <button class="primary" type="button" data-enable-notifications data-vapid-key="{{ vapid_public_key }}" data-subscribe-url="{% url 'subscribe_push' %}">Allow Notifications</button>
+      <form method="dialog" data-dismiss-notification-prompt><button class="text" type="submit">Not now</button></form>
+    </div>
+  </dialog>
+  {% endif %}
+
+  <section class="comm-profile-card">
+    {% include "rewards/_profile_avatar.html" with person=profile %}
+    <div>
+      <strong>Your contact photo</strong>
+      <small>This shows to the children in messages and calls.</small>
+    </div>
+    <form method="post" enctype="multipart/form-data" action="{% url 'update_profile_photo' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ profile_photo_next_url }}">
+      <label class="ios-photo-upload">Change {{ profile_photo_form.profile_photo }}</label>
+    </form>
+  </section>
+
+  <section class="comm-dashboard-grid">
+    <article class="card comm-card">
+      <div class="card-head"><h2>Family Contacts</h2><span class="badge">{% if livekit_configured %}Calls ready{% else %}Call setup needed{% endif %}</span></div>
+      <div class="comm-contact-list">
+        {% for contact in communication_contacts %}
+          <div class="comm-family-row">
+            <a href="{% url 'message_thread' contact.pk %}" class="comm-family-person">
+              {% include "rewards/_profile_avatar.html" with person=contact %}
+              <span><strong>{{ contact.display_name }}</strong><small>{{ contact.get_role_display }}{% if contact.unread_count %} &middot; {{ contact.unread_count }} unread{% endif %}</small></span>
+            </a>
+            <div class="comm-row-actions">
+              <a href="{% url 'message_thread' contact.pk %}">Text</a>
+              <form method="post" action="{% url 'start_family_call' contact.pk 'audio' %}">{% csrf_token %}<button {% if calling_lock or not livekit_configured %}disabled{% endif %}>Voice</button></form>
+              <form method="post" action="{% url 'start_family_call' contact.pk 'video' %}">{% csrf_token %}<button {% if calling_lock or not livekit_configured %}disabled{% endif %}>Video</button></form>
             </div>
-          </dialog>
-        {% empty %}<p class="empty">No chores need verification right now.</p>{% endfor %}
-      </article>
-      <article class="card approvals">
-        <div class="card-head"><h2>Other approvals</h2><span class="badge waiting">{{ pending|length }}</span></div>
-        {% for entry in pending %}
-          <div class="task">
-            <div><strong>{{ entry.child.display_name }}: {{ entry.description }}</strong><small>{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} tokens {% endif %}{% if entry.kind == 'spend' %}Reserved cash {{ entry.money_delta_cents|dollars }}{% elif entry.cash_delta_cents or entry.spending_delta_cents %}Cash {{ entry.money_delta_cents|dollars }}{% endif %}</small></div>
-            {% if entry.child.grounded %}
-              <span class="badge coral">Locked until lifted</span>
-            {% elif entry.requires_dad_approval and not dad_controls %}
-              <span class="badge waiting">Dad review only</span>
-            {% else %}
-              <div class="buttons">
-                <form method="post" action="{% url 'review_request' entry.pk 'approve' %}">{% csrf_token %}<button class="action">Approve</button></form>
-                <form method="post" action="{% url 'review_request' entry.pk 'decline' %}">{% csrf_token %}<button class="danger">Decline</button></form>
-              </div>
-            {% endif %}
           </div>
-        {% empty %}<p class="empty">No store or money requests waiting right now.</p>{% endfor %}
-      </article>
-      </section>
-      {% endif %}
-      {% if can_manage %}
-      <section class="guardian-native-app" data-parent-app="calendar" aria-label="Calendar">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Family planner</small><h1>Calendar</h1></div></header>
-      <article class="card command-module">
-        <div class="card-head"><h2>Family calendar</h2><span class="badge">{% if dad_controls %}Dad publishes{% else %}View access{% endif %}</span></div>
-        <p class="control-note">Queue future days here. Children receive only an approved schedule on the actual day.</p>
-      </article>
-      <article class="card upcoming-queue">
-        <div class="card-head"><h2>Upcoming event queue</h2><span class="badge gold">{{ upcoming_event_queue|length }} queued</span></div>
-        <p class="control-note">Dad and GG can view upcoming plans. Children receive approved events only on their scheduled day.</p>
-        <div class="queue-list">
-          {% for event in upcoming_event_queue %}
-          <div class="queue-event">
-            <time>{{ event.day|date:"M j" }}{% if event.start_time %}<small>{{ event.start_time|time:"g:i A" }}</small>{% endif %}</time>
-            <div><strong>{{ event.child.display_name }}: {{ event.title }}</strong><small>{{ event.details }}</small></div>
-            <b class="badge {% if not event.approved_at %}waiting{% endif %}">{% if event.approved_at %}Approved{% else %}Draft{% endif %}</b>
-          </div>
-          {% empty %}<p class="empty">No future events are queued right now.</p>{% endfor %}
-        </div>
-      </article>
-      <article class="card guardian-calendar-board">
-        <p class="eyebrow">Private guardian planner</p><h2>Family Calendar</h2>
-        <p>Future dates enter the guardian queue. Dad prepares the next day's plan around 9:00 PM and approves it for release; children see an approved plan only when that day arrives.</p>
-        {% if dad_controls %}
-        <section class="calendar-composer">
-          <h3>Add event for {{ selected.display_name }}</h3>
-          <form class="form" method="post" action="{% url 'guardian_create' 'schedule' %}">
-            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ schedule_form.as_p }}<button class="primary">Queue Event Draft</button>
-          </form>
-        </section>
-        {% else %}
-          <p class="viewer-calendar-note">GG can view planned and published events here. Dad controls creating and approving child schedules.</p>
-        {% endif %}
-        <section class="calendar-agenda">
-          {% regroup family_calendar_events by day as calendar_days %}
-          {% for calendar_day in calendar_days %}
-            <div class="agenda-day">
-              <h3>{{ calendar_day.grouper|date:"l, F j" }}</h3>
-              {% regroup calendar_day.list by child as child_plans %}
-              {% for plan in child_plans %}
-                <div class="day-plan">
-                  <div class="day-plan-head">
-                    <strong>{{ plan.grouper.display_name }}</strong>
-                    {% if dad_controls %}
-                    <form method="post" action="{% url 'dad_approve_schedule' %}">
-                      {% csrf_token %}<input type="hidden" name="child_id" value="{{ plan.grouper.pk }}"><input type="hidden" name="day" value="{{ calendar_day.grouper|date:'Y-m-d' }}">
-                      <button class="action" type="submit">Approve Day</button>
-                    </form>
-                    {% endif %}
-                  </div>
-                  {% for event in plan.list %}
-                  <div class="agenda-event"><span>{% if event.start_time %}{{ event.start_time|time:"g:i A" }}{% else %}Any time{% endif %}</span><div><strong>{{ event.title }}</strong><small>{{ event.details }}</small></div><b class="badge {% if not event.approved_at %}waiting{% endif %}">{% if event.approved_at %}Published{% else %}Draft{% endif %}</b>{% if dad_controls %}<form method="post" action="{% url 'guardian_remove' 'schedule' event.pk %}">{% csrf_token %}<button class="remove-button">Remove</button></form>{% endif %}</div>
-                  {% endfor %}
-                </div>
-              {% endfor %}
-            </div>
-          {% empty %}<p class="empty">No family schedule events are queued yet.</p>{% endfor %}
-        </section>
-      </article>
-      </section>
-      {% endif %}
-      <section class="guardian-native-app" data-parent-app="behavior" aria-label="Behavior">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Behavior</h1></div></header>
-      <article class="card behavior-notes">
-        <div class="card-head"><h2>Behavior notes</h2><span class="badge {% if behavior_notes %}coral{% endif %}">{{ behavior_notes|length }} recent</span></div>
-        {% for note in behavior_notes %}
-          <div class="note-entry {% if note.negative %}negative{% endif %}">
-            <strong>{{ note.title }}</strong>
-            <small>Issued by {% if note.issued_by %}{{ note.issued_by.display_name }}{% else %}a guardian{% endif %} on {{ note.issued_at|date:"M j, Y \a\t g:i A" }}</small>
-            <p>{{ note.note }}{% if note.scheduled_lift_at %} Scheduled lift: {{ note.scheduled_lift_at|date:"M j, Y \a\t g:i A" }}.{% endif %}</p>
-            {% if can_manage %}
-            <form method="post" action="{% url 'guardian_remove_behavior_note' note.pk %}" data-confirm-punishment-removal>
-              {% csrf_token %}<button class="remove-button" type="submit">Remove punishment</button>
-            </form>
-            {% endif %}
-          </div>
-        {% empty %}<p class="empty">No behavior notes recorded.</p>{% endfor %}
-      </article>
-      {% if can_manage %}
-      <article class="card punishment-ledger">
-        <div class="card-head"><h2>Token punishments</h2><span class="badge coral">Reversible</span></div>
-        <p class="control-note">Removing a deduction returns its tokens and records the correction in the ledger.</p>
-        {% for entry in punishment_entries %}
-          <div class="planner-row punishment-row">
-            <div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j, g:i A" }} &middot; {{ entry.token_delta }} tokens</small></div>
-            {% if entry.can_reverse_punishment %}
-            <form method="post" action="{% url 'guardian_reverse_punishment' entry.pk %}" data-confirm-punishment-removal>
-              {% csrf_token %}<button class="remove-button" type="submit">Return tokens</button>
-            </form>
-            {% else %}
-            <span class="badge">Removed</span>
-            {% endif %}
-          </div>
-        {% empty %}<p class="empty">No token punishments recorded.</p>{% endfor %}
-      </article>
-      {% endif %}
-      <article class="card star-calendar" data-dashboard-module="Behavior Stars">
-        <div class="card-head"><h2>Behavior star calendar</h2><span class="badge gold">1 star = 2 tokens</span></div>
-        <div class="month-nav"><a href="?child={{ selected.pk }}&month={{ previous_month }}">&lsaquo;</a><strong>{{ star_month }}</strong><a href="?child={{ selected.pk }}&month={{ next_month }}">&rsaquo;</a></div>
-        <div class="weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
-        <div class="calendar-grid">
-          {% for week in star_weeks %}{% for cell in week %}
-            {% if cell.in_month %}
-              {% if cell.awardable and not cell.has_star and not selected.grounded and can_manage %}
-                <form method="post" action="{% url 'award_star' %}">
-                  {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><input type="hidden" name="day" value="{{ cell.day|date:'Y-m-d' }}">
-                  <button class="calendar-day" aria-label="Award star for {{ cell.day|date:'F j' }}">{{ cell.day.day }}</button>
-                </form>
-              {% else %}
-                <div class="calendar-day {% if cell.has_star %}has-star{% endif %}">{{ cell.day.day }}{% if cell.has_star %}<span>&#9733;</span>{% endif %}</div>
-              {% endif %}
-            {% else %}<div></div>{% endif %}
-          {% endfor %}{% endfor %}
-        </div>
-        <p class="calendar-help">{% if not can_manage %}Stars earned for good behavior appear here as they are recorded.{% elif selected.grounded %}Stars and token rewards are unavailable during Grounded Mode.{% else %}Tap a day to award {{ selected.display_name }} a good behavior star.{% endif %}</p>
-      </article>
-      </section>
-      <section class="guardian-native-app" data-parent-app="routine" aria-label="Routine">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Routine</h1></div></header>
-      <article class="card" data-dashboard-module="Today's Chores">
-        <div class="card-head"><h2>Today's chores</h2><span class="badge gold">{% if can_manage %}Verify work{% else %}Daily progress{% endif %}</span></div>
-        <p class="control-note">{% if not can_manage %}See which daily chores are in progress and which have been verified complete.{% elif selected.grounded %}Grounded chores are still verified, but no tokens are earned or removed.{% else %}When a child marks a chore finished, approve verified work. Declining it removes that chore's listed tokens and can create token debt.{% endif %}</p>
-        {% for chore in selected_chores %}
-          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }}</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
-        {% empty %}<p class="empty">Today's chore rotation has not been created.</p>{% endfor %}
-        <h3 class="optional-heading">Bonus morning quests</h3>
-        {% for chore in selected_optional_chores %}
-          <div class="row"><div><strong>{{ chore.title }}</strong><small>{{ chore.get_status_display }} &middot; before 10 AM</small></div><b>{% if not can_manage %}{{ chore.get_status_display }}{% elif selected.grounded %}Locked{% elif chore.status == 'not_verified' %}-{{ chore.token_reward }} t{% else %}+{{ chore.token_reward }} t{% endif %}</b></div>
-        {% empty %}<p class="empty">No optional morning quest created.</p>{% endfor %}
-      </article>
-      <article class="card daily-planner" data-dashboard-module="Schedule">
-        <div class="card-head"><h2>{% if can_manage %}Schedule ahead{% else %}Upcoming schedule{% endif %}</h2><span class="badge">Morning message</span></div>
-        <p class="control-note">{% if can_manage %}Drafts and published dates are managed in the Family Calendar. Children see published items only on their scheduled day.{% else %}Only approved upcoming schedule items are visible in this read-only view.{% endif %}</p>
-        {% for event in selected_schedule %}
-          <div class="planner-row">
-            <div><strong>{{ event.day|date:"M j" }}{% if event.start_time %} at {{ event.start_time|time:"g:i A" }}{% endif %} - {{ event.title }}</strong><small>{{ event.details }}</small></div>
-            {% if can_manage %}<span class="badge {% if not event.approved_at %}waiting{% endif %}">{% if event.approved_at %}Published{% else %}Draft{% endif %}</span>{% endif %}
-          </div>
-        {% empty %}<p class="empty">No upcoming events in a morning message yet.</p>{% endfor %}
-      </article>
-      </section>
-      {% if can_manage %}
-      <section class="guardian-native-app" data-parent-app="limits" aria-label="Message and call limits">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Limits</h1></div><button class="app-add" type="button" data-open-dialog="action-communications">Add</button></header>
-      <article class="card communication-schedules" data-dashboard-module="Message & Call Limits">
-        <div class="card-head"><h2>Messages &amp; call limits</h2><span class="badge">{% if livekit_configured %}Calls ready{% else %}LiveKit setup pending{% endif %}</span></div>
-        <p class="control-note">Schedules restrict {{ selected.display_name }} during the listed hours. Open Guardian Actions to add another schedule.</p>
-        <div class="planner-row">
-          <div><strong>Free calling</strong><small>{% if family_settings.free_child_calls_anytime_enabled %}All child calls are free at any time, even before 6 PM.{% elif family_settings.free_calls_after_6pm_enabled %}Child calls stay free after 6 PM, even after the daily free-call limit is used.{% else %}Only the daily free-call limit applies.{% endif %}</small></div>
-          <span class="badge {% if not family_settings.free_child_calls_anytime_enabled and not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_child_calls_anytime_enabled %}Anytime{% elif family_settings.free_calls_after_6pm_enabled %}After 6 PM{% else %}Allowance only{% endif %}</span>
-        </div>
-        <p class="control-note">Update this from Controls using the Free Calling action.</p>
-        {% for schedule in selected_communication_schedules %}
-          <div class="planner-row">
-            <div><strong>{{ schedule.get_feature_display }}</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} - {{ schedule.end_time|time:"g:i A" }}</small></div>
-            <span class="badge {% if not schedule.enabled %}waiting{% endif %}">{% if schedule.enabled %}Enabled{% else %}Paused{% endif %}</span>
-            <form method="post" action="{% url 'guardian_toggle_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">{% if schedule.enabled %}Pause{% else %}Enable{% endif %}</button></form>
-            <form method="post" action="{% url 'guardian_remove_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">Delete</button></form>
-          </div>
-        {% empty %}<p class="empty">No message or calling limits are scheduled for this child.</p>{% endfor %}
-      </article>
-      </section>
-      {% endif %}
-      {% if dad_controls %}
-      <section class="guardian-native-app" data-parent-app="message-settings" aria-label="Message settings">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Message Settings</h1></div></header>
-      <article class="card communication-schedules" data-dashboard-module="Message Settings">
-        <div class="card-head"><h2>Hidden contacts</h2><span class="badge gold">Dad only</span></div>
-        <p class="control-note">Hide specific contacts and their existing message history from {{ selected.display_name }}. Hidden conversations remain stored and visible to adults.</p>
-        {% for contact in message_settings_contacts %}
-          <div class="planner-row">
-            <div><strong>{{ contact.display_name }}</strong><small>{{ contact.get_role_display }}</small></div>
-            <span class="badge {% if contact.hidden_for_child %}waiting{% endif %}">{% if contact.hidden_for_child %}Hidden{% else %}Visible{% endif %}</span>
-            <form method="post" action="{% url 'dad_toggle_hidden_message_contact' contact.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button">{% if contact.hidden_for_child %}Show{% else %}Hide{% endif %}</button></form>
-          </div>
-        {% empty %}<p class="empty">No contacts available for this child.</p>{% endfor %}
-      </article>
-      </section>
-      {% endif %}
-      <section class="guardian-native-app" data-parent-app="rules" aria-label="Rules">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Family expectations</small><h1>Rules</h1></div>{% if can_manage %}<button class="app-add" type="button" data-open-dialog="action-rule">Add</button>{% endif %}</header>
-      <article class="card rules-control" data-dashboard-module="Personal Rules">
-        <div class="card-head"><h2>{{ selected.display_name }}'s individual rules</h2><span class="badge">Personal</span></div>
-        {% if can_manage %}{% for rule in all_selected_rules %}
-          <div class="planner-row">
-            <div><strong>{{ rule.title }}</strong><small>{{ rule.details }}{% if rule.consequence %} Consequence: {{ rule.consequence }}.{% endif %}{% if rule.expires_on %} Expires {{ rule.expires_on|date:"M j" }}.{% endif %}</small></div>
-            <span class="badge {% if not rule.active %}waiting{% endif %}">{% if rule.active %}Active{% else %}Paused{% endif %}</span>
-            <button class="remove-button" type="button" data-open-dialog="child-rule-edit-{{ rule.pk }}">Edit</button>
-            <form method="post" action="{% url 'guardian_toggle' 'child_rule' rule.pk %}">{% csrf_token %}<button class="remove-button">{% if rule.active %}Pause{% else %}Enable{% endif %}</button></form>
-            <form method="post" action="{% url 'guardian_remove' 'child_rule' rule.pk %}">{% csrf_token %}<button class="remove-button" aria-label="Delete rule">Delete</button></form>
-          </div>
-          <dialog class="review-dialog action-dialog" id="child-rule-edit-{{ rule.pk }}">
-            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-            <p class="eyebrow">Individual rule</p><h2>Edit rule</h2>
-            <form class="form" method="post" action="{% url 'guardian_edit' 'child_rule' rule.pk %}">
-              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-              <p><label>Rule<input name="title" maxlength="100" required value="{{ rule.title }}"></label></p>
-              <p><label>Details (optional)<input name="details" maxlength="240" value="{{ rule.details }}"></label></p>
-              <p><label>Consequence (optional)<input name="consequence" maxlength="240" value="{{ rule.consequence }}"></label></p>
-              <p><label>Expiration date (optional)<input name="expires_on" type="date" value="{{ rule.expires_on|date:'Y-m-d' }}"></label></p>
-              <p><label>Scheduled removal time (optional)<input name="scheduled_remove_at" type="datetime-local" value="{{ rule.scheduled_remove_at|date:'Y-m-d\TH:i' }}"></label></p>
-              <button class="primary">Save rule</button>
-            </form>
-          </dialog>
-        {% empty %}<p class="empty">No individual rules added.</p>{% endfor %}
-        {% else %}{% for rule in selected_rules %}<div class="planner-row"><div><strong>{{ rule.title }}</strong><small>{{ rule.details }}</small></div></div>{% empty %}<p class="empty">No individual rules added.</p>{% endfor %}{% endif %}
-      </article>
-      <article class="card rules-control house-control" data-dashboard-module="House Rules">
-        <div class="card-head"><h2>House Rules Management</h2><span class="badge gold">Everyone</span></div>
-        {% if can_manage %}<p class="control-note">Rules appear read-only to every child and must be acknowledged after creation or an edit.</p>{% for rule in all_house_rules %}
-          <div class="planner-row">
-            <div><strong>{{ rule.title }}</strong><small>{{ rule.details }}{% if rule.consequence %} Consequence: {{ rule.consequence }}.{% endif %}</small></div>
-            <span class="badge {% if not rule.active %}waiting{% endif %}">{% if rule.active %}Active{% else %}Paused{% endif %}</span>
-            <button class="remove-button" type="button" data-open-dialog="house-rule-edit-{{ rule.pk }}">Edit</button>
-            <form method="post" action="{% url 'guardian_toggle' 'house_rule' rule.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button">{% if rule.active %}Pause{% else %}Enable{% endif %}</button></form>
-            <form method="post" action="{% url 'guardian_remove' 'house_rule' rule.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" aria-label="Delete house rule">Delete</button></form>
-          </div>
-          <dialog class="review-dialog action-dialog" id="house-rule-edit-{{ rule.pk }}">
-            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-            <p class="eyebrow">Everyone</p><h2>Edit house rule</h2>
-            <form class="form" method="post" action="{% url 'guardian_edit' 'house_rule' rule.pk %}">
-              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-              <p><label>House rule<input name="title" maxlength="100" required value="{{ rule.title }}"></label></p>
-              <p><label>Details (optional)<input name="details" maxlength="240" value="{{ rule.details }}"></label></p>
-              <p><label>Consequence (optional)<input name="consequence" maxlength="240" value="{{ rule.consequence }}"></label></p>
-              <button class="primary">Save rule</button>
-            </form>
-          </dialog>
-        {% empty %}<p class="empty">Add house rules for every child.</p>{% endfor %}
-        {% else %}{% for rule in house_rules %}<div class="planner-row"><div><strong>{{ rule.title }}</strong><small>{{ rule.details }}</small></div></div>{% empty %}<p class="empty">No house rules active.</p>{% endfor %}{% endif %}
-      </article>
-      </section>
-      {% if can_manage %}
-      <section class="guardian-native-app" data-parent-app="store" aria-label="Family store">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Rewards catalog</small><h1>Store</h1></div><button class="app-add" type="button" data-open-dialog="action-store">Add</button></header>
-      <article class="card" data-dashboard-module="Family Store">
-        <div class="card-head"><h2>Family Store inventory</h2><span class="badge gold">Tokens + cash</span></div>
-        {% for item in all_store_items %}
-          <div class="planner-row">
-            <div><strong>{{ item.name }}</strong><small>{{ item.token_cost }} tokens{% if item.cash_cost_cents %} + {{ item.cash_cost_cents|dollars }} cash{% endif %} &middot; {% if item.inventory_quantity == None %}Unlimited{% else %}{{ item.inventory_quantity }} available{% endif %}</small></div>
-            <span class="badge {% if not item.active or item.hidden %}waiting{% endif %}">{% if item.hidden %}Hidden{% elif item.active %}Available{% else %}Paused{% endif %}</span>
-            <button class="remove-button" type="button" data-open-dialog="store-edit-{{ item.pk }}">Edit</button>
-            <form method="post" action="{% url 'guardian_toggle' 'item' item.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button">{% if item.active %}Pause{% else %}Enable{% endif %}</button></form>
-          </div>
-          <dialog class="review-dialog action-dialog" id="store-edit-{{ item.pk }}">
-            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-            <p class="eyebrow">Family Store</p><h2>Edit item</h2>
-            <form class="form" method="post" action="{% url 'guardian_edit' 'item' item.pk %}">
-              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-              <p><label>Name<input name="name" maxlength="100" required value="{{ item.name }}"></label></p>
-              <p><label>Description<input name="description" maxlength="180" value="{{ item.description }}"></label></p>
-              <p><label>Token price<input name="token_cost" type="number" min="0" value="{{ item.token_cost }}"></label></p>
-              <p><label>Cash price ($)<input name="cash_price" type="number" min="0" step="0.01" value="{{ item.cash_cost_cents|amount }}"></label></p>
-              <p><label>Category<select name="category"><option value="treat" {% if item.category == "treat" %}selected{% endif %}>Treat</option><option value="experience" {% if item.category == "experience" %}selected{% endif %}>Adventure</option><option value="grand" {% if item.category == "grand" %}selected{% endif %}>Grand prize</option></select></label></p>
-              <p><label>Inventory quantity (blank means unlimited)<input name="inventory_quantity" type="number" min="0" value="{{ item.inventory_quantity|default_if_none:'' }}"></label></p>
-              <p><label>Unlock after token balance<input name="token_unlock_threshold" type="number" min="0" value="{{ item.token_unlock_threshold }}"></label></p>
-              <p><label>Minimum age<input name="minimum_age" type="number" min="0" value="{{ item.minimum_age|default_if_none:'' }}"></label></p>
-              <p><label><input name="hidden" type="checkbox" {% if item.hidden %}checked{% endif %}> Hidden until enabled</label></p>
-              <p><label><input name="requires_approval" type="checkbox" {% if item.requires_approval %}checked{% endif %}> Require parent approval</label></p>
-              <button class="primary">Save item</button>
-            </form>
-          </dialog>
-        {% empty %}<p class="empty">Add an item from Guardian Actions to stock the store.</p>{% endfor %}
-      </article>
-      </section>
-      <section class="guardian-native-app" data-parent-app="audit" aria-label="Audit log">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Protected activity</small><h1>Audit</h1></div></header>
-      <article class="card activity-history" data-dashboard-module="Audit Log">
-        <div class="card-head"><h2>Audit log</h2><span class="badge">Rules &amp; rewards</span></div>
-        {% for event in recent_audit %}
-          <div class="row"><div><strong>{{ event.description }}</strong><small>{{ event.get_action_display|default:event.action }} &middot; {{ event.created_at|date:"M j, g:i A" }}{% if event.actor %} by {{ event.actor.display_name }}{% endif %}</small></div></div>
-        {% empty %}<p class="empty">New balance and rule enforcement activity will appear here.</p>{% endfor %}
-      </article>
-      </section>
-      {% endif %}
-      {% if can_fulfill %}
-      <section class="guardian-native-app" data-parent-app="fulfillment" aria-label="Shopping fulfillment">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Cash App shopping</small><h1>Fulfillment</h1></div>{% if can_manage_catalog %}<button class="app-add" type="button" data-open-dialog="action-shopping-product">Add</button>{% endif %}</header>
-        <article class="card fulfillment-orders">
-          <div class="card-head"><h2>Children's orders</h2><span class="badge gold">Cash only</span></div>
-          <p class="control-note">Money is reserved from the child's Cash App balance at checkout. Confirm the current retailer price before marking an order purchased.</p>
-          {% for order in shopping_orders %}
-          <section class="fulfillment-order">
-            <header><div><strong>{{ order.child.display_name }}'s cart</strong><small>Sent {{ order.submitted_at|date:"M j, g:i A" }}{% if order.assigned_to %} &middot; handled by {{ order.assigned_to.display_name }}{% endif %}</small></div><span class="badge {% if order.status == 'canceled' %}coral{% elif order.status == 'submitted' or order.status == 'claimed' %}waiting{% endif %}">{{ order.get_status_display }}</span></header>
-            <div class="fulfillment-items">
-              {% for item in order.items.all %}
-              <div class="fulfillment-item">
-                {% if item.product %}{% with artwork_path='rewards/catalog/'|add:item.product.category|add:'.svg' %}<img src="{% static artwork_path %}" alt="">{% endwith %}{% else %}<img src="{% static 'rewards/catalog/gift.svg' %}" alt="">{% endif %}
-                <div><strong>{{ item.product_name }}</strong><small>{{ item.quantity }} x {{ item.unit_price_cents|dollars }} &middot; {{ item.retailer }}</small><a href="{{ item.retailer_url }}" target="_blank" rel="noopener noreferrer">Check price / purchase</a></div>
-              </div>
-              {% endfor %}
-            </div>
-            <div class="fulfillment-total"><span>Reserved from wallet</span><strong>{{ order.reserved_total_cents|dollars }}</strong></div>
-            {% if order.final_total_cents != None %}<div class="fulfillment-total final"><span>Purchased total</span><strong>{{ order.final_total_cents|dollars }}</strong></div>{% endif %}
-            {% if order.parent_note %}<p class="fulfillment-note">{{ order.parent_note }}</p>{% endif %}
-            {% if order.status == 'submitted' or order.status == 'claimed' %}
-            <div class="fulfillment-actions">
-              <form method="post" action="{% url 'fulfillment_claim' order.pk %}">{% csrf_token %}<button class="action" type="submit">I will purchase</button></form>
-              <form class="form fulfillment-purchase" method="post" action="{% url 'fulfillment_purchase' order.pk %}">
-                {% csrf_token %}
-                <label>Confirmed total ($)<input type="number" name="final_amount" step="0.01" min="0.01" value="{{ order.reserved_total_cents|amount }}" required></label>
-                <label>Child update<input type="text" name="parent_note" maxlength="240" placeholder="Purchased and on the way"></label>
-                <button class="primary" type="submit">Mark Purchased</button>
-              </form>
-              <form class="form fulfillment-cancel" method="post" action="{% url 'fulfillment_cancel' order.pk %}">
-                {% csrf_token %}<input type="text" name="parent_note" maxlength="240" placeholder="Reason for cancellation (optional)">
-                <button class="remove-button" type="submit">Cancel &amp; refund</button>
-              </form>
-            </div>
-            {% elif order.status == 'purchased' %}
-              <form method="post" action="{% url 'fulfillment_delivered' order.pk %}">{% csrf_token %}<button class="primary" type="submit">Mark Delivered</button></form>
-            {% endif %}
-          </section>
-          {% empty %}<p class="empty">No Shopping orders have been sent yet.</p>{% endfor %}
-        </article>
-        {% if can_manage_catalog %}
-        <dialog class="review-dialog action-dialog" id="action-shopping-product">
-          <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-          <p class="eyebrow">Shopping catalog</p><h2>Add product</h2>
-          <p class="control-note">Use a direct product page link. Children see the friendly built-in illustration for the selected category.</p>
-          <form class="form" method="post" action="{% url 'dad_shopping_product_create' %}">
-            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ shopping_product_form.as_p }}
-            <button class="primary" type="submit">Add product</button>
-          </form>
-        </dialog>
-        <article class="card fulfillment-catalog">
-          <div class="card-head"><h2>Shopping catalog</h2><span class="badge">Dad manages</span></div>
-          <p class="control-note">Starter listings are editable retail snapshots with built-in category artwork. Verify current price before purchasing.</p>
-          <div class="catalog-admin-grid">
-          {% for product in shopping_catalog %}
-            <article class="catalog-admin-product">
-              {% with artwork_path='rewards/catalog/'|add:product.category|add:'.svg' %}<img src="{% static artwork_path %}" alt="">{% endwith %}
-              <div><strong>{{ product.name }}</strong><small>{{ product.retail_price_cents|dollars }} &middot; {{ product.get_category_display }}</small><span class="badge {% if not product.in_stock or not product.active %}waiting{% endif %}">{% if not product.active %}Hidden{% elif product.in_stock %}In stock{% else %}Out of stock{% endif %}</span></div>
-              <div class="catalog-actions">
-                <button class="remove-button" type="button" data-open-dialog="shopping-product-edit-{{ product.pk }}">Edit</button>
-                <form method="post" action="{% url 'dad_shopping_product_stock' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.in_stock %}Out of stock{% else %}Restock{% endif %}</button></form>
-                <form method="post" action="{% url 'dad_shopping_product_toggle' product.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if product.active %}Hide{% else %}Show{% endif %}</button></form>
-                <form method="post" action="{% url 'dad_shopping_product_delete' product.pk %}" data-confirm-shopping-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
-              </div>
-            </article>
-            <dialog class="review-dialog action-dialog" id="shopping-product-edit-{{ product.pk }}">
-              <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-              <p class="eyebrow">Shopping catalog</p><h2>Edit product</h2>
-              <form class="form" method="post" action="{% url 'dad_shopping_product_edit' product.pk %}">
-                {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-                <p><label>Name<input name="name" maxlength="120" required value="{{ product.name }}"></label></p>
-                <p><label>Description<input name="description" maxlength="220" value="{{ product.description }}"></label></p>
-                <p><label>Displayed retail price ($)<input name="retail_price" type="number" min="0.01" step="0.01" required value="{{ product.retail_price_cents|amount }}"></label></p>
-                <p><label>Retailer<input name="retailer" maxlength="60" required value="{{ product.retailer }}"></label></p>
-                <p><label>Purchase or Google Shopping link<input name="retailer_url" type="url" required value="{{ product.retailer_url }}"></label></p>
-                <p><label>Category<select name="category"><option value="building" {% if product.category == 'building' %}selected{% endif %}>Building sets</option><option value="stem" {% if product.category == 'stem' %}selected{% endif %}>STEM &amp; learning</option><option value="creative" {% if product.category == 'creative' %}selected{% endif %}>Arts &amp; crafts</option><option value="games" {% if product.category == 'games' %}selected{% endif %}>Games &amp; puzzles</option><option value="outdoor" {% if product.category == 'outdoor' %}selected{% endif %}>Outdoor play</option><option value="electronics" {% if product.category == 'electronics' %}selected{% endif %}>Kids electronics</option><option value="pretend" {% if product.category == 'pretend' %}selected{% endif %}>Pretend play</option></select></label></p>
-                <p><label>Minimum age (optional)<input name="minimum_age" type="number" min="0" value="{{ product.minimum_age|default_if_none:'' }}"></label></p>
-                <p><label><input name="featured" type="checkbox" {% if product.featured %}checked{% endif %}> Featured for children</label></p>
-                <p><label><input name="in_stock" type="checkbox" {% if product.in_stock %}checked{% endif %}> Available to request</label></p>
-                <p><label><input name="active" type="checkbox" {% if product.active %}checked{% endif %}> Visible in Shopping</label></p>
-                <button class="primary" type="submit">Save product</button>
-              </form>
-            </dialog>
-          {% empty %}<p class="empty">Add a product to begin the Shopping catalog.</p>{% endfor %}
-          </div>
-        </article>
-        {% endif %}
-      </section>
-      {% endif %}
-      {% if can_manage_video %}
-      <section class="guardian-native-app" data-parent-app="video-library" aria-label="Discover video library">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>Parent approved feed</small><h1>Video Library</h1></div><button class="app-add" type="button" data-open-dialog="action-video-playlist">New</button></header>
-        <dialog class="review-dialog action-dialog" id="action-video-playlist">
-          <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-          <p class="eyebrow">Discover</p><h2>Create playlist</h2>
-          <p>Active playlists appear for every child in the family Discover app.</p>
-          <form class="form" method="post" action="{% url 'guardian_video_playlist_create' %}">
-            {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ video_playlist_form.as_p }}
-            <button class="primary" type="submit">Create playlist</button>
-          </form>
-        </dialog>
-        <article class="card video-library">
-          <div class="card-head"><h2>Discover playlists</h2><span class="badge">Approved only</span></div>
-          <p class="control-note">Add individual approved videos or paste an approved public YouTube playlist link. Active library content appears for every child, while individual screen-time locks still apply. Children have no open video search or comments.</p>
-          {% for playlist in video_playlists %}
-          <section class="video-playlist-card">
-            <div class="video-playlist-head">
-              <div><strong>{{ playlist.title }}</strong><small>{{ playlist.description|default:"Parent-curated videos" }} &middot; {{ playlist.clips.count }} hand-picked video{{ playlist.clips.count|pluralize }}{% if playlist.youtube_playlist_id %} &middot; linked playlist{% endif %}</small></div>
-              <span class="badge {% if not playlist.active %}waiting{% endif %}">{% if playlist.active %}Active{% else %}Paused{% endif %}</span>
-            </div>
-            <div class="video-playlist-actions">
-              <button class="remove-button" type="button" data-open-dialog="video-add-{{ playlist.pk }}">Add video</button>
-              <button class="remove-button" type="button" data-open-dialog="video-edit-{{ playlist.pk }}">Edit</button>
-              <form method="post" action="{% url 'guardian_video_playlist_toggle' playlist.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if playlist.active %}Pause{% else %}Enable{% endif %}</button></form>
-              <form method="post" action="{% url 'guardian_video_playlist_delete' playlist.pk %}" data-confirm-video-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
-            </div>
-            {% if playlist.youtube_playlist_id %}
-            <p class="playlist-source-note">Linked public YouTube playlist is available in Discover. It plays the current playlist contents, so review changes made on YouTube. <a href="https://www.youtube.com/playlist?list={{ playlist.youtube_playlist_id }}" target="_blank" rel="noopener noreferrer">Review playlist</a></p>
-            {% endif %}
-            <div class="video-clip-list">
-              {% for clip in playlist.clips.all %}
-              <article class="video-clip-row {% if not clip.active %}disabled{% endif %}">
-                <img src="https://i.ytimg.com/vi/{{ clip.youtube_id }}/mqdefault.jpg" loading="lazy" alt="">
-                <div><strong>{{ clip.title }}</strong><small>{% if clip.subject_tag %}{{ clip.subject_tag }} &middot; {% endif %}{% if clip.active %}Shown in feed{% else %}Hidden{% endif %}</small></div>
-                <div class="video-clip-actions">
-                  <a class="remove-button" href="https://www.youtube.com/watch?v={{ clip.youtube_id }}" target="_blank" rel="noopener noreferrer">Preview</a>
-                  <form method="post" action="{% url 'guardian_video_clip_move' clip.pk 'up' %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit" aria-label="Move up">&uarr;</button></form>
-                  <form method="post" action="{% url 'guardian_video_clip_move' clip.pk 'down' %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit" aria-label="Move down">&darr;</button></form>
-                  <form method="post" action="{% url 'guardian_video_clip_toggle' clip.pk %}">{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button" type="submit">{% if clip.active %}Hide{% else %}Show{% endif %}</button></form>
-                  <form method="post" action="{% url 'guardian_video_clip_delete' clip.pk %}" data-confirm-video-delete>{% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}"><button class="remove-button danger-text" type="submit">Delete</button></form>
-                </div>
-              </article>
-              {% empty %}<p class="empty">{% if playlist.youtube_playlist_id %}No extra hand-picked videos. The linked playlist is ready in Discover.{% else %}No approved videos in this playlist yet.{% endif %}</p>{% endfor %}
-            </div>
-          </section>
-          <dialog class="review-dialog action-dialog" id="video-add-{{ playlist.pk }}">
-            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-            <p class="eyebrow">{{ playlist.title }}</p><h2>Add approved video</h2>
-            <p>Paste a video or Shorts URL only after reviewing it for your child.</p>
-            <form class="form" method="post" action="{% url 'guardian_video_clip_add' playlist.pk %}">
-              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-              <p><label for="video-url-{{ playlist.pk }}">YouTube video or Shorts link<input id="video-url-{{ playlist.pk }}" name="youtube_url" type="url" required></label></p>
-              <p><label for="video-title-{{ playlist.pk }}">Video title<input id="video-title-{{ playlist.pk }}" name="title" maxlength="120" required></label></p>
-              <p><label for="video-tag-{{ playlist.pk }}">Learning tag (optional)<input id="video-tag-{{ playlist.pk }}" name="subject_tag" maxlength="40"></label></p>
-              <button class="primary" type="submit">Add to playlist</button>
-            </form>
-          </dialog>
-          <dialog class="review-dialog action-dialog" id="video-edit-{{ playlist.pk }}">
-            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-            <p class="eyebrow">Discover playlist</p><h2>Edit playlist</h2>
-            <form class="form" method="post" action="{% url 'guardian_video_playlist_edit' playlist.pk %}">
-              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">
-              <p><label>Playlist name<input name="title" maxlength="100" required value="{{ playlist.title }}"></label></p>
-              <p><label>Description (optional)<input name="description" maxlength="240" value="{{ playlist.description }}"></label></p>
-              <p><label>YouTube playlist URL or ID (optional)<input name="youtube_playlist_id" maxlength="500" value="{% if playlist.youtube_playlist_id %}https://www.youtube.com/playlist?list={{ playlist.youtube_playlist_id }}{% endif %}" placeholder="Paste a reviewed public playlist link"></label></p>
-              <p><label><input name="active" type="checkbox" {% if playlist.active %}checked{% endif %}> Available to every child</label></p>
-              <button class="primary" type="submit">Save playlist</button>
-            </form>
-          </dialog>
-          {% empty %}<p class="empty">No playlists yet. Create the first parent-approved Discover feed.</p>{% endfor %}
-        </article>
-        <article class="card discover-controls">
-          <div class="card-head"><h2>Screen-time hours</h2><button class="app-add" type="button" data-open-dialog="action-discover-hours">Add lock</button></div>
-          <p class="control-note">Grounded Mode always blocks Discover. These schedules add regular quiet hours for {{ selected.display_name }}.</p>
-          {% for schedule in selected_discover_schedules %}
-          <div class="row">
-            <div><strong>Discover videos</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} to {{ schedule.end_time|time:"g:i A" }}</small></div>
-            <b>{% if schedule.enabled %}Locked hours{% else %}Paused{% endif %}</b>
-            <form method="post" action="{% url 'guardian_toggle_discover_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">{% if schedule.enabled %}Pause{% else %}Enable{% endif %}</button></form>
-            <form method="post" action="{% url 'guardian_remove_discover_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">Delete</button></form>
-          </div>
-          {% empty %}<p class="empty">No separate Discover lock schedule has been added.</p>{% endfor %}
-          <dialog class="review-dialog action-dialog" id="action-discover-hours">
-            <form method="dialog" class="dialog-close"><button aria-label="Close">&times;</button></form>
-            <p class="eyebrow">Discover schedule</p><h2>Block viewing hours</h2>
-            <form class="form communication-form" method="post" action="{% url 'guardian_discover_schedule' %}">
-              {% csrf_token %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{{ discover_schedule_form.as_p }}
-              <button class="primary" type="submit">Save viewing lock</button>
-            </form>
-          </dialog>
-        </article>
-        <article class="card discover-insights">
-          <div class="card-head"><h2>{{ selected.display_name }}'s activity</h2><span class="badge">Private</span></div>
-          <h3>Reactions</h3>
-          {% for reaction in selected_video_reactions %}
-            <div class="row"><div><strong>{{ reaction.video_title }}</strong><small>{% if reaction.clip %}{{ reaction.clip.playlist.title }}{% elif reaction.playlist %}{{ reaction.playlist.title }}{% else %}Discover{% endif %}</small></div><b>{% if reaction.value == "like" %}&#9829;{% else %}&#128078;{% endif %}</b></div>
-          {% empty %}<p class="empty">No Discover reactions yet.</p>{% endfor %}
-          <h3>Recently watched</h3>
-          {% for event in selected_video_watch_events %}
-            <div class="row"><div><strong>{{ event.clip.title }}</strong><small>{{ event.clip.playlist.title }} &middot; last watched {{ event.last_watched_at|date:"M j, g:i A" }}</small></div><b>{{ event.view_count }} view{{ event.view_count|pluralize }}</b></div>
-          {% empty %}<p class="empty">No watched videos recorded yet.</p>{% endfor %}
-        </article>
-      </section>
-      {% endif %}
-      <section class="guardian-native-app" data-parent-app="progress" aria-label="Progress">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>Progress</h1></div></header>
-      <article class="card" data-dashboard-module="School Grades">
-        <div class="card-head"><h2>School grades</h2><span class="badge">Progress</span></div>
-        {% for grade in selected_grades %}
-          <div class="row"><div><strong>{{ grade.subject }}</strong><small>{{ grade.assignment }}</small></div><b>{{ grade.percent }}%</b></div>
-        {% empty %}<p class="empty">No grades have been added yet.</p>{% endfor %}
-      </article>
-      <article class="card" data-dashboard-module="Growth Goals">
-        <div class="card-head"><h2>Growth goals</h2><span class="badge">Encouragement</span></div>
-        {% for goal in selected_goals %}
-          <div class="row"><div><strong>{{ goal.title }}</strong><small>{{ goal.encouragement }}</small></div><b>{{ goal.get_status_display }}</b></div>
-        {% empty %}<p class="empty">No growth goals have been added yet.</p>{% endfor %}
-      </article>
-      </section>
-      <section class="guardian-native-app" data-parent-app="ledger" aria-label="{% if can_manage %}Account history{% else %}Growth highlights{% endif %}">
-        <header class="guardian-app-topbar"><button type="button" data-parent-home-button><span>&lsaquo;</span> Home</button><div><small>{{ selected.display_name }}</small><h1>{% if can_manage %}Ledger{% else %}Highlights{% endif %}</h1></div></header>
-      <article class="card activity-history" data-dashboard-module="{% if can_manage %}Account History{% else %}Growth Highlights{% endif %}">
-        <div class="card-head"><h2>{% if can_manage %}Account history{% else %}Growth highlights{% endif %}</h2><span class="badge">{% if can_manage %}Ledger{% else %}View only{% endif %}</span></div>
-        {% for entry in history %}
-          <div class="row">
-            <div><strong>{{ entry.description }}</strong><small>{{ entry.created_at|date:"M j" }} &middot; {{ entry.get_status_display }}{% if entry.reviewed_by %} by {{ entry.reviewed_by.display_name }}{% endif %}</small></div>
-            <b class="{% if entry.token_delta < 0 or entry.cash_delta_cents < 0 or entry.spending_delta_cents < 0 %}spent{% else %}earned{% endif %}">{% if entry.token_delta %}{{ entry.token_delta|stringformat:"+d" }} t{% elif entry.spending_delta_cents %}Spendable {{ entry.spending_delta_cents|dollars }}{% else %}Cash {{ entry.cash_delta_cents|dollars }}{% endif %}</b>
-          </div>
-        {% empty %}<p class="empty">{% if can_manage %}Rewards and purchases will appear here.{% else %}Completed milestones will appear here as they are recorded.{% endif %}</p>{% endfor %}
-      </article>
-      </section>
-    </section>
-    <nav class="guardian-dock" aria-label="Parent quick navigation">
-      <button type="button" data-parent-home-button><span>&#8962;</span>Home</button>
-      {% if can_manage %}
-      <button type="button" data-parent-open="approvals"><span>&#10003;</span>Reviews</button>
-      <button type="button" data-parent-open="wallet"><span>$</span>Wallet</button>
-      {% elif can_fulfill %}
-      <button type="button" data-parent-open="fulfillment"><span>&#128722;</span>Orders</button>
-      <button type="button" data-parent-open="progress"><span>A+</span>Progress</button>
-      {% else %}
-      <button type="button" data-parent-open="progress"><span>A+</span>Progress</button>
-      <button type="button" data-parent-open="behavior"><span>&#9733;</span>Behavior</button>
-      {% endif %}
-      <a class="dock-messages" href="{% url 'messages_inbox' %}"><span>&#9993;</span>Messages{% if unread_message_count %}<b class="dock-count">{{ unread_message_count }}</b>{% endif %}</a>
-    </nav>
-  {% else %}
-    <article class="card guardian-empty-family">
-      <h2>No child profiles available</h2>
-      <p>Child profiles will appear here once they have been added to the family account.</p>
+        {% empty %}
+          <p class="empty">No other family profiles are available yet.</p>
+        {% endfor %}
+      </div>
     </article>
+
+    <article class="card comm-card">
+      <div class="card-head"><h2>Browser Access</h2><span class="badge gold">Kindle ready</span></div>
+      <p class="control-note">Use the Railway website URL in Safari, Chrome, Edge, or Kindle Fire Silk Browser. No native Kindle app is needed.</p>
+      <div class="comm-support-list">
+        <span>iPhone/iPad: Safari or Home Screen PWA</span>
+        <span>Kindle Fire: Silk Browser</span>
+        <span>Video calls: allow camera and microphone</span>
+        <span>Notifications: browser support varies by device</span>
+      </div>
+    </article>
+
+    {% if can_manage %}
+    <article class="card comm-card">
+      <div class="card-head"><h2>Calling Rules</h2><span class="badge {% if not family_settings.free_child_calls_anytime_enabled and not family_settings.free_calls_after_6pm_enabled %}waiting{% endif %}">{% if family_settings.free_child_calls_anytime_enabled %}Free anytime{% elif family_settings.free_calls_after_6pm_enabled %}Free after 6 PM{% else %}Allowance only{% endif %}</span></div>
+      <form class="form compact-form" method="post" action="{% url 'update_family_call_settings' %}">
+        {% csrf_token %}
+        {% if selected %}<input type="hidden" name="child_id" value="{{ selected.pk }}">{% endif %}
+        <p><label>{{ call_settings_form.free_child_calls_anytime_enabled }} {{ call_settings_form.free_child_calls_anytime_enabled.label }}</label></p>
+        <p><label>{{ call_settings_form.free_calls_after_6pm_enabled }} {{ call_settings_form.free_calls_after_6pm_enabled.label }}</label></p>
+        <button class="primary">Save calling rules</button>
+      </form>
+    </article>
+    {% endif %}
+  </section>
+
+  {% if children and can_manage %}
+  <section class="card comm-card">
+    <div class="card-head"><h2>Child Communication Controls</h2><span class="badge">Dad &amp; GG</span></div>
+    <nav class="child-picker" aria-label="Select child">
+      {% for child in children %}<a href="?child={{ child.pk }}" class="{% if selected and child.pk == selected.pk %}active{% endif %}">{{ child.display_name }}</a>{% endfor %}
+    </nav>
+
+    {% if selected %}
+      <div class="comm-control-panels">
+        <section>
+          <h3>Message &amp; Call Lock Schedule</h3>
+          <form class="form compact-form" method="post" action="{% url 'guardian_communication_schedule' %}">
+            {% csrf_token %}
+            <input type="hidden" name="child_id" value="{{ selected.pk }}">
+            {{ communication_schedule_form.as_p }}
+            <button class="primary">Add lock schedule</button>
+          </form>
+          {% for schedule in selected_communication_schedules %}
+            <div class="planner-row">
+              <div><strong>{{ schedule.get_feature_display }}</strong><small>{{ schedule.days_display }} &middot; {{ schedule.start_time|time:"g:i A" }} - {{ schedule.end_time|time:"g:i A" }}</small></div>
+              <span class="badge {% if not schedule.enabled %}waiting{% endif %}">{% if schedule.enabled %}Enabled{% else %}Paused{% endif %}</span>
+              <form method="post" action="{% url 'guardian_toggle_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">{% if schedule.enabled %}Pause{% else %}Enable{% endif %}</button></form>
+              <form method="post" action="{% url 'guardian_remove_communication_schedule' schedule.pk %}">{% csrf_token %}<button class="remove-button">Delete</button></form>
+            </div>
+          {% empty %}<p class="empty">No message or calling locks are scheduled for {{ selected.display_name }}.</p>{% endfor %}
+        </section>
+
+        {% if dad_controls %}
+        <section>
+          <h3>{{ selected.display_name }}'s Visible Contacts</h3>
+          {% for contact in message_settings_contacts %}
+            <div class="planner-row">
+              <div><strong>{{ contact.display_name }}</strong><small>{% if contact.hidden_for_child %}Hidden from {{ selected.display_name }}{% else %}Visible in messages{% endif %}</small></div>
+              <span class="badge {% if contact.hidden_for_child %}waiting{% endif %}">{% if contact.hidden_for_child %}Hidden{% else %}Visible{% endif %}</span>
+              <form method="post" action="{% url 'dad_toggle_hidden_message_contact' contact.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="child_id" value="{{ selected.pk }}">
+                <button class="remove-button">{% if contact.hidden_for_child %}Show{% else %}Hide{% endif %}</button>
+              </form>
+            </div>
+          {% empty %}<p class="empty">No contacts available for this child yet.</p>{% endfor %}
+        </section>
+        {% endif %}
+      </div>
+    {% endif %}
   </section>
   {% endif %}
 </main>
